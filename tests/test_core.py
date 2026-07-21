@@ -1121,3 +1121,74 @@ class TestStopLocalAimServer:
 
         _stop_local_aim_server(HangingProc())
         assert calls == ["terminate", "kill"]
+
+
+# ----------------------------------------------------------------------
+# First-metric marker — closes the healing window on the engine side
+# ----------------------------------------------------------------------
+
+
+@pytest.fixture
+def _reset_first_metric_flag():
+    """Reset the module-level ``_FIRST_METRIC_MARKER_WRITTEN`` flag."""
+    import astrolabe_callbacks._core as core
+    core._FIRST_METRIC_MARKER_WRITTEN = False
+    yield
+    core._FIRST_METRIC_MARKER_WRITTEN = False
+
+
+class TestFirstMetricMarker:
+    def test_no_env_var_no_file(
+        self, tmp_path, monkeypatch, fake_aim_run, _reset_first_metric_flag,
+    ):
+        marker = tmp_path / "marker"
+        monkeypatch.delenv("ASTROLABE_FIRST_METRIC_MARKER", raising=False)
+        run = open_aim_run(make_run_config())
+        track_safely(run, name="train/loss", value=1.0, step=0)
+        assert not marker.exists()
+
+    def test_first_track_call_writes_marker(
+        self, tmp_path, monkeypatch, fake_aim_run, _reset_first_metric_flag,
+    ):
+        marker = tmp_path / "first-metric.marker"
+        monkeypatch.setenv("ASTROLABE_FIRST_METRIC_MARKER", str(marker))
+        run = open_aim_run(make_run_config())
+        track_safely(run, name="train/loss", value=1.0, step=0)
+        assert marker.exists()
+
+    def test_subsequent_track_calls_skip_touch(
+        self, tmp_path, monkeypatch, fake_aim_run, _reset_first_metric_flag,
+    ):
+        # After the first touch the marker path is not re-visited on the
+        # hot path — deleting the file and calling again should NOT
+        # recreate it.
+        marker = tmp_path / "first-metric.marker"
+        monkeypatch.setenv("ASTROLABE_FIRST_METRIC_MARKER", str(marker))
+        run = open_aim_run(make_run_config())
+        track_safely(run, name="train/loss", value=1.0, step=0)
+        assert marker.exists()
+        marker.unlink()
+        track_safely(run, name="train/loss", value=2.0, step=1)
+        assert not marker.exists()
+
+    def test_marker_write_failure_is_silent(
+        self, tmp_path, monkeypatch, fake_aim_run, _reset_first_metric_flag, caplog,
+    ):
+        # Env points at an unwriteable path; track_safely must still
+        # complete the metric write without raising.
+        unwriteable = tmp_path / "does-not-exist" / "marker"
+        monkeypatch.setenv("ASTROLABE_FIRST_METRIC_MARKER", str(unwriteable))
+        run = open_aim_run(make_run_config())
+        track_safely(run, name="train/loss", value=1.0, step=0)  # must not raise
+        assert not unwriteable.exists()
+
+    def test_none_run_skips_marker(
+        self, tmp_path, monkeypatch, _reset_first_metric_flag,
+    ):
+        # No run → the whole call short-circuits before the marker
+        # check; explicit spec so a future refactor can't quietly
+        # start touching on ``run=None``.
+        marker = tmp_path / "marker"
+        monkeypatch.setenv("ASTROLABE_FIRST_METRIC_MARKER", str(marker))
+        track_safely(None, name="x", value=1.0)
+        assert not marker.exists()
