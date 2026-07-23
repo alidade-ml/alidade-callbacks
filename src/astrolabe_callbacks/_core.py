@@ -1291,6 +1291,17 @@ def maybe_finalize_schema(run: Any, state: SchemaPhaseState, *, cfg: RunConfig) 
         logger.warning("Schema-phase: run has no hash; skipping finalize.")
         return run
 
+    # Capture identity we want to survive the close+reopen. Aim's
+    # ``force_resume=True`` reconstitutes the Run's hash + metric data
+    # from persistence, but Run.name is not restored — the reopened
+    # Run reverts to the default ``"Run: <hash>"`` fallback. Anything
+    # the researcher's config set (Composer's ``run_name``, etc.) is
+    # lost across the first finalize unless we re-apply it below.
+    # Tags stored via ``run[key] = value`` (astrolabe.* identity, plus
+    # any user extensions) survive force_resume via RocksDB params;
+    # only the name needs an explicit rescue.
+    saved_name = getattr(run, "name", None)
+
     # Drain the existing buffer so its in-flight writes commit to the
     # current Run before close. Without this, queued writes would be
     # lost when we close + reopen.
@@ -1352,6 +1363,19 @@ def maybe_finalize_schema(run: Any, state: SchemaPhaseState, *, cfg: RunConfig) 
             finalize_count=state.finalize_count,
         )
         return run  # caller's self._run is now the closed Run; track_safely will skip
+
+    # Restore run.name. See saved_name capture above for the rationale.
+    # Guard against re-applying the default fallback (which would happen
+    # if the run somehow reached this point without a real name set) —
+    # we'd rather leave the default in place than write it explicitly.
+    if saved_name and not saved_name.startswith("Run: "):
+        try:
+            new_run.name = saved_name
+        except Exception as exc:  # noqa: BLE001 — best-effort restore
+            logger.debug(
+                "Schema-phase: failed to restore run.name={!r}: {}",
+                saved_name, exc,
+            )
 
     # Reattach a fresh metric buffer to the new Run. The old buffer is
     # closed (drainer thread exits cleanly); GC will release it.

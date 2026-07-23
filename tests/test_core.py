@@ -708,6 +708,68 @@ class TestMaybeFinalizeSchemaHappyPath:
         assert new_run.kwargs.get("repo") == "aim://test:9999"
         assert new_run.kwargs.get("force_resume") is True
 
+    def test_finalize_restores_run_name_after_reopen(self, fake_aim_run_with_hash):
+        # Composer's ``run_name`` (e.g., "latent_bert_adamw_rtd") flows
+        # through ``open_aim_run`` and sets ``run.name`` before training
+        # starts. The first schema-finalize closes + reopens the Run
+        # with ``force_resume=True`` — Aim reconstitutes hash and metric
+        # data from persistence but does NOT restore ``run.name``, which
+        # reverts to the default "Run: <hash>" fallback. Bug surfaced
+        # when the 06-rtd-elbow dashboard fell back to displaying the
+        # experiment name instead of the researcher's chosen run name.
+        run = _HashableFakeAimRun()
+        run.hash = "hash-abc"
+        run.name = "latent_bert_adamw_rtd"
+        state = SchemaPhaseState()
+        observe_name(state, "train/loss")
+
+        new_run = maybe_finalize_schema(run, state, cfg=make_run_config())
+
+        assert new_run is not run
+        assert new_run.name == "latent_bert_adamw_rtd", (
+            f"run.name lost across schema-finalize; got {new_run.name!r}"
+        )
+
+    def test_finalize_skips_restore_when_name_is_aim_default(
+        self, fake_aim_run_with_hash,
+    ):
+        # Guard: if the original Run already carries Aim's default
+        # "Run: <hash>" fallback (i.e., no researcher-provided name),
+        # don't explicitly re-set it after reopen — leave whatever the
+        # reopen produces. Prevents pinning the default across future
+        # Aim versions that might improve the default rendering.
+        run = _HashableFakeAimRun()
+        run.hash = "hash-abc"
+        run.name = "Run: hash-abc"
+        state = SchemaPhaseState()
+        observe_name(state, "train/loss")
+
+        new_run = maybe_finalize_schema(run, state, cfg=make_run_config())
+
+        assert new_run is not run
+        assert new_run.name != "Run: hash-abc", (
+            "Aim's default fallback should not be explicitly re-set; "
+            "leave the reopen's default in place."
+        )
+
+    def test_finalize_skips_restore_when_name_absent(
+        self, fake_aim_run_with_hash,
+    ):
+        # Runs that never had a name set at all: nothing to restore.
+        # Assert we didn't accidentally set new_run.name to None or "".
+        run = _HashableFakeAimRun()
+        run.hash = "hash-abc"
+        run.name = None
+        state = SchemaPhaseState()
+        observe_name(state, "train/loss")
+
+        new_run = maybe_finalize_schema(run, state, cfg=make_run_config())
+
+        assert new_run is not run
+        # FakeAimRun's constructor initializes .name = None; we shouldn't
+        # have changed it either way.
+        assert new_run.name is None
+
     def test_second_finalize_with_new_names_works(self, fake_aim_run_with_hash):
         # Simulates: batch_end finalizes for training metrics, then
         # eval_end fires and a new eval metric appears, triggering
