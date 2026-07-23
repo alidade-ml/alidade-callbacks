@@ -1367,6 +1367,9 @@ def maybe_finalize_schema(run: Any, state: SchemaPhaseState, *, cfg: RunConfig) 
             force_resume=True,
         )
     except Exception as exc:  # noqa: BLE001
+        # Log format string may truncate hash for readability — this is a
+        # human-facing log line, not data. The paired stats-line below
+        # carries the full-fidelity hash so downstream consumers can match.
         logger.warning(
             "Schema-phase: Run reopen failed (run_hash={}): {} — "
             "writes after this point will silently fail until next run.",
@@ -1375,7 +1378,7 @@ def maybe_finalize_schema(run: Any, state: SchemaPhaseState, *, cfg: RunConfig) 
         )
         _append_stats_line(
             kind="schema_reopen_failed",
-            run_hash=run_hash[:12] if isinstance(run_hash, str) else None,
+            run_hash=run_hash if isinstance(run_hash, str) else None,
             exception=repr(exc)[:200],
             finalize_count=state.finalize_count,
         )
