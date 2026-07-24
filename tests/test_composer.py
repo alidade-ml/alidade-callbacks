@@ -485,6 +485,37 @@ class TestDiagnosticLogs:
             f"lifecycle hooks not in expected order: {hooks}"
         )
 
+    def test_lifecycle_log_carries_full_run_hash(
+        self, fake_aim_run, monkeypatch, tmp_path
+    ):
+        # Downstream (e.g. ProjectOrion's cola_probe) extracts run_hash
+        # from this jsonl to link eval runs back to the training run.
+        # A truncated hash (previously [:12]) caused silent dashboard
+        # mis-linkage: eval run's astrolabe.model_run_hash didn't
+        # equal-match the full 24-char training hash.
+        stats_file = tmp_path / "stats.jsonl"
+        monkeypatch.setenv("ASTROLABE_CALLBACK_STATS_PATH", str(stats_file))
+
+        cb = AstrolabeComposerLogger()
+        cb.init(state=None, logger_obj=None)
+        # FakeAimRun has no default `hash`; stamp one that mimics Aim's
+        # real 24-char hex format so the assertion is realistic.
+        full_hash = "aabbccddeeff11223344abcd"
+        cb._run.hash = full_hash
+        cb.fit_start(state=None, logger_obj=None)
+        cb.fit_end(state=None, logger_obj=None)
+        cb.post_close()
+
+        records = self._read_jsonl(stats_file)
+        hash_by_hook = {
+            r["hook"]: r.get("run_hash")
+            for r in records
+            if r.get("kind") == "lifecycle" and r.get("hook") in {"fit_start", "fit_end", "post_close"}
+        }
+        assert hash_by_hook["fit_start"] == full_hash
+        assert hash_by_hook["fit_end"] == full_hash
+        assert hash_by_hook["post_close"] == full_hash
+
     def test_log_metrics_called_counter_fires(self, fake_aim_run, monkeypatch, tmp_path):
         """H2 detector: ``log_metrics_called`` records prove the
         destination IS being called by Composer (vs Composer having

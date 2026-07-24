@@ -511,6 +511,35 @@ def _append_stats_line(**fields) -> None:
         logger.debug("Failed to append callback stats line: {}", exc)
 
 
+_FIRST_METRIC_MARKER_WRITTEN = False
+
+
+def _write_first_metric_marker_once() -> None:
+    """Touch ``$ASTROLABE_FIRST_METRIC_MARKER`` on first invocation.
+
+    The astrolabe engine sets this env var when a step's healing
+    policy uses ``until: first_metric``.  At step-failure time the
+    engine SSH-probes the path; existence closes the healing window.
+    Silent no-op when the env var isn't set (non-astrolabe usage or
+    older engine).
+    """
+    global _FIRST_METRIC_MARKER_WRITTEN
+    if _FIRST_METRIC_MARKER_WRITTEN:
+        return
+    path = os.environ.get(contract.ENV_FIRST_METRIC_MARKER)
+    if not path:
+        _FIRST_METRIC_MARKER_WRITTEN = True  # nothing to do next call
+        return
+    try:
+        from pathlib import Path
+        Path(os.path.expanduser(path)).touch()
+    except Exception:
+        # Best-effort; a missing marker degrades ``until: first_metric``
+        # to "attempts-only" but must NOT fail the training run.
+        pass
+    _FIRST_METRIC_MARKER_WRITTEN = True
+
+
 def is_strict() -> bool:
     """Return ``True`` if strict-mode is enabled via env var.
 
@@ -858,6 +887,8 @@ def track_safely(
     """
     if run is None:
         return
+
+    _write_first_metric_marker_once()
 
     # Strict mode: synchronous + raise. Strict semantics ("crash on any
     # failure, I want CI to fail fast") map cleanly to bypassing the
@@ -1336,6 +1367,9 @@ def maybe_finalize_schema(run: Any, state: SchemaPhaseState, *, cfg: RunConfig) 
             force_resume=True,
         )
     except Exception as exc:  # noqa: BLE001
+        # Log format string may truncate hash for readability — this is a
+        # human-facing log line, not data. The paired stats-line below
+        # carries the full-fidelity hash so downstream consumers can match.
         logger.warning(
             "Schema-phase: Run reopen failed (run_hash={}): {} — "
             "writes after this point will silently fail until next run.",
@@ -1344,7 +1378,7 @@ def maybe_finalize_schema(run: Any, state: SchemaPhaseState, *, cfg: RunConfig) 
         )
         _append_stats_line(
             kind="schema_reopen_failed",
-            run_hash=run_hash[:12] if isinstance(run_hash, str) else None,
+            run_hash=run_hash if isinstance(run_hash, str) else None,
             exception=repr(exc)[:200],
             finalize_count=state.finalize_count,
         )

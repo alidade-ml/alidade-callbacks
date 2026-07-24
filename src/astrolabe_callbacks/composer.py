@@ -256,10 +256,14 @@ class AstrolabeComposerLogger(LoggerDestination):
         silently no-op the entire fit. Pairs with the v1.1.2 change to
         ``fit_end`` that no longer nulls ``_run``.
         """
+        # Full-fidelity run_hash in the jsonl: this file is a data channel,
+        # not a debug log — downstream consumers exact-match against
+        # aim.Run.hash (24 chars). Log-format strings may truncate for
+        # readability; the jsonl must not.
         run_hash = getattr(self._run, "hash", None) if self._run is not None else None
         _core._append_stats_line(
             kind="lifecycle", hook="fit_start",
-            run_hash=run_hash[:12] if run_hash else None,
+            run_hash=run_hash,
         )
         if not self._rank_zero:
             return
@@ -269,7 +273,7 @@ class AstrolabeComposerLogger(LoggerDestination):
             _core._append_stats_line(
                 kind="run_reopened",
                 reason="fit_start_with_run_none",
-                new_run_hash=getattr(self._run, "hash", "?")[:12] if self._run else None,
+                new_run_hash=getattr(self._run, "hash", None),
             )
 
     def eval_start(self, state: Any, logger_obj: Any) -> None:
@@ -354,7 +358,7 @@ class AstrolabeComposerLogger(LoggerDestination):
         run_hash = getattr(self._run, "hash", None) if self._run is not None else None
         _core._append_stats_line(
             kind="lifecycle", hook="fit_end",
-            run_hash=run_hash[:12] if run_hash else None,
+            run_hash=run_hash,
         )
         self._fit_end_seen = True
 
@@ -370,7 +374,7 @@ class AstrolabeComposerLogger(LoggerDestination):
         run_hash = getattr(self._run, "hash", None) if self._run is not None else None
         _core._append_stats_line(
             kind="lifecycle", hook="post_close",
-            run_hash=run_hash[:12] if run_hash else None,
+            run_hash=run_hash,
             fit_end_seen=getattr(self, "_fit_end_seen", False),
         )
         if not self._rank_zero or self._run is None:

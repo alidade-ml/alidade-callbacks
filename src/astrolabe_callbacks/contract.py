@@ -25,8 +25,6 @@ Rules enforced by CI:
   the engine must route through ``contract.ENV_*``/``contract.TAG_*``
   + the format/parse helpers (no inline ``json.dumps`` of contract
   values, no inline ``"astrolabe.user"`` keys).
-
-See ``plans/version-contract.md`` for the operating model.
 """
 
 from __future__ import annotations
@@ -44,7 +42,7 @@ from __future__ import annotations
 # vendored from; the engine refuses submits whose pinned callback was
 # vendored against a contract older than what this engine version
 # requires.
-CONTRACT_VERSION = "1.1.0"
+CONTRACT_VERSION = "1.3.0"
 
 # --- Env vars: ENGINE sets in the training process -------------------------
 #
@@ -85,6 +83,12 @@ ENV_CALLBACK_STATS_PATH = "ASTROLABE_CALLBACK_STATS_PATH"
 # logs into ``$ASTROLABE_RANK_LOGS_DIR/rank-N.{stdout,stderr}``.
 ENV_RANK_LOGS_DIR = "ASTROLABE_RANK_LOGS_DIR"
 
+# Filesystem path the astrolabe-callbacks library touches when the
+# first Aim metric write lands.  The engine probes this path at
+# step-failure time to enforce ``until: first_metric`` healing bounds
+# (:class:`astrolabe.config.StepHealingConfig`).
+ENV_FIRST_METRIC_MARKER = "ASTROLABE_FIRST_METRIC_MARKER"
+
 # --- Aim run tags: CALLBACK writes, ENGINE + dashboard read ----------------
 #
 # Callbacks apply these to the Aim run at open time. The engine reads
@@ -124,6 +128,14 @@ SYNTHESIZED_WALL_TIME = "wall_time"
 # the submit_id via :func:`format_local_aim_repo_path` — do not call
 # ``LOCAL_AIM_REPO_PATH_TEMPLATE.format(...)`` directly at call sites.
 LOCAL_AIM_REPO_PATH_TEMPLATE = "/tmp/aim-local-{submit_id}"
+
+# Default Aim tracking-server URL. The engine opens a reverse SSH
+# tunnel from the compute host to the NUC's Aim server on port 43800
+# (see ``astrolabe.engine._setup``). Training-time consumers (callbacks
+# and the canary workload) connect to this URL by default; both sides
+# of the contract MUST agree on the port number so the tunnel + client
+# pair line up.
+DEFAULT_AIM_URL = "aim://localhost:43800"
 
 # --- Canonical formatters / parsers ---------------------------------------
 #
@@ -204,3 +216,14 @@ def format_local_aim_repo_path(submit_id: str) -> str:
     Engine sets the env var via this helper in local-aim mode.
     """
     return LOCAL_AIM_REPO_PATH_TEMPLATE.format(submit_id=submit_id)
+
+
+def format_first_metric_marker_path(submit_id: str) -> str:
+    """Construct the per-submit first-metric marker path.
+
+    Engine sets ``ASTROLABE_FIRST_METRIC_MARKER`` to this value.  The
+    astrolabe-callbacks library touches this file on the first Aim
+    metric write; the engine probes it to enforce
+    ``until: first_metric`` healing bounds.
+    """
+    return f"astrolabe-first-metric-{submit_id}.marker"
