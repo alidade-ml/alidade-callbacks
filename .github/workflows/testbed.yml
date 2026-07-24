@@ -1,0 +1,42 @@
+name: Testbed
+
+on:
+  pull_request:
+    branches: [main, dev]
+  workflow_dispatch:
+  schedule:
+    - cron: "0 5 * * *"  # 05:00 UTC daily — nightly scale run
+
+jobs:
+  fast:
+    name: Testbed (Phases A-D + F placeholder)
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+      - name: Install package (host side, for pytest)
+        run: pip install -e '.[dev]'
+      - name: Run testbed (fast phases only)
+        run: pytest -m testbed tests/testbed/
+
+  scale:
+    name: Testbed scale (Phase E, nightly)
+    runs-on: ubuntu-latest
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    timeout-minutes: 300  # up to 5hr for the 4hr@100/sec scenario
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+      - name: Install package (host side, for pytest)
+        run: pip install -e '.[dev]'
+      - name: Run scale scenarios
+        run: pytest -m testbed_scale tests/testbed/scenarios/test_sustained.py

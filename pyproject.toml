@@ -68,3 +68,8 @@ where = ["src"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+markers = [
+    "testbed: integration tests against a real aim server subprocess; excluded from default runs",
+    "testbed_scale: sustained-load scenarios; nightly-only, excluded from default and PR runs",
+]
+addopts = "-m 'not testbed and not testbed_scale'"

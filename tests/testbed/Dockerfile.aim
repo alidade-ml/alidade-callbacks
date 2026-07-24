@@ -1,0 +1,14 @@
+# Aim server container — simulates the NUC's Aim endpoint.
+#
+# Runs ``aim server`` bound to 0.0.0.0:43800 (bridge network reachable).
+# Bind-mounted volume at /var/lib/aim is shared with the pytest host so
+# host-side assertions can read the repo via ``aim.Repo(read_only=True)``.
+FROM python:3.12-slim
+
+RUN pip install --no-cache-dir "aim>=3.18"
+
+RUN mkdir -p /var/lib/aim
+
+EXPOSE 43800
+
+CMD ["aim", "server", "--host", "0.0.0.0", "--port", "43800", "--repo", "/var/lib/aim"]
