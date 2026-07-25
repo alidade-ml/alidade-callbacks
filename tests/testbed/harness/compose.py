@@ -18,6 +18,10 @@ familiar.
 """
 from __future__ import annotations
 
+import os
+import socket
+import subprocess
+import time
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -29,7 +33,15 @@ __all__ = [
     "reset_repo",
     "logs",
     "exec_in",
+    "TestbedStartupError",
+    "TestbedExecError",
 ]
+
+
+AIM_CONTAINER = "astrolabe-callbacks-testbed-aim"
+CLIENT_CONTAINER = "astrolabe-callbacks-testbed-client"
+AIM_HOST_PORT = 43810  # host-published port (matches docker-compose.yml)
+AIM_CLIENT_URL = "aim://aim-server:43800"  # bridge-network URL
 
 
 @dataclass
@@ -78,7 +90,42 @@ def up(compose_file: Path, aim_repo_host_path: Path, timeout_s: float = 60.0) ->
     connections, client container reports ready). Raises
     ``TestbedStartupError`` on timeout or docker-compose failure.
     """
-    raise NotImplementedError
+    aim_repo_host_path.mkdir(parents=True, exist_ok=True)
+
+    env = os.environ.copy()
+    env["AIM_REPO_HOST_PATH"] = str(aim_repo_host_path)
+
+    result = subprocess.run(
+        [
+            "docker",
+            "compose",
+            "-f",
+            str(compose_file),
+            "up",
+            "-d",
+            "--build",
+        ],
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=timeout_s,
+    )
+    if result.returncode != 0:
+        raise TestbedStartupError(
+            f"docker compose up failed:\nstdout:\n{result.stdout}\nstderr:\n{result.stderr}"
+        )
+
+    handle = TestbedHandle(
+        compose_file=compose_file,
+        aim_container=AIM_CONTAINER,
+        client_container=CLIENT_CONTAINER,
+        aim_repo_host_path=aim_repo_host_path,
+        aim_url_from_client=AIM_CLIENT_URL,
+        aim_url_from_host=f"aim://localhost:{AIM_HOST_PORT}",
+    )
+
+    wait_healthy(handle, timeout_s=timeout_s)
+    return handle
 
 
 def down(handle: TestbedHandle, purge_volumes: bool = True) -> None:
@@ -89,7 +136,14 @@ def down(handle: TestbedHandle, purge_volumes: bool = True) -> None:
     host-owned so this doesn't touch it — teardown of the host-side
     tmp_path is the fixture's responsibility.
     """
-    raise NotImplementedError
+    env = os.environ.copy()
+    env["AIM_REPO_HOST_PATH"] = str(handle.aim_repo_host_path)
+
+    args = ["docker", "compose", "-f", str(handle.compose_file), "down"]
+    if purge_volumes:
+        args.append("-v")
+
+    subprocess.run(args, env=env, capture_output=True, text=True, timeout=60)
 
 
 def wait_healthy(handle: TestbedHandle, timeout_s: float = 30.0) -> None:
@@ -99,29 +153,70 @@ def wait_healthy(handle: TestbedHandle, timeout_s: float = 30.0) -> None:
     Client readiness: ``docker compose exec client python -c ...`` returns
     successfully.
     """
-    raise NotImplementedError
+    deadline = time.monotonic() + timeout_s
+
+    # Aim: TCP connect to the published port
+    while time.monotonic() < deadline:
+        try:
+            with socket.create_connection(("127.0.0.1", AIM_HOST_PORT), timeout=1.0):
+                break
+        except (OSError, socket.timeout):
+            time.sleep(0.5)
+    else:
+        raise TestbedStartupError(
+            f"aim server not accepting connections on port {AIM_HOST_PORT} within {timeout_s}s"
+        )
+
+    # Client: python -c 'print("ok")' returns cleanly
+    while time.monotonic() < deadline:
+        code, _, _ = exec_in(
+            handle, service="client", cmd=["python", "-c", "print('ok')"], check=False, timeout_s=5.0
+        )
+        if code == 0:
+            return
+        time.sleep(0.5)
+    raise TestbedStartupError(f"client container not ready within {timeout_s}s")
 
 
 def reset_repo(handle: TestbedHandle) -> None:
     """Purge the aim repo contents on disk without restarting containers.
 
-    Used between scenarios in a session-scope testbed to keep test
-    isolation without paying compose-restart cost per test. Aim server
-    reopens the repo lazily on next write.
-
-    Alternative pattern: tests use unique run hashes/experiment names
-    for isolation and never call this. Choose based on scenario needs.
+    Uses ``docker exec`` on the aim container to rm -rf and recreate the
+    repo directory. Aim server reopens the repo lazily on next write.
     """
-    raise NotImplementedError
+    subprocess.run(
+        [
+            "docker",
+            "exec",
+            handle.aim_container,
+            "sh",
+            "-c",
+            "rm -rf /var/lib/aim/* /var/lib/aim/.aim",
+        ],
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
 
 
 def logs(handle: TestbedHandle, service: str, tail: int = 200) -> str:
-    """Return the last ``tail`` lines of a service's container logs.
-
-    ``service`` is ``"aim-server"`` or ``"client"``. Used for
-    post-mortem when a scenario fails.
-    """
-    raise NotImplementedError
+    """Return the last ``tail`` lines of a service's container logs."""
+    result = subprocess.run(
+        [
+            "docker",
+            "compose",
+            "-f",
+            str(handle.compose_file),
+            "logs",
+            "--tail",
+            str(tail),
+            service,
+        ],
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    return result.stdout + result.stderr
 
 
 def exec_in(
@@ -139,7 +234,24 @@ def exec_in(
     ``check=True`` raises ``TestbedExecError`` on non-zero exit.
     Wraps ``docker compose exec``.
     """
-    raise NotImplementedError
+    args = ["docker", "compose", "-f", str(handle.compose_file), "exec", "-T"]
+    for key, value in (env or {}).items():
+        args.extend(["-e", f"{key}={value}"])
+    args.append(service)
+    args.extend(cmd)
+
+    result = subprocess.run(
+        args,
+        capture_output=True,
+        text=True,
+        timeout=timeout_s,
+    )
+    if check and result.returncode != 0:
+        raise TestbedExecError(
+            f"exec_in({service}, {cmd}) failed (exit={result.returncode})\n"
+            f"stdout:\n{result.stdout}\nstderr:\n{result.stderr}"
+        )
+    return result.returncode, result.stdout, result.stderr
 
 
 class TestbedStartupError(RuntimeError):
