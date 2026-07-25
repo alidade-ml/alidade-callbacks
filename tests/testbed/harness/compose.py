@@ -4,8 +4,8 @@ Two containers on a shared bridge network:
 
 * ``aim-server`` — runs ``aim server`` (simulates the NUC's Aim endpoint)
 * ``client`` — python env with the callback source bind-mounted from the
-  repo; pytest invokes mock training/eval scripts inside this container
-  via ``exec_in``. Simulates a compute host.
+  repo; pytest invokes the driver + eval-driver scripts inside this
+  container via ``exec_in``. Simulates a compute host.
 
 Bridge network gives real TCP between callback (client) and Aim (server) —
 one step closer to production than subprocess-on-loopback would give.
@@ -135,7 +135,7 @@ def exec_in(
     """Run ``cmd`` inside a service's container. Returns (exit, stdout, stderr).
 
     ``env`` merges into the container's env for this exec — used to
-    parameterize mock training/eval scripts via ``MOCK_*`` env vars.
+    parameterize the driver + eval-driver scripts via ``TESTBED_*`` env vars.
     ``check=True`` raises ``TestbedExecError`` on non-zero exit.
     Wraps ``docker compose exec``.
     """

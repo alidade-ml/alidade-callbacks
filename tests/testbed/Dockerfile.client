@@ -3,8 +3,9 @@
 # The callback source (src/) and testbed harness (tests/testbed/) are
 # bind-mounted at runtime by docker-compose, so any local edit to the
 # callback library is immediately visible to the client without a rebuild.
-# The install below pulls dev dependencies (pytest, frameworks) so mock
-# training scripts have what they need.
+# The install below pulls dev dependencies (pytest, framework extras)
+# so the driver scripts have what they need — including real Composer /
+# Lightning / HF Trainers for framework-mode integration tests.
 FROM python:3.12-slim
 
 WORKDIR /app

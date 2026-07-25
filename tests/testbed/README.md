@@ -35,8 +35,8 @@ tests/testbed/
 ├── harness/
 │   ├── compose.py          docker-compose lifecycle: up, down, exec_in, logs
 │   ├── assertions.py       Aim SDK query helpers, host-side reads
-│   ├── mock_training.py    env-var-driven emitter — runs INSIDE the client container
-│   └── mock_eval.py        eval-helper driver — runs INSIDE the client container
+│   ├── driver.py           dispatches by framework — raw uses AstrolabeRun directly, composer/lightning/hf run real tiny CPU training; runs INSIDE the client container
+│   └── eval_driver.py      exercises log_eval_table / start_eval_run / start_eval_run_from_checkpoint; runs INSIDE the client container
 └── scenarios/
     ├── test_core.py            _core.py — Logger, buffer, drainer, schema-finalize, tags, name, first_metric marker, hash fidelity
     ├── test_distributed.py     _distributed.py — rank gating

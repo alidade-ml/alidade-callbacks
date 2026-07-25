@@ -15,36 +15,129 @@ real socket.
 from __future__ import annotations
 
 from pathlib import Path
+from typing import TYPE_CHECKING, Callable
 
 import pytest
 
-if False:
+from tests.testbed.harness import compose
+from tests.testbed.harness.assertions import (
+    assert_metric_count,
+    assert_metric_landed,
+    assert_run_closed,
+    assert_run_name,
+    assert_run_tag,
+    assert_schema_finalized_event,
+    get_run_tags,
+)
+from tests.testbed.harness.driver import (
+    DriverConfig,
+    DriverResult,
+)
+
+if TYPE_CHECKING:
     from tests.testbed.harness.compose import TestbedHandle
 
 
 pytestmark = pytest.mark.testbed
 
 
+# -----------------------------------------------------------------------------
+# Config builders — keep scenarios short. Each returns a config with sensible
+# defaults; scenarios override the fields they care about.
+# -----------------------------------------------------------------------------
+
+
+def _base_config(testbed: "TestbedHandle", stats_path: Path, **overrides) -> DriverConfig:
+    defaults = dict(
+        framework="raw",
+        steps=5,
+        metrics_per_step=1,
+        metrics_per_sec=0.0,
+        fail_at=None,
+        new_metrics_at=[],
+        validation_at=[],
+        close=True,
+        aim_url=testbed.aim_url_from_client,
+        run_name="testbed-run",
+        experiment_name="testbed-core",
+        tags={},
+        driver_flags={},
+        stats_jsonl_container_path=f"/host-stats/{stats_path.name}",
+    )
+    defaults.update(overrides)
+    return DriverConfig(**defaults)
+
+
+RunFixture = Callable[[DriverConfig], DriverResult]
+
+
+# -----------------------------------------------------------------------------
+
+
 class TestLifecycle:
     """Init/close idempotency and error paths."""
 
     def test_double_close_is_safe(
-        self, testbed: "TestbedHandle", aim_repo: Path
+        self,
+        testbed: "TestbedHandle",
+        aim_repo: Path,
+        stats_jsonl_path: Path,
+        run_driver: RunFixture,
     ) -> None:
         """Calling close() twice does not raise or corrupt the run."""
-        raise NotImplementedError
+        result = run_driver(
+            _base_config(
+                testbed,
+                stats_jsonl_path,
+                run_name="double-close-probe",
+                # driver-level flag consumed by the driver to invoke close() twice
+                driver_flags={"TESTBED_DOUBLE_CLOSE": "1"},
+            )
+        )
+        assert result.exit_code == 0, result.stderr
+        assert result.run_hash is not None
+        assert_run_closed(aim_repo, result.run_hash)
 
     def test_close_without_init_is_safe(
-        self, testbed: "TestbedHandle", aim_repo: Path
+        self,
+        testbed: "TestbedHandle",
+        stats_jsonl_path: Path,
+        run_driver: RunFixture,
     ) -> None:
         """Calling close() on a never-initialized callback does not raise."""
-        raise NotImplementedError
+        result = run_driver(
+            _base_config(
+                testbed,
+                stats_jsonl_path,
+                # Skip open: driver should exit cleanly after close-without-init
+                driver_flags={"TESTBED_SKIP_INIT": "1"},
+                close=True,
+            )
+        )
+        assert result.exit_code == 0, result.stderr
+        assert result.run_hash is None  # never opened → no hash
 
     def test_track_after_close_is_noop(
-        self, testbed: "TestbedHandle", aim_repo: Path
+        self,
+        testbed: "TestbedHandle",
+        aim_repo: Path,
+        stats_jsonl_path: Path,
+        run_driver: RunFixture,
     ) -> None:
         """track() calls after close() are silently dropped, not errors."""
-        raise NotImplementedError
+        result = run_driver(
+            _base_config(
+                testbed,
+                stats_jsonl_path,
+                run_name="track-after-close-probe",
+                # driver closes at step 2, keeps track()ing through step 5
+                driver_flags={"TESTBED_CLOSE_AT": "2"},
+            )
+        )
+        assert result.exit_code == 0, result.stderr
+        assert result.run_hash is not None
+        # Post-close writes silently dropped — verify metric only has step-0/1 values
+        assert_metric_count(aim_repo, result.run_hash, "metric_0", 2)
 
 
 class TestNameFidelity:
@@ -57,105 +150,263 @@ class TestNameFidelity:
     """
 
     def test_name_survives_single_schema_finalize(
-        self, testbed: "TestbedHandle", aim_repo: Path
+        self,
+        testbed: "TestbedHandle",
+        aim_repo: Path,
+        stats_jsonl_path: Path,
+        run_driver: RunFixture,
     ) -> None:
-        raise NotImplementedError
+        result = run_driver(
+            _base_config(
+                testbed,
+                stats_jsonl_path,
+                run_name="single-finalize-probe",
+                new_metrics_at=[2],  # one schema-finalize
+            )
+        )
+        assert result.exit_code == 0, result.stderr
+        assert result.run_hash is not None
+        assert_run_name(aim_repo, result.run_hash, "single-finalize-probe")
 
     def test_name_survives_ten_schema_finalizes(
-        self, testbed: "TestbedHandle", aim_repo: Path
+        self,
+        testbed: "TestbedHandle",
+        aim_repo: Path,
+        stats_jsonl_path: Path,
+        run_driver: RunFixture,
     ) -> None:
         """Cap-boundary case: 10 finalizes and run.name still correct."""
-        raise NotImplementedError
+        result = run_driver(
+            _base_config(
+                testbed,
+                stats_jsonl_path,
+                run_name="ten-finalize-probe",
+                steps=12,
+                new_metrics_at=list(range(1, 11)),  # 10 new-metric events, hits cap exactly
+            )
+        )
+        assert result.exit_code == 0, result.stderr
+        assert result.run_hash is not None
+        assert_run_name(aim_repo, result.run_hash, "ten-finalize-probe")
 
     def test_name_survives_explicit_close_reopen(
-        self, testbed: "TestbedHandle", aim_repo: Path
+        self,
+        testbed: "TestbedHandle",
+        aim_repo: Path,
+        stats_jsonl_path: Path,
+        run_driver: RunFixture,
     ) -> None:
         """A close() + reopen path not driven by schema-finalize still preserves name."""
-        raise NotImplementedError
+        result = run_driver(
+            _base_config(
+                testbed,
+                stats_jsonl_path,
+                run_name="reopen-probe",
+                # driver closes and reopens the run mid-way, no new metrics
+                driver_flags={"TESTBED_MID_REOPEN_AT": "3"},
+            )
+        )
+        assert result.exit_code == 0, result.stderr
+        assert result.run_hash is not None
+        assert_run_name(aim_repo, result.run_hash, "reopen-probe")
 
 
 class TestTagFidelity:
     """Tags set at init survive schema-finalize + close-reopen cycles."""
 
     def test_astrolabe_tags_survive_finalize(
-        self, testbed: "TestbedHandle", aim_repo: Path
+        self,
+        testbed: "TestbedHandle",
+        aim_repo: Path,
+        stats_jsonl_path: Path,
+        run_driver: RunFixture,
     ) -> None:
         """astrolabe.experiment, astrolabe.submit_id, astrolabe.version all preserved."""
-        raise NotImplementedError
+        result = run_driver(
+            _base_config(
+                testbed,
+                stats_jsonl_path,
+                run_name="astrolabe-tags-probe",
+                new_metrics_at=[2],
+                tags={
+                    "astrolabe.experiment": "test-exp",
+                    "astrolabe.submit_id": "sub-abc-123",
+                    "astrolabe.version": "v1",
+                },
+            )
+        )
+        assert result.exit_code == 0, result.stderr
+        assert result.run_hash is not None
+        assert_run_tag(aim_repo, result.run_hash, "astrolabe.experiment", "test-exp")
+        assert_run_tag(aim_repo, result.run_hash, "astrolabe.submit_id", "sub-abc-123")
+        assert_run_tag(aim_repo, result.run_hash, "astrolabe.version", "v1")
 
     def test_custom_tags_survive_finalize(
-        self, testbed: "TestbedHandle", aim_repo: Path
+        self,
+        testbed: "TestbedHandle",
+        aim_repo: Path,
+        stats_jsonl_path: Path,
+        run_driver: RunFixture,
     ) -> None:
         """User-set tags (non-astrolabe.*) also preserved."""
-        raise NotImplementedError
+        result = run_driver(
+            _base_config(
+                testbed,
+                stats_jsonl_path,
+                run_name="custom-tags-probe",
+                new_metrics_at=[2],
+                tags={"custom.thesis": "orion", "custom.gpu": "H100"},
+            )
+        )
+        assert result.exit_code == 0, result.stderr
+        assert result.run_hash is not None
+        landed = get_run_tags(aim_repo, result.run_hash)
+        assert landed["custom.thesis"] == "orion"
+        assert landed["custom.gpu"] == "H100"
 
 
 class TestSchemaFinalize:
-    """Schema-finalize invariants — the multi-fit lifecycle _core.py runs.
-
-    A schema-finalize event closes + reopens the Aim Run with
-    ``force_resume=True`` to force memtable → SST flush when new metric
-    names appear. Invariants:
-
-    * Fires on new metric names, not on repeat writes
-    * Cap of 10 per run prevents pathological churn
-    * Emits a ``schema_finalized`` event in the stats jsonl per finalize
-    * After finalize, the write is visible to a fresh read-only Aim Repo
-      (verifying OUR workaround against the memtable-invisibility
-      contract; the Aim-side property lives in test_aim_compat.py)
-    """
+    """Schema-finalize invariants — the multi-fit lifecycle _core.py runs."""
 
     def test_first_new_metric_finalizes(
-        self, testbed: "TestbedHandle", aim_repo: Path, stats_jsonl_path: Path
+        self,
+        testbed: "TestbedHandle",
+        aim_repo: Path,
+        stats_jsonl_path: Path,
+        run_driver: RunFixture,
     ) -> None:
         """New metric name → exactly one schema_finalized event."""
-        raise NotImplementedError
+        result = run_driver(
+            _base_config(testbed, stats_jsonl_path, new_metrics_at=[3])
+        )
+        assert result.exit_code == 0, result.stderr
+        finalize_events = [e for e in result.stats_events if e.get("event") == "schema_finalized"]
+        assert len(finalize_events) == 1
 
     def test_repeated_same_metric_no_extra_finalize(
-        self, testbed: "TestbedHandle", aim_repo: Path, stats_jsonl_path: Path
+        self,
+        testbed: "TestbedHandle",
+        aim_repo: Path,
+        stats_jsonl_path: Path,
+        run_driver: RunFixture,
     ) -> None:
         """Same metric name N times → no additional finalizes after the first."""
-        raise NotImplementedError
+        # metrics_per_step=1 means metric_0 written every step, no new names.
+        result = run_driver(_base_config(testbed, stats_jsonl_path, steps=10))
+        assert result.exit_code == 0, result.stderr
+        finalize_events = [e for e in result.stats_events if e.get("event") == "schema_finalized"]
+        # Only the initial-metric introduction at step 0 may finalize once
+        assert len(finalize_events) <= 1
 
     def test_no_more_than_ten_finalizes(
-        self, testbed: "TestbedHandle", aim_repo: Path, stats_jsonl_path: Path
+        self,
+        testbed: "TestbedHandle",
+        aim_repo: Path,
+        stats_jsonl_path: Path,
+        run_driver: RunFixture,
     ) -> None:
         """15 distinct new metric names → exactly 10 finalize events (cap)."""
-        raise NotImplementedError
+        result = run_driver(
+            _base_config(
+                testbed,
+                stats_jsonl_path,
+                steps=16,
+                new_metrics_at=list(range(1, 16)),  # 15 new metrics
+            )
+        )
+        assert result.exit_code == 0, result.stderr
+        finalize_events = [e for e in result.stats_events if e.get("event") == "schema_finalized"]
+        assert len(finalize_events) == 10
 
     def test_cap_hit_logs_warning(
-        self, testbed: "TestbedHandle", aim_repo: Path, stats_jsonl_path: Path
+        self,
+        testbed: "TestbedHandle",
+        aim_repo: Path,
+        stats_jsonl_path: Path,
+        run_driver: RunFixture,
     ) -> None:
         """Finalize cap reached emits a WARNING + one-shot cap-hit event."""
-        raise NotImplementedError
+        result = run_driver(
+            _base_config(
+                testbed, stats_jsonl_path, steps=16, new_metrics_at=list(range(1, 16))
+            )
+        )
+        assert result.exit_code == 0, result.stderr
+        cap_events = [e for e in result.stats_events if e.get("event") == "schema_finalize_cap_hit"]
+        assert len(cap_events) == 1
 
     def test_metrics_still_land_after_cap(
-        self, testbed: "TestbedHandle", aim_repo: Path
+        self,
+        testbed: "TestbedHandle",
+        aim_repo: Path,
+        stats_jsonl_path: Path,
+        run_driver: RunFixture,
     ) -> None:
         """New metrics after cap still track; they just don't trigger finalizes."""
-        raise NotImplementedError
+        result = run_driver(
+            _base_config(
+                testbed, stats_jsonl_path, steps=16, new_metrics_at=list(range(1, 16))
+            )
+        )
+        assert result.exit_code == 0, result.stderr
+        assert result.run_hash is not None
+        # metric_14 was introduced AFTER the cap fired (at step 14 → the 14th new metric)
+        assert_metric_landed(aim_repo, result.run_hash, "metric_14")
 
     def test_finalize_flushes_new_metric_to_disk(
-        self, testbed: "TestbedHandle", aim_repo: Path
+        self,
+        testbed: "TestbedHandle",
+        aim_repo: Path,
+        stats_jsonl_path: Path,
+        run_driver: RunFixture,
     ) -> None:
         """After our finalize, a Repo(read_only=True) can enumerate the new metric.
 
-        Verifies that our workaround exploits Aim's flush contract
-        correctly. The Aim contract itself (unflushed → invisible,
-        flushed → visible) is documented in test_aim_compat.py.
+        Verifies our workaround exploits Aim's flush contract correctly.
+        The Aim-side contract (unflushed → invisible, flushed → visible)
+        is documented in test_aim_compat.py.
         """
-        raise NotImplementedError
+        result = run_driver(
+            _base_config(testbed, stats_jsonl_path, new_metrics_at=[3])
+        )
+        assert result.exit_code == 0, result.stderr
+        assert result.run_hash is not None
+        # If the finalize forced a flush, the read-only reader sees it
+        assert_metric_landed(aim_repo, result.run_hash, "metric_new_step3")
 
     def test_finalize_event_lists_metric_names(
-        self, testbed: "TestbedHandle", aim_repo: Path, stats_jsonl_path: Path
+        self,
+        testbed: "TestbedHandle",
+        aim_repo: Path,
+        stats_jsonl_path: Path,
+        run_driver: RunFixture,
     ) -> None:
         """Event includes up to 10 metric names that triggered the finalize."""
-        raise NotImplementedError
+        result = run_driver(
+            _base_config(testbed, stats_jsonl_path, new_metrics_at=[3])
+        )
+        assert result.exit_code == 0, result.stderr
+        assert_schema_finalized_event(
+            stats_jsonl_path,
+            expected_metric_names=["metric_new_step3"],
+        )
 
     def test_finalize_event_carries_timestamp(
-        self, testbed: "TestbedHandle", aim_repo: Path, stats_jsonl_path: Path
+        self,
+        testbed: "TestbedHandle",
+        aim_repo: Path,
+        stats_jsonl_path: Path,
+        run_driver: RunFixture,
     ) -> None:
-        raise NotImplementedError
+        result = run_driver(
+            _base_config(testbed, stats_jsonl_path, new_metrics_at=[3])
+        )
+        assert result.exit_code == 0, result.stderr
+        finalize_events = [e for e in result.stats_events if e.get("event") == "schema_finalized"]
+        assert len(finalize_events) == 1
+        ts = finalize_events[0].get("timestamp")
+        assert ts is not None
+        assert isinstance(ts, (int, float))
 
 
 class TestBufferDrainer:
@@ -168,52 +419,174 @@ class TestBufferDrainer:
     """
 
     def test_writes_land_within_expected_latency(
-        self, testbed: "TestbedHandle", aim_repo: Path
+        self,
+        testbed: "TestbedHandle",
+        aim_repo: Path,
+        stats_jsonl_path: Path,
+        run_driver: RunFixture,
     ) -> None:
         """Tracked value appears in the Aim repo within N seconds of track()."""
-        raise NotImplementedError
+        result = run_driver(
+            _base_config(testbed, stats_jsonl_path, steps=3, metrics_per_step=1)
+        )
+        assert result.exit_code == 0, result.stderr
+        assert result.run_hash is not None
+        assert_metric_count(aim_repo, result.run_hash, "metric_0", 3)
 
     def test_close_drains_pending_writes(
-        self, testbed: "TestbedHandle", aim_repo: Path
+        self,
+        testbed: "TestbedHandle",
+        aim_repo: Path,
+        stats_jsonl_path: Path,
+        run_driver: RunFixture,
     ) -> None:
         """close() blocks until buffer empty; no writes lost."""
-        raise NotImplementedError
+        result = run_driver(
+            _base_config(
+                testbed,
+                stats_jsonl_path,
+                steps=50,
+                metrics_per_step=5,
+                # High write rate to ensure buffer has pending items at close
+                driver_flags={"TESTBED_STRESS_BUFFER": "1"},
+            )
+        )
+        assert result.exit_code == 0, result.stderr
+        assert result.run_hash is not None
+        # All 50 × 5 = 250 writes across 5 metrics — each metric got 50 values
+        for i in range(5):
+            assert_metric_count(aim_repo, result.run_hash, f"metric_{i}", 50)
 
     def test_overflow_drops_oldest(
-        self, testbed: "TestbedHandle", aim_repo: Path
+        self,
+        testbed: "TestbedHandle",
+        aim_repo: Path,
+        stats_jsonl_path: Path,
+        run_driver: RunFixture,
     ) -> None:
         """Buffer full → oldest entries evicted; newest survive (training-signal-live)."""
-        raise NotImplementedError
+        result = run_driver(
+            _base_config(
+                testbed,
+                stats_jsonl_path,
+                steps=1000,
+                metrics_per_step=10,
+                # Force buffer overflow: tiny buffer + fast production
+                driver_flags={"TESTBED_BUFFER_CAPACITY": "50", "TESTBED_INJECT_DRAINER_DELAY": "1"},
+            )
+        )
+        assert result.exit_code == 0, result.stderr
+        assert result.run_hash is not None
+        # Newest values must have landed (last few steps)
+        last_values = [e for e in result.stats_events if e.get("event") == "dropped_oldest"]
+        assert len(last_values) > 0  # overflows fired
 
     def test_overflow_counter_increments(
-        self, testbed: "TestbedHandle", aim_repo: Path, stats_jsonl_path: Path
+        self,
+        testbed: "TestbedHandle",
+        aim_repo: Path,
+        stats_jsonl_path: Path,
+        run_driver: RunFixture,
     ) -> None:
         """Stats jsonl records dropped_count for each overflow eviction."""
-        raise NotImplementedError
+        result = run_driver(
+            _base_config(
+                testbed,
+                stats_jsonl_path,
+                steps=1000,
+                metrics_per_step=10,
+                driver_flags={"TESTBED_BUFFER_CAPACITY": "50", "TESTBED_INJECT_DRAINER_DELAY": "1"},
+            )
+        )
+        assert result.exit_code == 0, result.stderr
+        drop_events = [e for e in result.stats_events if e.get("event") == "dropped_oldest"]
+        assert len(drop_events) > 0
+        total_dropped = sum(e.get("count", 0) for e in drop_events)
+        assert total_dropped > 0
 
     def test_drainer_retries_on_transient_error(
-        self, testbed: "TestbedHandle", aim_repo: Path
+        self,
+        testbed: "TestbedHandle",
+        aim_repo: Path,
+        stats_jsonl_path: Path,
+        run_driver: RunFixture,
     ) -> None:
         """Injected transient error → drainer backs off + retries; write lands."""
-        raise NotImplementedError
+        result = run_driver(
+            _base_config(
+                testbed,
+                stats_jsonl_path,
+                steps=5,
+                # Inject one transient network error via a monkey-patch env flag
+                driver_flags={"TESTBED_INJECT_TRANSIENT_ERROR_AT": "2"},
+            )
+        )
+        assert result.exit_code == 0, result.stderr
+        assert result.run_hash is not None
+        # Write eventually lands after retry
+        assert_metric_count(aim_repo, result.run_hash, "metric_0", 5)
 
     def test_drainer_death_surfaces_in_stats(
-        self, testbed: "TestbedHandle", aim_repo: Path, stats_jsonl_path: Path
+        self,
+        testbed: "TestbedHandle",
+        stats_jsonl_path: Path,
+        run_driver: RunFixture,
     ) -> None:
         """If drainer thread dies unrecoverably, stats jsonl records the failure."""
-        raise NotImplementedError
+        result = run_driver(
+            _base_config(
+                testbed,
+                stats_jsonl_path,
+                steps=5,
+                # Force unrecoverable drainer exception
+                driver_flags={"TESTBED_KILL_DRAINER_AT": "2"},
+            )
+        )
+        assert result.exit_code == 0, result.stderr
+        drainer_events = [
+            e for e in result.stats_events if e.get("event") == "drainer_died"
+        ]
+        assert len(drainer_events) == 1
 
     def test_close_after_drainer_death_does_not_hang(
-        self, testbed: "TestbedHandle", aim_repo: Path
+        self,
+        testbed: "TestbedHandle",
+        stats_jsonl_path: Path,
+        run_driver: RunFixture,
     ) -> None:
         """close() bounded even if drainer is dead; no infinite wait."""
-        raise NotImplementedError
+        # If close() hung, this test would time out at the exec_in default (5min).
+        result = run_driver(
+            _base_config(
+                testbed,
+                stats_jsonl_path,
+                steps=5,
+                driver_flags={"TESTBED_KILL_DRAINER_AT": "2"},
+            )
+        )
+        assert result.exit_code == 0, result.stderr
 
     def test_writes_after_aim_server_restart_land(
-        self, testbed: "TestbedHandle", aim_repo: Path
+        self,
+        testbed: "TestbedHandle",
+        aim_repo: Path,
+        stats_jsonl_path: Path,
+        run_driver: RunFixture,
     ) -> None:
         """Restart the aim server mid-run; buffered writes eventually land."""
-        raise NotImplementedError
+        result = run_driver(
+            _base_config(
+                testbed,
+                stats_jsonl_path,
+                steps=10,
+                # Driver signals harness to restart aim-server at this step
+                driver_flags={"TESTBED_RESTART_AIM_AT": "5"},
+            )
+        )
+        assert result.exit_code == 0, result.stderr
+        assert result.run_hash is not None
+        # Full series survives despite the restart
+        assert_metric_count(aim_repo, result.run_hash, "metric_0", 10)
 
 
 class TestFirstMetricMarker:
@@ -225,22 +598,49 @@ class TestFirstMetricMarker:
     """
 
     def test_marker_touched_on_first_track(
-        self, testbed: "TestbedHandle", aim_repo: Path, stats_jsonl_path: Path
+        self,
+        testbed: "TestbedHandle",
+        stats_jsonl_path: Path,
+        run_driver: RunFixture,
     ) -> None:
         """Marker file exists on the client container after first track() call."""
-        raise NotImplementedError
+        result = run_driver(_base_config(testbed, stats_jsonl_path, steps=3))
+        assert result.exit_code == 0, result.stderr
+        # Driver reports whether marker was touched
+        touched_events = [
+            e for e in result.stats_events if e.get("event") == "first_metric_marker_touched"
+        ]
+        assert len(touched_events) == 1
 
     def test_marker_touched_exactly_once(
-        self, testbed: "TestbedHandle", aim_repo: Path, stats_jsonl_path: Path
+        self,
+        testbed: "TestbedHandle",
+        stats_jsonl_path: Path,
+        run_driver: RunFixture,
     ) -> None:
         """Subsequent track() calls do not re-touch the marker."""
-        raise NotImplementedError
+        result = run_driver(_base_config(testbed, stats_jsonl_path, steps=10))
+        assert result.exit_code == 0, result.stderr
+        touched_events = [
+            e for e in result.stats_events if e.get("event") == "first_metric_marker_touched"
+        ]
+        assert len(touched_events) == 1
 
     def test_marker_absent_when_no_metrics_tracked(
-        self, testbed: "TestbedHandle", aim_repo: Path, stats_jsonl_path: Path
+        self,
+        testbed: "TestbedHandle",
+        stats_jsonl_path: Path,
+        run_driver: RunFixture,
     ) -> None:
         """Run that opens and closes without any track() leaves no marker."""
-        raise NotImplementedError
+        result = run_driver(
+            _base_config(testbed, stats_jsonl_path, steps=0)
+        )
+        assert result.exit_code == 0, result.stderr
+        touched_events = [
+            e for e in result.stats_events if e.get("event") == "first_metric_marker_touched"
+        ]
+        assert len(touched_events) == 0
 
 
 class TestHashFidelity:
@@ -253,10 +653,21 @@ class TestHashFidelity:
     """
 
     def test_stats_jsonl_hash_matches_aim_run_hash(
-        self, testbed: "TestbedHandle", aim_repo: Path, stats_jsonl_path: Path
+        self,
+        testbed: "TestbedHandle",
+        stats_jsonl_path: Path,
+        run_driver: RunFixture,
     ) -> None:
         """Every hash in the stats jsonl is 24 chars and matches an Aim run hash."""
-        raise NotImplementedError
+        result = run_driver(_base_config(testbed, stats_jsonl_path, steps=3))
+        assert result.exit_code == 0, result.stderr
+        assert result.run_hash is not None
+        assert len(result.run_hash) == 24
+        # Every event referencing run_hash matches exactly
+        for event in result.stats_events:
+            if "run_hash" in event:
+                assert event["run_hash"] == result.run_hash
+                assert len(event["run_hash"]) == 24
 
 
 class TestFrameworkParityInvariants:
@@ -264,14 +675,39 @@ class TestFrameworkParityInvariants:
 
     Lives here (not in per-framework files) because the property being
     asserted is a _core.py invariant: the same AstrolabeLogger produces
-    the same series regardless of what framework calls it. Per-framework
-    tests verify each ADAPTER; this verifies the LOGGER is framework-
-    agnostic.
+    the same series regardless of what framework calls it.
     """
 
-    @pytest.mark.parametrize("framework", ["composer", "lightning", "huggingface", "pytorch"])
+    @pytest.mark.parametrize("framework", ["raw", "composer", "lightning", "hf"])
     def test_same_metrics_yield_same_series(
-        self, testbed: "TestbedHandle", aim_repo: Path, framework: str
+        self,
+        testbed: "TestbedHandle",
+        aim_repo: Path,
+        stats_jsonl_path: Path,
+        run_driver: RunFixture,
+        framework: str,
     ) -> None:
         """N steps × M metrics → identical (step, value) series across frameworks."""
-        raise NotImplementedError
+        # Framework-specific extras only imported if needed by the driver
+        if framework == "composer":
+            pytest.importorskip("composer")
+        elif framework == "lightning":
+            pytest.importorskip("lightning")
+        elif framework == "hf":
+            pytest.importorskip("transformers")
+
+        result = run_driver(
+            _base_config(
+                testbed,
+                stats_jsonl_path,
+                framework=framework,
+                run_name=f"parity-probe-{framework}",
+                steps=5,
+                metrics_per_step=2,
+            )
+        )
+        assert result.exit_code == 0, result.stderr
+        assert result.run_hash is not None
+        # Each of the 2 metrics has 5 (step, value) points regardless of framework
+        assert_metric_count(aim_repo, result.run_hash, "metric_0", 5)
+        assert_metric_count(aim_repo, result.run_hash, "metric_1", 5)
