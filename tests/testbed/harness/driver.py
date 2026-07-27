@@ -219,9 +219,11 @@ def _run_raw(config: DriverConfig) -> str | None:
     if not is_rank_zero():
         return None
 
-    # Optional context-manager path
+    # Optional context-manager path. Hash captured OUTSIDE the with so it
+    # survives an exception firing inside the block.
     use_ctx = config.driver_flags.get("TESTBED_USE_CONTEXT_MANAGER") == "1"
     if use_ctx:
+        captured_hash: str | None = None
         try:
             with AstrolabeRun(
                 aim_url=config.aim_url,
@@ -229,13 +231,15 @@ def _run_raw(config: DriverConfig) -> str | None:
                 tags=config.tags,
                 run_name=config.run_name,
             ) as run:
-                run_hash = run._run.hash if run._run is not None else None
-                _drive_raw_body(config, run, run_hash)
-            return run_hash
+                captured_hash = run._run.hash if run._run is not None else None
+                # Emit the hash BEFORE the body — so it lands in stdout
+                # even if _drive_raw_body raises SimulatedFailure.
+                if captured_hash:
+                    print(f"ASTROLABE_RUN_HASH={captured_hash}", flush=True)
+                _drive_raw_body(config, run, captured_hash)
+            return captured_hash
         except SimulatedFailure:
-            raise
-        except Exception as e:
-            # Re-raise so exit code reflects real vs simulated failure
+            # Re-raise; main() catches to emit exit code 42
             raise
 
     # Standard open/close path
@@ -486,13 +490,25 @@ def _int_flag(config: DriverConfig, key: str) -> int | None:
 def main() -> None:
     """Entry point for subprocess invocation."""
     config = DriverConfig.from_env()
+
+    # Ensure the stats jsonl directory exists inside the container so
+    # the callback library can append to it. Without this, callback
+    # writes to a missing dir and silently drops stats events.
+    from pathlib import Path
+
+    stats_path = Path(config.stats_jsonl_container_path)
+    stats_path.parent.mkdir(parents=True, exist_ok=True)
+
     try:
         run_hash = run_driver(config)
     except SimulatedFailure:
         # Sentinel exit code so scenarios distinguish expected vs unexpected failure
         raise SystemExit(42)
 
-    if run_hash:
+    # The ctx-manager path prints the hash inside the with-block so
+    # exception scenarios still get it. For the normal path, print
+    # here.
+    if run_hash and not config.driver_flags.get("TESTBED_USE_CONTEXT_MANAGER") == "1":
         print(f"ASTROLABE_RUN_HASH={run_hash}")
 
 

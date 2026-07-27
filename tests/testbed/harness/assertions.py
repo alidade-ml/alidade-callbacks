@@ -1,17 +1,29 @@
 """Assertion helpers for testbed scenarios.
 
-Every helper opens the Aim repo read-only, queries for the expected
-condition, and raises AssertionError with a diagnostic message on
-mismatch. Helpers do NOT clean up the repo — teardown is the fixture's
-job.
+Every helper opens the Aim repo, indexes the target run so its writes
+are visible (this is the read-visibility step astrolabe's sync sidecar
+performs), then queries for the expected condition. Raises
+AssertionError with a diagnostic on mismatch. Helpers do NOT clean up
+the repo — teardown is the fixture's job.
 
-The read side uses ``aim.Repo(path, read_only=True)`` against the on-disk
-repo the aim server is writing to. Scenarios that need to verify what
-actually landed (memtable-flushed vs. buffered) use these helpers rather
-than the aim server's HTTP surface.
+Read-visibility discipline (learned during Stage 3 debug):
+
+The aim server accepts writes via its tracking API and stores them
+under ``seqs/chunks/<run_hash>/`` on disk. Those writes are NOT
+visible to a fresh ``Repo.get_run(hash).metrics()`` call by default —
+the meta index (``meta/index/``, ``run_metadata.sqlite``) must be
+populated first. Astrolabe's ``sync.py`` does this via:
+
+    repo.request_props(run_hash, read_only=False, created_at=...)
+    RepoIndexManager.get_index_manager(repo).index(run_hash)
+
+Every helper here that queries by hash calls ``_index_run()`` first.
+The call is idempotent — after the first call for a hash it's near
+no-op.
 """
 from __future__ import annotations
 
+import datetime
 import json
 from pathlib import Path
 from typing import Any
@@ -31,30 +43,43 @@ __all__ = [
 
 
 def _open_repo(repo_path: Path) -> Any:
-    """Open an Aim client against the running aim server on localhost.
+    """Open the on-disk Aim repo at the bind-mounted host path.
 
-    The bind-mounted ``repo_path`` on the host is where the aim server
-    ultimately writes, but the server buffers between commits and the
-    on-disk state lags real writes by seconds. Reading directly from
-    the path shows "0 metrics" for scenarios whose writes are still
-    server-buffered.
-
-    Instead, query THROUGH the server via the published localhost port
-    (``aim://localhost:43810``). The server returns its authoritative
-    view including in-flight buffers. This is what a real dashboard
-    would do to see live state.
-
-    ``repo_path`` is retained in the signature (rather than the URL)
-    because it's the natural identifier the fixture already tracks;
-    the mapping to the localhost URL is fixed by our compose config.
+    Reads from the same directory the aim server writes to via bind
+    mount. Indexing (``_index_run``) is required before writes become
+    visible — see module docstring.
     """
     import aim
 
-    return aim.Repo("aim://localhost:43810")
+    return aim.Repo(str(repo_path))
+
+
+def _index_run(repo: Any, run_hash: str) -> None:
+    """Populate the meta index for ``run_hash`` so its writes are visible.
+
+    Mirrors astrolabe's sync sidecar sequence. Idempotent — after the
+    first call for a hash, subsequent calls are near no-op.
+    """
+    from aim.sdk.index_manager import RepoIndexManager
+
+    try:
+        repo.request_props(
+            run_hash,
+            read_only=False,
+            created_at=datetime.datetime.now(datetime.UTC),
+        )
+    except Exception:
+        # "already exists" is the common case — harmless
+        pass
+    try:
+        RepoIndexManager.get_index_manager(repo).index(run_hash)
+    except Exception:
+        pass
 
 
 def _get_run(repo_path: Path, run_hash: str) -> Any:
     repo = _open_repo(repo_path)
+    _index_run(repo, run_hash)
     run = repo.get_run(run_hash)
     if run is None:
         raise AssertionError(f"run {run_hash!r} not found in {repo_path}")
@@ -201,20 +226,26 @@ def get_metric_series(
     Returns [] if the metric doesn't exist on the run (rather than
     raising) — that shape is what memtable-invisibility scenarios rely
     on to distinguish "not-yet-flushed" from "hard error."
+
+    Uses the metric's dataframe to extract steps + values — the
+    ``.steps`` / ``.values`` TreeArrayView attributes on Aim's
+    ``SequenceV2Data`` don't survive ``list()`` reliably; the dataframe
+    is the tested read path.
     """
     repo = _open_repo(repo_path)
+    _index_run(repo, run_hash)
     run = repo.get_run(run_hash)
     if run is None:
         return []
-    try:
-        metric = run.get_metric(metric_name, context={})
-    except (KeyError, ValueError):
-        return []
+    metric = None
+    for seq in run.metrics():
+        if seq.name == metric_name:
+            metric = seq
+            break
     if metric is None:
         return []
-    steps = list(metric.steps)
-    values = list(metric.values)
-    return list(zip(steps, values))
+    df = metric.dataframe()
+    return [(int(row.step), float(row.value)) for row in df.itertuples()]
 
 
 def _read_stats(stats_jsonl_path: Path) -> list[dict]:
