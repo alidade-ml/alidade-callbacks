@@ -172,13 +172,48 @@ def run_driver(config: DriverConfig) -> str | None:
     _seed_all(int(os.environ.get("TESTBED_SEED", "0")))
     if config.framework == "raw":
         return _run_raw(config)
+
+    # Framework paths: the callback library nulls its ``_run`` on close and
+    # doesn't emit run_hash in normal stats events, so we can't read the
+    # hash off the logger after trainer.fit() returns. Instead we query
+    # the aim server for the run by name (scenarios set unique names).
     if config.framework == "composer":
-        return _run_composer(config)
-    if config.framework == "lightning":
-        return _run_lightning(config)
-    if config.framework == "hf":
-        return _run_hf(config)
-    raise SystemExit(f"unknown framework: {config.framework}")
+        _run_composer(config)
+    elif config.framework == "lightning":
+        _run_lightning(config)
+    elif config.framework == "hf":
+        _run_hf(config)
+    else:
+        raise SystemExit(f"unknown framework: {config.framework}")
+    return _find_recent_framework_run(config.aim_url, config.experiment_name, config.run_name)
+
+
+def _find_recent_framework_run(aim_url: str, experiment_name: str, run_name: str) -> str | None:
+    """Query the aim server for the most recently created run in ``experiment_name``.
+
+    Framework loggers null their ``_run`` reference on close, so we can't
+    read the hash from the logger object. Prefer name-match if a run with
+    ``run_name`` exists (Lightning/HF accept run_name); fall back to the
+    most recent run in the experiment (Composer's callback doesn't accept
+    run_name so the aim run gets a random default name).
+    """
+    try:
+        import aim
+
+        repo = aim.Repo(aim_url)
+        candidates = []
+        for run_hash in repo.list_all_runs():
+            run = aim.Run(run_hash, repo=aim_url, read_only=True)
+            if run.name == run_name:
+                return run_hash
+            if run.experiment == experiment_name:
+                candidates.append((run.creation_time, run_hash))
+        if candidates:
+            candidates.sort(reverse=True)
+            return candidates[0][1]
+    except Exception:
+        pass
+    return None
 
 
 def _seed_all(seed: int) -> None:
@@ -369,8 +404,9 @@ def _run_composer(config: DriverConfig) -> str | None:
         trainer.fit()
     except SimulatedFailure:
         raise
-    # Composer closes loggers on trainer teardown; log_train hash extraction:
-    return getattr(logger, "_run", None) and logger._run.hash
+    # Composer nulls logger._run on close — hash comes from stats jsonl
+    # (see _extract_hash_from_stats).
+    return None
 
 
 # ---------------------------------------------------------------------------
@@ -420,7 +456,8 @@ def _run_lightning(config: DriverConfig) -> str | None:
         logger=False,
     )
     trainer.fit(TinyLightning(), train_dataloaders=loader)
-    return getattr(logger, "_run", None) and logger._run.hash
+    # Lightning nulls logger._run on close — hash comes from stats jsonl.
+    return None
 
 
 # ---------------------------------------------------------------------------
@@ -471,11 +508,12 @@ def _run_hf(config: DriverConfig) -> str | None:
         logging_steps=1,
         disable_tqdm=True,
         report_to=[],
-        no_cuda=True,
+        use_cpu=True,
     )
     trainer = Trainer(model=ToyModel(), args=args, train_dataset=ToyDataset(config.steps), callbacks=[cb])
     trainer.train()
-    return getattr(cb, "_run", None) and cb._run.hash
+    # HF nulls cb._run on close — hash comes from stats jsonl.
+    return None
 
 
 # ---------------------------------------------------------------------------

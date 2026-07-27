@@ -95,16 +95,14 @@ def up(compose_file: Path, aim_repo_host_path: Path, timeout_s: float = 60.0) ->
     env = os.environ.copy()
     env["AIM_REPO_HOST_PATH"] = str(aim_repo_host_path)
 
+    # Fast-iteration knob: TESTBED_KEEP=1 skips --build (assumes images
+    # already exist) so subsequent pytest runs reuse the running stack.
+    up_args = ["docker", "compose", "-f", str(compose_file), "up", "-d"]
+    if os.environ.get("TESTBED_KEEP") != "1":
+        up_args.append("--build")
+
     result = subprocess.run(
-        [
-            "docker",
-            "compose",
-            "-f",
-            str(compose_file),
-            "up",
-            "-d",
-            "--build",
-        ],
+        up_args,
         env=env,
         capture_output=True,
         text=True,

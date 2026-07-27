@@ -55,13 +55,34 @@ _EVAL_LINKED_RE = re.compile(r"ASTROLABE_EVAL_LINKED=(true|false)")
 
 @pytest.fixture(scope="session")
 def testbed(tmp_path_factory: pytest.TempPathFactory) -> Generator[TestbedHandle, None, None]:
-    """Session-scope docker-compose testbed."""
-    aim_repo_dir = tmp_path_factory.mktemp("aim-repo")
+    """Session-scope docker-compose testbed.
+
+    Fast-iteration knob: ``TESTBED_KEEP=1`` skips teardown so subsequent
+    pytest invocations reuse the running stack. Combined with
+    ``compose.up`` also skipping ``--build`` when this flag is set,
+    typical iteration drops from ~60s per pytest run to ~5-15s.
+
+    Repo dir: when ``TESTBED_KEEP=1``, pins to a stable location so
+    successive runs share the same repo; scenarios stay isolated by
+    unique run_name / experiment_name / stats_jsonl_path. Otherwise
+    mints a fresh tmp dir per session (default).
+    """
+    import os as _os
+
+    if _os.environ.get("TESTBED_KEEP") == "1":
+        # Stable repo path across invocations. Scenarios isolate via
+        # unique run identifiers, not repo state.
+        aim_repo_dir = Path("/tmp/testbed-aim-repo-persistent")
+        aim_repo_dir.mkdir(exist_ok=True)
+    else:
+        aim_repo_dir = tmp_path_factory.mktemp("aim-repo")
+
     handle = compose.up(COMPOSE_FILE, aim_repo_dir)
     try:
         yield handle
     finally:
-        compose.down(handle)
+        if _os.environ.get("TESTBED_KEEP") != "1":
+            compose.down(handle)
 
 
 @pytest.fixture
