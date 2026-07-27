@@ -43,19 +43,25 @@ dependencies = [
 [project.optional-dependencies]
 composer = ["mosaicml>=0.20"]
 lightning = ["lightning>=2.0"]
-hf = ["transformers>=4.30"]
+# transformers>=4.42 requires accelerate for the PyTorch Trainer
+# backend. Anyone instantiating a Trainer with our AstrolabeHFTrainerCallback
+# hits ImportError without it; testbed caught the gap
+# (tests/testbed/RED_FLAGS.md — 2026-07-27).
+hf = ["transformers>=4.30", "accelerate>=1.1.0"]
 # `all` is the convenience extra for users who don't want to think
 # about which framework they need. Most users should pick a single one.
 all = [
     "mosaicml>=0.20",
     "lightning>=2.0",
     "transformers>=4.30",
+    "accelerate>=1.1.0",
 ]
 dev = [
     "pytest>=7.0",
     "mosaicml>=0.20",
     "lightning>=2.0",
     "transformers>=4.30",
+    "accelerate>=1.1.0",
     # pandas is needed on the host running pytest — the testbed's
     # assertion helpers pull metric values via aim's ``.dataframe()``,
     # which returns a pandas DataFrame and imports pandas at call time.

@@ -93,7 +93,6 @@ class TestValidation:
         assert_metric_count(aim_repo, result.run_hash, "val/loss", 2)
 
 
-@pytest.mark.skip(reason="RED FLAG: [hf] extra doesn't pull accelerate — HF Trainer fails to instantiate. See tests/testbed/RED_FLAGS.md.")
 class TestTeardown:
     """HF's on_train_end hook cleanly finalizes the Aim run."""
 

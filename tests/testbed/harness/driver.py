@@ -300,12 +300,51 @@ def _apply_fault_injection(config: DriverConfig, run) -> None:
 
         _aim.Run.track = _slow_class_track
 
-    # NB: TESTBED_KILL_DRAINER_AT / TESTBED_INJECT_TRANSIENT_ERROR_AT are
-    # not implementable via ``aim.Run.track`` monkey-patching — Aim's
-    # ``@noexcept`` decorator swallows every exception before the callback
-    # library's retry loop or the drainer's outer handler sees it. See
-    # RED_FLAGS.md for the details. Scenarios that depend on those flags
-    # stay ``@pytest.mark.skip``.
+    # --- Drainer death (TESTBED_KILL_DRAINER_AT=N) -----------------------
+    # After N successful track() calls, raise BaseException — the retry
+    # loop catches ``Exception`` only, so BaseException propagates to
+    # ``_drain_loop``'s outer handler which emits ``drainer_died``.
+    # Requires ``disable_safe_mode`` to be in effect (the callback lib
+    # calls this on import in astrolabe_callbacks/__init__.py).
+    kill_at = _int_flag(config, "TESTBED_KILL_DRAINER_AT")
+    if kill_at is not None:
+        import aim as _aim_k
+
+        orig_class_track_k = _aim_k.Run.track
+        kill_counter = {"n": 0, "fired": False}
+
+        def _kill_class_track(self, *args, **kwargs):
+            if not kill_counter["fired"] and kill_counter["n"] >= kill_at:
+                kill_counter["fired"] = True
+                # BaseException (not Exception) escapes the retry loop's
+                # ``except Exception`` and propagates to the drainer's
+                # outer ``except BaseException`` handler which emits
+                # ``drainer_died``.
+                raise BaseException("simulated drainer death (TESTBED_KILL_DRAINER_AT)")
+            result = orig_class_track_k(self, *args, **kwargs)
+            kill_counter["n"] += 1
+            return result
+
+        _aim_k.Run.track = _kill_class_track
+
+    # --- Transient track error (TESTBED_INJECT_TRANSIENT_ERROR_AT=N) -----
+    # Nth (0-indexed) call raises ConnectionError once; the retry loop
+    # absorbs + re-tracks. Requires disable_safe_mode (see above).
+    inject_at = _int_flag(config, "TESTBED_INJECT_TRANSIENT_ERROR_AT")
+    if inject_at is not None:
+        import aim as _aim_t
+
+        orig_class_track_t = _aim_t.Run.track
+        counter = {"n": 0, "fired": False}
+
+        def _flaky_class_track(self, *args, **kwargs):
+            if not counter["fired"] and counter["n"] == inject_at:
+                counter["fired"] = True
+                raise ConnectionError("simulated transient error (TESTBED_INJECT_TRANSIENT_ERROR_AT)")
+            counter["n"] += 1
+            return orig_class_track_t(self, *args, **kwargs)
+
+        _aim_t.Run.track = _flaky_class_track
 
 
 # ---------------------------------------------------------------------------
@@ -388,6 +427,15 @@ def _run_raw(config: DriverConfig) -> str | None:
     run_hash = run._run.hash if run._run is not None else None
     try:
         _drive_raw_body(config, run, run_hash)
+        # When transient-error fault injection is on, give the drainer
+        # time to complete the retry before close() sets _stop and the
+        # retry loop bails. Without this, the retried item is dropped
+        # silently (retry sees _stop.is_set() → break, no counter
+        # increment) and scenarios that expect it to eventually land
+        # see missing values.
+        if config.driver_flags.get("TESTBED_INJECT_TRANSIENT_ERROR_AT") is not None:
+            import time as _t
+            _t.sleep(2.0)
     finally:
         if config.close:
             # Support the "double close" driver_flag
