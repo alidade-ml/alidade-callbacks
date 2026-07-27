@@ -275,18 +275,22 @@ def _drive_raw_body(config: DriverConfig, run, run_hash: str | None) -> None:
         if config.fail_at is not None and step == config.fail_at:
             raise SimulatedFailure(f"simulated failure at step {step}")
 
-        # Base metrics
+        # Base metrics — use `.log(name, value, step=)` (no prefix) so
+        # scenarios can assert on the exact metric name they set. The
+        # `.log_train()` helper prepends ``train/`` which is right for
+        # production use but wrong for our exact-name assertions.
         for i in range(config.metrics_per_step):
             name = _metric_name(step, i, config.new_metrics_at)
-            run.log_train(**{name: float(step)}, step=step)
+            run.log(name, float(step), step=step)
 
         # New-metric injection (schema-finalize trigger)
         if step in config.new_metrics_at:
-            run.log_train(**{f"metric_new_step{step}": float(step)}, step=step)
+            run.log(f"metric_new_step{step}", float(step), step=step)
 
-        # Validation emit
+        # Validation emit — scenarios assert on ``val/loss`` for this,
+        # which is exactly what log_eval produces.
         if step in config.validation_at:
-            run.log_eval(**{"loss": float(step)}, step=step)
+            run.log_eval(loss=float(step), step=step)
 
         # Mid-close (test_track_after_close_is_noop)
         if close_at is not None and step == close_at:

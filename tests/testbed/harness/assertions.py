@@ -31,10 +31,26 @@ __all__ = [
 
 
 def _open_repo(repo_path: Path) -> Any:
-    """Open the Aim repo read-only. Imported inside because host may not have aim."""
+    """Open an Aim client against the running aim server on localhost.
+
+    The bind-mounted ``repo_path`` on the host is where the aim server
+    ultimately writes, but the server buffers between commits and the
+    on-disk state lags real writes by seconds. Reading directly from
+    the path shows "0 metrics" for scenarios whose writes are still
+    server-buffered.
+
+    Instead, query THROUGH the server via the published localhost port
+    (``aim://localhost:43810``). The server returns its authoritative
+    view including in-flight buffers. This is what a real dashboard
+    would do to see live state.
+
+    ``repo_path`` is retained in the signature (rather than the URL)
+    because it's the natural identifier the fixture already tracks;
+    the mapping to the localhost URL is fixed by our compose config.
+    """
     import aim
 
-    return aim.Repo(str(repo_path), read_only=True)
+    return aim.Repo("aim://localhost:43810")
 
 
 def _get_run(repo_path: Path, run_hash: str) -> Any:

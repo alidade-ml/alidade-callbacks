@@ -173,9 +173,33 @@ def wait_healthy(handle: TestbedHandle, timeout_s: float = 30.0) -> None:
             handle, service="client", cmd=["python", "-c", "print('ok')"], check=False, timeout_s=5.0
         )
         if code == 0:
-            return
+            break
         time.sleep(0.5)
-    raise TestbedStartupError(f"client container not ready within {timeout_s}s")
+    else:
+        raise TestbedStartupError(f"client container not ready within {timeout_s}s")
+
+    # Real Aim server readiness: TCP being open doesn't mean the server is
+    # actually serving. Confirm by opening + closing an aim.Run from the
+    # client container against the bridge-network URL. This catches
+    # aim-server-still-initializing races that cause "Failed to connect"
+    # errors even after TCP-connect works.
+    readiness_script = (
+        "import aim; r = aim.Run(repo='" + AIM_CLIENT_URL + "'); r.close()"
+    )
+    while time.monotonic() < deadline:
+        code, _, stderr = exec_in(
+            handle,
+            service="client",
+            cmd=["python", "-c", readiness_script],
+            check=False,
+            timeout_s=10.0,
+        )
+        if code == 0:
+            return
+        time.sleep(1.0)
+    raise TestbedStartupError(
+        f"aim server not serving from bridge network within {timeout_s}s (last stderr: {stderr})"
+    )
 
 
 def reset_repo(handle: TestbedHandle) -> None:
@@ -240,8 +264,15 @@ def exec_in(
     args.append(service)
     args.extend(cmd)
 
+    # docker-compose interpolates ${AIM_REPO_HOST_PATH} in the compose file
+    # every invocation — even `exec` reads the file. Set it from the handle
+    # so subprocess doesn't inherit a bare shell without the variable.
+    subprocess_env = os.environ.copy()
+    subprocess_env["AIM_REPO_HOST_PATH"] = str(handle.aim_repo_host_path)
+
     result = subprocess.run(
         args,
+        env=subprocess_env,
         capture_output=True,
         text=True,
         timeout=timeout_s,
