@@ -276,16 +276,34 @@ def _apply_fault_injection(config: DriverConfig, run) -> None:
         return
 
     # --- Buffer capacity override (TESTBED_BUFFER_CAPACITY=N) -----------
-    # Replaces the internal queue with a smaller one so overflow fires
-    # under normal load. Must happen before any writes.
+    # Every ``log()`` call runs ``maybe_finalize_schema`` — which on
+    # any first-observation-of-a-name path closes the Run, reopens with
+    # ``force_resume=True``, and attaches a **fresh** ``_MetricBuffer``
+    # with the library's default 100_000 queue. So a one-shot
+    # ``buffer._queue = Queue(N)`` here only survives until the first
+    # log() call; after that, the fresh buffer nullifies the override
+    # and overflow never fires. Patch ``_MetricBuffer.__init__`` at the
+    # class level so *every* buffer constructed for the remainder of
+    # this run comes up small.
     capacity = _int_flag(config, "TESTBED_BUFFER_CAPACITY")
     if capacity is not None:
         import queue as _q
+        from astrolabe_callbacks import _core as _cb_core
 
+        # Shrink the buffer already attached (the one the drainer is
+        # already running against).
         buffer._queue = _q.Queue(maxsize=capacity)
-        # Reset any max-size-derived attrs on the buffer if present
         if hasattr(buffer, "_max_size"):
             buffer._max_size = capacity
+
+        # Shrink every future buffer constructed during this run.
+        _orig_buf_init = _cb_core._MetricBuffer.__init__
+
+        def _shrunk_buf_init(self, run, **kwargs):
+            kwargs["max_size"] = capacity
+            _orig_buf_init(self, run, **kwargs)
+
+        _cb_core._MetricBuffer.__init__ = _shrunk_buf_init
 
     # --- Drainer delay (TESTBED_INJECT_DRAINER_DELAY=1) ------------------
     # Slows the drainer's aim.Run.track call so the queue fills faster
@@ -495,8 +513,14 @@ def _drive_raw_body(config: DriverConfig, run, run_hash: str | None) -> None:
         if step in config.validation_at:
             run.log_eval(loss=float(step), step=step)
 
-        # Restart aim server signal (out-of-scope for driver — handled by harness in ideal case)
-        # For now, the scenario tolerates the restart happening asynchronously.
+        # Aim-server restart signal (TESTBED_RESTART_AIM_AT=N). At step
+        # N, drop a signal file the host-side polling thread in
+        # conftest.run_driver watches for; it then issues
+        # ``docker restart`` on the aim container. Driver keeps writing;
+        # the callback library's drainer retries with backoff so
+        # buffered items land once aim is back.
+        if restart_aim_at is not None and step == restart_aim_at:
+            Path("/tmp/testbed-restart-signal.txt").write_text(config.run_name)
 
         if sleep_per_step > 0:
             time.sleep(sleep_per_step)
@@ -685,12 +709,25 @@ def _run_lightning(config: DriverConfig) -> str | None:
 
 
 def _run_hf(config: DriverConfig) -> str | None:
-    """Real HF Trainer with a tiny model and toy dataset."""
+    """Real HF Trainer with a tiny model and toy dataset.
+
+    Emits ``metric_0..metric_N`` per training step by mutating HF's
+    ``logs`` dict via a NamedMetricEmitter callback that fires BEFORE
+    ``AstrolabeHFTrainerCallback.on_log`` (order-in-callbacks-list wins).
+    Astrolabe's on_log passes through unrecognized keys, so our named
+    metrics land in Aim.
+
+    When ``config.validation_at`` is non-empty, wires an ``eval_dataset``
+    so ``on_evaluate`` fires and emits ``val/loss``.
+    """
     import torch
     import torch.nn as nn
-    from transformers import Trainer, TrainingArguments
+    from transformers import Trainer, TrainingArguments, TrainerCallback
     from torch.utils.data import Dataset
     from astrolabe_callbacks.huggingface import AstrolabeHFTrainerCallback
+
+    metrics_per_step = config.metrics_per_step
+    new_metrics_at = set(config.new_metrics_at)
 
     class ToyModel(nn.Module):
         def __init__(self):
@@ -714,13 +751,39 @@ def _run_hf(config: DriverConfig) -> str | None:
         def __getitem__(self, i):
             return {"input_ids": self.x[i], "labels": self.y[i]}
 
+    class NamedMetricEmitter(TrainerCallback):
+        """Mutates HF's logs dict to add ``metric_0..N`` per step.
+
+        Fires before AstrolabeHFTrainerCallback in the callbacks list;
+        the logs dict is shared across on_log calls so our additions
+        reach Astrolabe's on_log.
+        """
+
+        def on_log(self, args, state, control, logs=None, **kwargs):
+            if logs is None:
+                return
+            # Skip eval-loop logs (they have ``eval_*`` prefix; we
+            # don't want to inject train-shaped metrics there).
+            if any(k.startswith("eval_") for k in logs):
+                return
+            step = state.global_step
+            for i in range(metrics_per_step):
+                logs[f"metric_{i}"] = float(step)
+            if step in new_metrics_at:
+                logs[f"metric_new_step{step}"] = float(step)
+
+    emitter = NamedMetricEmitter()
     cb = AstrolabeHFTrainerCallback(
         aim_url=config.aim_url,
         experiment_name=config.experiment_name,
         tags=config.tags,
         run_name=config.run_name,
     )
-    args = TrainingArguments(
+
+    train_ds = ToyDataset(config.steps)
+    eval_ds = ToyDataset(4) if config.validation_at else None
+
+    args_kwargs = dict(
         output_dir="/tmp/hf-testbed",
         max_steps=config.steps,
         per_device_train_batch_size=1,
@@ -729,9 +792,23 @@ def _run_hf(config: DriverConfig) -> str | None:
         report_to=[],
         use_cpu=True,
     )
-    trainer = Trainer(model=ToyModel(), args=args, train_dataset=ToyDataset(config.steps), callbacks=[cb])
+    if eval_ds is not None:
+        # Eval once at end of training so on_evaluate fires + emits
+        # val/loss (via HF's built-in ``eval_loss`` key that
+        # AstrolabeHFTrainerCallback renames to val/loss).
+        args_kwargs["eval_strategy"] = "epoch"
+        args_kwargs["per_device_eval_batch_size"] = 1
+
+    args = TrainingArguments(**args_kwargs)
+    trainer = Trainer(
+        model=ToyModel(),
+        args=args,
+        train_dataset=train_ds,
+        eval_dataset=eval_ds,
+        # Order matters: emitter mutates logs BEFORE Astrolabe sees it.
+        callbacks=[emitter, cb],
+    )
     trainer.train()
-    # HF nulls cb._run on close — hash comes from stats jsonl.
     return None
 
 
