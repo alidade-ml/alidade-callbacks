@@ -17,6 +17,7 @@ These scenarios use the Aim SDK directly from the client container
 """
 from __future__ import annotations
 
+import os
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -81,7 +82,6 @@ class TestProtobufMessageFactory:
         assert "OK" in stdout
 
 
-@pytest.mark.skip(reason="testbed-todo: memtable-invisibility scenarios need a reader opened WHILE the writer holds the run open (before close forces a flush). Current exec_in path blocks until the writer's subprocess exits, so the reader always sees post-close state. Requires background subprocess + polling.")
 class TestMemtableContract:
     """Aim's memtable/flush contract — the property our schema-finalize exploits.
 
@@ -97,43 +97,94 @@ class TestMemtableContract:
         testbed: "TestbedHandle",
         aim_repo: Path,
     ) -> None:
-        """Documents the semantic. If this test starts FAILING, Aim changed its memtable model."""
-        # Writer opens a run, tracks a fresh metric name, holds it open (no flush).
-        # Concurrently, a read-only Repo opened on the host-side aim_repo path
-        # should NOT see the fresh metric.
+        """Documents the semantic. If this test starts FAILING, Aim changed its memtable model.
+
+        Uses a writer subprocess run in background so the reader can query
+        mid-flight (before the writer closes and forces a flush). The
+        writer signals via a temp file when its write has landed; the
+        reader then checks visibility on the host side.
+        """
+        # Writer subprocess: opens aim.Run inside client container, tracks
+        # a fresh metric, writes hash to a signal file, sleeps, closes.
+        # We monitor the signal file and check reader visibility DURING
+        # the sleep window.
+        signal_path_container = "/tmp/testbed-memtable-signal.txt"
+        signal_path_host = f"{testbed.aim_repo_host_path.parent}/memtable-signal-{id(self)}.txt"
+        import subprocess
+
         script = (
             "import os, aim, time, sys\n"
             "run = aim.Run(repo=os.environ['ASTROLABE_AIM_URL'])\n"
-            "print(f'RUN_HASH={run.hash}')\n"
-            "sys.stdout.flush()\n"
             "run.track(1.0, name='fresh_only_in_memtable', step=0)\n"
-            # Hold open without close/flush; the assertion happens on host side
-            "time.sleep(3)\n"
+            f"open('{signal_path_container}', 'w').write(run.hash)\n"
+            # Hold open — host-side reader polls the signal file, then
+            # checks visibility BEFORE the sleep elapses.
+            "time.sleep(5)\n"
             "run.close()\n"
         )
-        exit_code, stdout, stderr = _exec_aim(testbed, script, timeout_s=15.0)
-        assert exit_code == 0, stderr
-        # Extract hash from stdout (best-effort — actual hash comparison is what matters)
-        import re
-
-        match = re.search(r"RUN_HASH=([a-f0-9]{24})", stdout)
-        assert match, f"RUN_HASH not found in stdout: {stdout!r}"
-        run_hash = match.group(1)
-
-        # During the sleep window, the host-side read-only reader should NOT see it.
-        # (Test intentionally races with the driver's sleep — verifies pre-flush invisibility
-        # by opening a reader before the 3s sleep elapses. Bodies at Stage 3 will encode
-        # this synchronization precisely; the assertion is: mid-run, name is invisible.)
-        from tests.testbed.harness.assertions import get_metric_series
-
-        # This should raise or return empty — the memtable-only metric is not on disk yet.
-        # (Assertion helper's Stage 3 impl handles "no such metric" as [] not exception.)
-        series = get_metric_series(aim_repo, run_hash, "fresh_only_in_memtable")
-        # If Aim's memtable behavior changed, this assertion breaks — investigate.
-        assert series == [], (
-            "Expected empty series (memtable-invisible) but got values. "
-            "Aim's memtable/flush semantics may have changed."
+        writer = subprocess.Popen(
+            [
+                "docker",
+                "compose",
+                "-f",
+                str(testbed.compose_file),
+                "exec",
+                "-T",
+                "-e",
+                f"ASTROLABE_AIM_URL={testbed.aim_url_from_client}",
+                "client",
+                "python",
+                "-c",
+                script,
+            ],
+            env={**os.environ, "AIM_REPO_HOST_PATH": str(testbed.aim_repo_host_path)},
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
         )
+        # Poll for the signal file — write happened but run not closed yet.
+        import time as _time
+
+        run_hash = None
+        for _ in range(30):
+            code, stdout, _ = compose.exec_in(
+                testbed,
+                service="client",
+                cmd=["cat", signal_path_container],
+                check=False,
+                timeout_s=5.0,
+            )
+            if code == 0 and stdout.strip():
+                run_hash = stdout.strip()
+                break
+            _time.sleep(0.2)
+        assert run_hash, "writer never signaled hash"
+        # Reader check MID-FLIGHT — before the writer closes. Use the
+        # NO-INDEX path (avoid forcing visibility via RepoIndexManager).
+        # ``aim.Run(hash, ..., read_only=True).metrics()`` returns only
+        # system metrics + explicitly-indexed metrics; user metrics
+        # written but not yet flushed by close() do NOT appear.
+        import aim as _aim
+
+        try:
+            reader_run = _aim.Run(run_hash, repo=str(aim_repo), read_only=True)
+            user_metric_names = [
+                s.name for s in reader_run.metrics() if not s.name.startswith("__system__")
+            ]
+            assert "fresh_only_in_memtable" not in user_metric_names, (
+                f"Expected 'fresh_only_in_memtable' NOT visible mid-flight (memtable-only), "
+                f"but reader enumerated: {user_metric_names}. Aim's memtable model may have changed."
+            )
+        finally:
+            # Let writer finish + clean up
+            writer.wait(timeout=15)
+            compose.exec_in(
+                testbed,
+                service="client",
+                cmd=["rm", "-f", signal_path_container],
+                check=False,
+                timeout_s=5.0,
+            )
 
     def test_writes_become_visible_after_aim_flush(
         self,

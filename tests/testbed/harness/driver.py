@@ -318,6 +318,33 @@ def _run_raw(config: DriverConfig) -> str | None:
     from astrolabe_callbacks.pytorch import AstrolabeRun
     from astrolabe_callbacks._distributed import is_rank_zero
 
+    # Initialize torch.distributed if the scenario asked us to. Must
+    # happen BEFORE is_rank_zero() — that's the whole point of
+    # test_torch_distributed_wins_over_env (env RANK conflicts with
+    # torch.distributed's rank; distributed should win).
+    torch_dist_rank = _int_flag(config, "TESTBED_TORCH_DIST_RANK")
+    if torch_dist_rank is not None:
+        import torch.distributed as _dist
+        import os as _os
+
+        # Single-process distributed setup via file init. world_size=1
+        # so we don't block waiting for other ranks. rank must be 0
+        # then (torch.dist requires 0 ≤ rank < world_size). The scenario
+        # sets torch_dist_rank=0 anyway; anything else would be a
+        # test-authoring error.
+        assert torch_dist_rank == 0, "world_size=1 requires rank=0"
+        init_file = "/tmp/testbed-dist-init"
+        try:
+            _os.remove(init_file)
+        except OSError:
+            pass
+        _dist.init_process_group(
+            backend="gloo",
+            init_method=f"file://{init_file}",
+            world_size=1,
+            rank=0,
+        )
+
     # Rank-gating: non-rank-zero returns None (no run opened).
     if not is_rank_zero():
         return None
@@ -512,22 +539,47 @@ def _run_composer(config: DriverConfig) -> str | None:
 
 
 def _run_lightning(config: DriverConfig) -> str | None:
-    """Real Lightning Trainer with a tiny LightningModule."""
+    """Real Lightning Trainer with a tiny LightningModule.
+
+    Emits ``metric_0..metric_N`` per training batch via ``self.log(...)``
+    (which routes to Lightning callbacks including AstrolabeLightningLogger).
+    Wires a val_dataloader when config.validation_at is non-empty so
+    ``validation_step`` fires and emits ``val/loss``.
+    """
     import torch
     import torch.nn as nn
     import lightning
     from torch.utils.data import DataLoader, TensorDataset
     from astrolabe_callbacks.lightning import AstrolabeLightningLogger
 
+    metrics_per_step = config.metrics_per_step
+    new_metrics_at = set(config.new_metrics_at)
+
     class TinyLightning(lightning.LightningModule):
         def __init__(self):
             super().__init__()
             self.lin = nn.Linear(4, 1)
+            self._step_counter = 0
 
         def training_step(self, batch, batch_idx):
             x, y = batch
             loss = ((self.lin(x) - y) ** 2).mean()
-            self.log("metric_0", loss.item())
+            step = self._step_counter
+            # Emit N named metrics for the buffer-drain / batch-end tests.
+            for i in range(metrics_per_step):
+                self.log(f"metric_{i}", float(step), on_step=True, on_epoch=False, prog_bar=False)
+            if step in new_metrics_at:
+                self.log(f"metric_new_step{step}", float(step), on_step=True, on_epoch=False, prog_bar=False)
+            self._step_counter += 1
+            return loss
+
+        def validation_step(self, batch, batch_idx):
+            x, y = batch
+            loss = ((self.lin(x) - y) ** 2).mean()
+            # Lightning's on_validation_end fires after the whole val loop;
+            # emitting val/loss here (with on_epoch=True) makes it land
+            # once per val loop pass.
+            self.log("val/loss", loss.item(), on_step=False, on_epoch=True, prog_bar=False)
             return loss
 
         def configure_optimizers(self):
@@ -536,6 +588,17 @@ def _run_lightning(config: DriverConfig) -> str | None:
     x = torch.randn(config.steps, 4)
     y = torch.randn(config.steps, 1)
     loader = DataLoader(TensorDataset(x, y), batch_size=1)
+
+    val_loader = None
+    if config.validation_at:
+        # Small val set — Lightning triggers val loops based on
+        # check_val_every_n_epoch or val_check_interval, not custom
+        # step lists. For simplicity: if any validation_at is set, do
+        # one val pass at end of training. That covers scenarios that
+        # just want "did val emit at least once."
+        vx = torch.randn(4, 4)
+        vy = torch.randn(4, 1)
+        val_loader = DataLoader(TensorDataset(vx, vy), batch_size=1)
 
     logger = AstrolabeLightningLogger(
         aim_url=config.aim_url,
@@ -551,9 +614,12 @@ def _run_lightning(config: DriverConfig) -> str | None:
         enable_progress_bar=False,
         accelerator="cpu",
         logger=False,
+        num_sanity_val_steps=0,  # skip Lightning's default pre-training val sanity check
     )
-    trainer.fit(TinyLightning(), train_dataloaders=loader)
-    # Lightning nulls logger._run on close — hash comes from stats jsonl.
+    if val_loader is not None:
+        trainer.fit(TinyLightning(), train_dataloaders=loader, val_dataloaders=val_loader)
+    else:
+        trainer.fit(TinyLightning(), train_dataloaders=loader)
     return None
 
 

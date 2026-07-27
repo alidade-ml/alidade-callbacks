@@ -145,7 +145,6 @@ class TestRankGating:
 class TestDetectionOrder:
     """The four-tier detection order: torch.dist > RANK > LOCAL_RANK > fallback."""
 
-    @pytest.mark.skip(reason="testbed-todo: driver doesn't initialize torch.distributed for TESTBED_TORCH_DIST_RANK. Requires spawning a torch.distributed process group in the driver.")
     def test_torch_distributed_wins_over_env(
         self,
         testbed: "TestbedHandle",
@@ -154,15 +153,23 @@ class TestDetectionOrder:
         run_driver: RunFixture,
     ) -> None:
         """When torch.distributed reports rank-zero, that wins over conflicting env."""
-        # Driver initializes torch.distributed with rank=0, sets env RANK=1
-        result = run_driver(
-            _rank_config(
-                testbed,
-                stats_jsonl_path,
-                rank_env={"RANK": "1", "WORLD_SIZE": "2", "TESTBED_TORCH_DIST_RANK": "0"},
-                run_name="torch-dist-wins-probe",
-            )
+        # Env RANK=1 conflicts with torch.distributed rank=0. TESTBED_TORCH_DIST_RANK
+        # is a driver-internal flag (NOT prefixed with TESTBED_ENV_) so the driver
+        # reads it directly rather than exporting to container env.
+        config = _rank_config(
+            testbed,
+            stats_jsonl_path,
+            rank_env={"RANK": "1", "WORLD_SIZE": "1"},
+            run_name="torch-dist-wins-probe",
         )
+        # Add the driver-only flag alongside the env-cascade flags
+        config = DriverConfig(
+            **{
+                **config.__dict__,
+                "driver_flags": {**config.driver_flags, "TESTBED_TORCH_DIST_RANK": "0"},
+            }
+        )
+        result = run_driver(config)
         assert result.exit_code == 0, result.stderr
         # torch.distributed said rank 0 → writes land
         assert result.run_hash is not None
