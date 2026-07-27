@@ -170,16 +170,16 @@ def assert_schema_finalized_event(
     in test_core.py to verify the finalize side-band emitted correctly.
     """
     events = _read_stats(stats_jsonl_path)
-    finalize_events = [e for e in events if e.get("event") == "schema_finalized"]
+    finalize_events = [e for e in events if e.get("kind") == "schema_finalized"]
     if not finalize_events:
         raise AssertionError(
             f"stats jsonl {stats_jsonl_path} has no schema_finalized event "
-            f"(events seen: {[e.get('event') for e in events]})"
+            f"(events seen: {[e.get('kind') for e in events]})"
         )
     if expected_metric_names is not None:
         seen_names = set()
         for event in finalize_events:
-            seen_names.update(event.get("metric_names", []))
+            seen_names.update(event.get("new_metric_names", []))
         missing = set(expected_metric_names) - seen_names
         if missing:
             raise AssertionError(

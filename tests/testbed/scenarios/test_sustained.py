@@ -50,7 +50,7 @@ def _load_config(
         experiment_name="testbed-sustained",
         tags={},
         driver_flags=driver_flags or {},
-        stats_jsonl_container_path=f"/host-stats/{stats_path.name}",
+        stats_jsonl_container_path=f"/host-stats/{stats_path.parent.name}/{stats_path.name}",
     )
 
 
@@ -181,7 +181,7 @@ class TestResourceInvariants:
             )
         )
         assert result.exit_code == 0, result.stderr
-        rss_events = [e for e in result.stats_events if e.get("event") == "rss_delta"]
+        rss_events = [e for e in result.stats_events if e.get("kind") == "rss_delta"]
         assert len(rss_events) == 1
         rss_bytes = rss_events[0].get("delta_bytes", 0)
         assert rss_bytes < 100 * 1024 * 1024, f"RSS grew by {rss_bytes} bytes"
@@ -205,7 +205,7 @@ class TestResourceInvariants:
             )
         )
         assert result.exit_code == 0, result.stderr
-        fd_events = [e for e in result.stats_events if e.get("event") == "fd_delta"]
+        fd_events = [e for e in result.stats_events if e.get("kind") == "fd_delta"]
         assert len(fd_events) == 1
         fd_delta = fd_events[0].get("delta", 0)
         # Small delta OK (aim client keeps some sockets); large delta = leak
@@ -231,7 +231,7 @@ class TestResourceInvariants:
         )
         assert result.exit_code == 0, result.stderr
         thread_events = [
-            e for e in result.stats_events if e.get("event") == "thread_delta"
+            e for e in result.stats_events if e.get("kind") == "thread_delta"
         ]
         assert len(thread_events) == 1
         thread_delta = thread_events[0].get("delta", 0)

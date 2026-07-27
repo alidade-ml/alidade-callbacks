@@ -53,7 +53,7 @@ def _composer_config(
         experiment_name="testbed-composer",
         tags={},
         driver_flags={},
-        stats_jsonl_container_path=f"/host-stats/{stats_path.name}",
+        stats_jsonl_container_path=f"/host-stats/{stats_path.parent.name}/{stats_path.name}",
     )
     defaults.update(overrides)
     return DriverConfig(**defaults)

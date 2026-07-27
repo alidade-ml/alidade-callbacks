@@ -279,6 +279,17 @@ def _drive_raw_body(config: DriverConfig, run, run_hash: str | None) -> None:
         if config.fail_at is not None and step == config.fail_at:
             raise SimulatedFailure(f"simulated failure at step {step}")
 
+        # Mid-close BEFORE this step's writes — close_at=N means step N
+        # onward is post-close (writes dropped). Scenarios read this as
+        # "close before step N executes" rather than "close after".
+        if close_at is not None and step == close_at:
+            run.__exit__(None, None, None)
+
+        # Mid-reopen BEFORE writes for the same reason
+        if reopen_at is not None and step == reopen_at:
+            run.__exit__(None, None, None)
+            run.__enter__()
+
         # Base metrics — use `.log(name, value, step=)` (no prefix) so
         # scenarios can assert on the exact metric name they set. The
         # `.log_train()` helper prepends ``train/`` which is right for
@@ -295,16 +306,6 @@ def _drive_raw_body(config: DriverConfig, run, run_hash: str | None) -> None:
         # which is exactly what log_eval produces.
         if step in config.validation_at:
             run.log_eval(loss=float(step), step=step)
-
-        # Mid-close (test_track_after_close_is_noop)
-        if close_at is not None and step == close_at:
-            run.__exit__(None, None, None)
-            # continue looping — subsequent log_train() calls should be no-ops
-
-        # Mid-reopen (test_name_survives_explicit_close_reopen)
-        if reopen_at is not None and step == reopen_at:
-            run.__exit__(None, None, None)
-            run.__enter__()
 
         # Restart aim server signal (out-of-scope for driver — handled by harness in ideal case)
         # For now, the scenario tolerates the restart happening asynchronously.
