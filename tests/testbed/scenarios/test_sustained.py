@@ -23,7 +23,7 @@ if TYPE_CHECKING:
     from tests.testbed.harness.compose import TestbedHandle
 
 
-pytestmark = [pytest.mark.testbed, pytest.mark.testbed_scale]
+pytestmark = pytest.mark.testbed_scale
 
 
 def _load_config(

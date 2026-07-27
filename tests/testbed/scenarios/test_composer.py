@@ -62,7 +62,6 @@ def _composer_config(
 RunFixture = Callable[[DriverConfig], DriverResult]
 
 
-@pytest.mark.skip(reason="testbed-todo: Composer driver doesn't emit ``metric_0`` explicitly — it only runs training and lets Composer's built-in loss reporting fire. Needs the driver to explicitly log named metrics via the Composer Logger.")
 class TestTraining:
     """Training-step metric emission via Composer's batch_end hook."""
 
@@ -105,7 +104,6 @@ class TestTraining:
         assert_metric_landed(aim_repo, result.run_hash, "metric_new_step3")
 
 
-@pytest.mark.skip(reason="testbed-todo: Composer driver doesn't wire an eval_dataloader for validation emits.")
 class TestValidation:
     """Validation metrics routed through Composer's eval hooks."""
 
@@ -144,7 +142,6 @@ class TestTeardown:
         assert result.run_hash is not None
         assert_run_closed(aim_repo, result.run_hash)
 
-    @pytest.mark.skip(reason="testbed-todo: Composer driver doesn't emit multiple named metrics — only Composer's built-in loss.")
     def test_close_hook_drains_buffer(
         self,
         testbed: "TestbedHandle",

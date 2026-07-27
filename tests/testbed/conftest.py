@@ -51,6 +51,7 @@ COMPOSE_FILE = TESTBED_DIR / "docker-compose.yml"
 _RUN_HASH_RE = re.compile(r"ASTROLABE_RUN_HASH=([a-f0-9]{24})")
 _EVAL_RUN_HASH_RE = re.compile(r"ASTROLABE_EVAL_RUN_HASH=([a-f0-9]{24})")
 _EVAL_LINKED_RE = re.compile(r"ASTROLABE_EVAL_LINKED=(true|false)")
+_MARKER_TOUCHED_RE = re.compile(r"ASTROLABE_MARKER_TOUCHED=(true|false)")
 
 
 @pytest.fixture(scope="session")
@@ -137,6 +138,18 @@ def run_driver(
 
     def _run(config: DriverConfig) -> DriverResult:
         env = driver_config_to_env(config)
+        # Clear the container-side stats path before invocation. Under
+        # TESTBED_KEEP=1 the container persists across pytest sessions
+        # and the same per-test tmp-path basename can recur, so
+        # residual events would accumulate. rm -f is safe (missing
+        # file is fine).
+        compose.exec_in(
+            testbed,
+            service="client",
+            cmd=["rm", "-f", config.stats_jsonl_container_path],
+            check=False,
+            timeout_s=10.0,
+        )
         # Container-side stats path is bind-mounted per exec; driver writes to
         # the path in `config.stats_jsonl_container_path` and we retrieve it
         # after via `docker cp`.
@@ -173,12 +186,16 @@ def run_driver(
 
         stats_events = _read_stats_events(stats_jsonl_path)
 
+        marker_match = _MARKER_TOUCHED_RE.search(stdout)
+        marker_touched = marker_match.group(1) == "true" if marker_match else False
+
         return DriverResult(
             exit_code=exit_code,
             run_hash=run_hash,
             stats_events=stats_events,
             stdout=stdout,
             stderr=stderr,
+            marker_touched=marker_touched,
         )
 
     return _run

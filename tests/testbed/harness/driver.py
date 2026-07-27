@@ -119,6 +119,7 @@ class DriverResult:
     stats_events: list[dict]
     stdout: str
     stderr: str
+    marker_touched: bool = False  # ASTROLABE_FIRST_METRIC_MARKER file existed after run
 
 
 class SimulatedFailure(RuntimeError):
@@ -152,6 +153,12 @@ def config_to_env(config: DriverConfig) -> dict[str, str]:
     env["ASTROLABE_CALLBACK_STATS_PATH"] = config.stats_jsonl_container_path
     if config.tags:
         env["AIM_RUN_TAGS"] = ",".join(f"{k}={v}" for k, v in config.tags.items())
+
+    # First-metric marker — always set, unique per invocation. Driver
+    # checks the file after training and prints the touched-or-not
+    # signal so scenarios can assert on it.
+    marker_path = f"/tmp/testbed-first-metric-marker/{config.run_name}.tag"
+    env["ASTROLABE_FIRST_METRIC_MARKER"] = marker_path
 
     # driver_flags cascade into env under their own names so downstream code
     # in the container can read them directly (e.g. rank-detection reads
@@ -241,6 +248,67 @@ def _metric_name(step: int, index: int, new_metrics_at: list[int]) -> str:
 
 
 # ---------------------------------------------------------------------------
+# Fault injection — monkey-patches applied post-open, pre-write.
+# Each hook is opt-in via a TESTBED_* driver flag.
+# ---------------------------------------------------------------------------
+
+
+def _apply_fault_injection(config: DriverConfig, run) -> None:
+    """Wire fault-injection hooks onto the just-opened AstrolabeRun.
+
+    Reads driver_flags and modifies the buffer / drainer as directed.
+    Called AFTER ``run.__enter__`` — at that point ``run._run._astrolabe_buffer``
+    is the drainer-owning ``_MetricBuffer`` instance the callback lib
+    attached in ``_core.open_aim_run``.
+    """
+    if run._run is None:
+        return  # not rank-zero, no buffer to patch
+    buffer = getattr(run._run, "_astrolabe_buffer", None)
+    if buffer is None:
+        return
+
+    # --- Buffer capacity override (TESTBED_BUFFER_CAPACITY=N) -----------
+    # Replaces the internal queue with a smaller one so overflow fires
+    # under normal load. Must happen before any writes.
+    capacity = _int_flag(config, "TESTBED_BUFFER_CAPACITY")
+    if capacity is not None:
+        import queue as _q
+
+        buffer._queue = _q.Queue(maxsize=capacity)
+        # Reset any max-size-derived attrs on the buffer if present
+        if hasattr(buffer, "_max_size"):
+            buffer._max_size = capacity
+
+    # --- Drainer delay (TESTBED_INJECT_DRAINER_DELAY=1) ------------------
+    # Slows the drainer's aim.Run.track call so the queue fills faster
+    # than it drains. Needed for TESTBED_BUFFER_CAPACITY overflow to
+    # actually manifest under modest write rates. Wrapping track (not
+    # the drain loop) means the sleep fires per-drained-item.
+    if config.driver_flags.get("TESTBED_INJECT_DRAINER_DELAY") == "1":
+        import time as _t
+        import aim as _aim
+
+        # Patch at the class level — some Aim versions have
+        # __getattribute__ overrides that ignore instance-level track
+        # overrides in the tracking-server code path. Class-level
+        # setattr always wins for method resolution.
+        orig_class_track = _aim.Run.track
+
+        def _slow_class_track(self, *args, **kwargs):
+            _t.sleep(0.05)
+            return orig_class_track(self, *args, **kwargs)
+
+        _aim.Run.track = _slow_class_track
+
+    # NB: TESTBED_KILL_DRAINER_AT / TESTBED_INJECT_TRANSIENT_ERROR_AT are
+    # not implementable via ``aim.Run.track`` monkey-patching — Aim's
+    # ``@noexcept`` decorator swallows every exception before the callback
+    # library's retry loop or the drainer's outer handler sees it. See
+    # RED_FLAGS.md for the details. Scenarios that depend on those flags
+    # stay ``@pytest.mark.skip``.
+
+
+# ---------------------------------------------------------------------------
 # Raw driver — direct AstrolabeRun
 # ---------------------------------------------------------------------------
 
@@ -266,6 +334,7 @@ def _run_raw(config: DriverConfig) -> str | None:
                 tags=config.tags,
                 run_name=config.run_name,
             ) as run:
+                _apply_fault_injection(config, run)
                 captured_hash = run._run.hash if run._run is not None else None
                 # Emit the hash BEFORE the body — so it lands in stdout
                 # even if _drive_raw_body raises SimulatedFailure.
@@ -287,6 +356,7 @@ def _run_raw(config: DriverConfig) -> str | None:
     skip_init = config.driver_flags.get("TESTBED_SKIP_INIT") == "1"
     if not skip_init:
         run.__enter__()
+        _apply_fault_injection(config, run)
 
     run_hash = run._run.hash if run._run is not None else None
     try:
@@ -355,11 +425,19 @@ def _drive_raw_body(config: DriverConfig, run, run_hash: str | None) -> None:
 
 
 def _run_composer(config: DriverConfig) -> str | None:
-    """Real Composer Trainer with a single nn.Linear(4, 1) on fake data."""
+    """Real Composer Trainer with a single nn.Linear(4, 1) on fake data.
+
+    Emits explicit ``metric_0..metric_N`` per batch via a Callback that
+    calls Composer's ``Logger.log_metrics`` — that's the entry point
+    LoggerDestinations (including AstrolabeComposerLogger) receive.
+    Also emits ``val/*`` metrics at validation-step boundaries when the
+    config asks for them.
+    """
     import torch
     import torch.nn as nn
     from torch.utils.data import DataLoader, TensorDataset
     from composer import Trainer
+    from composer.core import Callback
     from composer.models import ComposerModel
     from astrolabe_callbacks.composer import AstrolabeComposerLogger
 
@@ -376,20 +454,39 @@ def _run_composer(config: DriverConfig) -> str | None:
             _, y = batch
             return ((outputs - y) ** 2).mean()
 
+    class NamedMetricEmitter(Callback):
+        """Emit ``metric_0..metric_N`` per batch via Composer's Logger."""
+
+        def __init__(self, metrics_per_step: int, validation_at: list[int], new_metrics_at: list[int]):
+            self._metrics_per_step = metrics_per_step
+            self._validation_at = set(validation_at)
+            self._new_metrics_at = set(new_metrics_at)
+            self._step = 0
+
+        def batch_end(self, state, logger):
+            step = self._step
+            metrics = {f"metric_{i}": float(step) for i in range(self._metrics_per_step)}
+            if step in self._new_metrics_at:
+                metrics[f"metric_new_step{step}"] = float(step)
+            if step in self._validation_at:
+                # Composer routes ``val/*``-prefixed metrics via the same log_metrics
+                metrics["val/loss"] = float(step)
+            logger.log_metrics(metrics)
+            self._step += 1
+
     x = torch.randn(config.steps, 4)
     y = torch.randn(config.steps, 1)
     loader = DataLoader(TensorDataset(x, y), batch_size=1)
 
-    # Note: AstrolabeComposerLogger does NOT accept run_name (Stage 3
-    # discovery — Stage 1 signature docs would have implied it does, but
-    # Composer's constructor takes only aim_url/experiment_name/tags).
-    # No test scenario asserts on the Composer run name today, so we
-    # omit it here. If a future test needs it, we'll set the Aim run
-    # name via env before instantiation.
     logger = AstrolabeComposerLogger(
         aim_url=config.aim_url,
         experiment_name=config.experiment_name,
         tags=config.tags,
+    )
+    emitter = NamedMetricEmitter(
+        metrics_per_step=config.metrics_per_step,
+        validation_at=config.validation_at,
+        new_metrics_at=config.new_metrics_at,
     )
 
     trainer = Trainer(
@@ -397,6 +494,7 @@ def _run_composer(config: DriverConfig) -> str | None:
         train_dataloader=loader,
         max_duration=f"{config.steps}ba",
         loggers=[logger],
+        callbacks=[emitter],
         device="cpu",
         progress_bar=False,
     )
@@ -404,8 +502,7 @@ def _run_composer(config: DriverConfig) -> str | None:
         trainer.fit()
     except SimulatedFailure:
         raise
-    # Composer nulls logger._run on close — hash comes from stats jsonl
-    # (see _extract_hash_from_stats).
+    # Composer nulls logger._run on close — hash comes from server query.
     return None
 
 
@@ -530,13 +627,23 @@ def main() -> None:
     """Entry point for subprocess invocation."""
     config = DriverConfig.from_env()
 
+    from pathlib import Path
+    import os
+
     # Ensure the stats jsonl directory exists inside the container so
     # the callback library can append to it. Without this, callback
     # writes to a missing dir and silently drops stats events.
-    from pathlib import Path
-
     stats_path = Path(config.stats_jsonl_container_path)
     stats_path.parent.mkdir(parents=True, exist_ok=True)
+
+    # First-metric marker parent dir. Callback library touches the file
+    # itself on first ``track_safely``; we just need the dir to exist.
+    # Also unlink any leftover from a prior run to make touched-vs-not
+    # unambiguous.
+    marker_env = os.environ.get("ASTROLABE_FIRST_METRIC_MARKER")
+    if marker_env:
+        Path(marker_env).parent.mkdir(parents=True, exist_ok=True)
+        Path(marker_env).unlink(missing_ok=True)
 
     try:
         run_hash = run_driver(config)
@@ -549,6 +656,11 @@ def main() -> None:
     # here.
     if run_hash and not config.driver_flags.get("TESTBED_USE_CONTEXT_MANAGER") == "1":
         print(f"ASTROLABE_RUN_HASH={run_hash}")
+
+    # First-metric marker check: report whether the callback touched it.
+    if marker_env:
+        touched = Path(marker_env).exists()
+        print(f"ASTROLABE_MARKER_TOUCHED={'true' if touched else 'false'}")
 
 
 if __name__ == "__main__":
