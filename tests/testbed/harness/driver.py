@@ -199,25 +199,33 @@ def _find_recent_framework_run(aim_url: str, experiment_name: str, run_name: str
     """Query the aim server for the most recently created run in ``experiment_name``.
 
     Framework loggers null their ``_run`` reference on close, so we can't
-    read the hash from the logger object. Prefer name-match if a run with
-    ``run_name`` exists (Lightning/HF accept run_name); fall back to the
-    most recent run in the experiment (Composer's callback doesn't accept
-    run_name so the aim run gets a random default name).
+    read the hash from the logger object. Sibling tests within the same
+    session share ``run_name`` (e.g. all Lightning tests default to
+    ``lightning-probe``), so name-match alone is ambiguous — ``list_all_runs``
+    returns hashes in arbitrary order, so returning the first match would
+    hand back a stale run from a previous test. Collect ALL name-matches
+    and return the newest by ``creation_time``; fall back to the newest
+    in-experiment when no name matches (Composer's callback doesn't accept
+    run_name so its aim run gets a random default name).
     """
     try:
         import aim
 
         repo = aim.Repo(aim_url)
-        candidates = []
+        name_matches: list[tuple[float, str]] = []
+        experiment_matches: list[tuple[float, str]] = []
         for run_hash in repo.list_all_runs():
             run = aim.Run(run_hash, repo=aim_url, read_only=True)
             if run.name == run_name:
-                return run_hash
-            if run.experiment == experiment_name:
-                candidates.append((run.creation_time, run_hash))
-        if candidates:
-            candidates.sort(reverse=True)
-            return candidates[0][1]
+                name_matches.append((run.creation_time, run_hash))
+            elif run.experiment == experiment_name:
+                experiment_matches.append((run.creation_time, run_hash))
+        if name_matches:
+            name_matches.sort(reverse=True)
+            return name_matches[0][1]
+        if experiment_matches:
+            experiment_matches.sort(reverse=True)
+            return experiment_matches[0][1]
     except Exception:
         pass
     return None
