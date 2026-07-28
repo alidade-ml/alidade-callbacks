@@ -11,6 +11,7 @@
 # from the same directory the aim server writes to.
 services:
   aim-server:
+    image: astrolabe-callbacks-testbed-aim:latest
     build:
       context: ../..
       dockerfile: tests/testbed/Dockerfile.aim
@@ -26,6 +27,7 @@ services:
     restart: "no"
 
   client:
+    image: astrolabe-callbacks-testbed-client:latest
     build:
       context: ../..
       dockerfile: tests/testbed/Dockerfile.client

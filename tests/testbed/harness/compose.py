@@ -79,12 +79,24 @@ class TestbedHandle:
     aim_url_from_host: str
 
 
-def up(compose_file: Path, aim_repo_host_path: Path, timeout_s: float = 60.0) -> TestbedHandle:
+def up(
+    compose_file: Path,
+    aim_repo_host_path: Path,
+    build_timeout_s: float = 900.0,
+    healthy_timeout_s: float = 120.0,
+) -> TestbedHandle:
     """Bring the testbed containers up and return a live handle.
 
     Runs ``docker compose -f <compose_file> up -d`` after exporting
     ``AIM_REPO_HOST_PATH`` so the aim container bind-mounts to the
     caller-supplied host directory (typically a pytest tmp_path).
+
+    ``build_timeout_s`` caps the ``compose up --build`` call. Cold GHA
+    runners take ~5-10 min to build both images (torch + transformers +
+    lightning + mosaicml pulls); default 15 min leaves margin.
+    ``healthy_timeout_s`` caps the post-up readiness probe separately —
+    once containers are up, TCP + aim.Run roundtrip should complete in
+    seconds.
 
     Blocks until both containers are healthy (aim server accepting TCP
     connections, client container reports ready). Raises
@@ -95,10 +107,10 @@ def up(compose_file: Path, aim_repo_host_path: Path, timeout_s: float = 60.0) ->
     env = os.environ.copy()
     env["AIM_REPO_HOST_PATH"] = str(aim_repo_host_path)
 
-    # Fast-iteration knob: TESTBED_KEEP=1 skips --build (assumes images
-    # already exist) so subsequent pytest runs reuse the running stack.
+    # TESTBED_KEEP=1 (local fast-iteration) and TESTBED_SKIP_BUILD=1 (CI,
+    # images pre-built with GHA cache) both skip --build.
     up_args = ["docker", "compose", "-f", str(compose_file), "up", "-d"]
-    if os.environ.get("TESTBED_KEEP") != "1":
+    if os.environ.get("TESTBED_KEEP") != "1" and os.environ.get("TESTBED_SKIP_BUILD") != "1":
         up_args.append("--build")
 
     result = subprocess.run(
@@ -106,7 +118,7 @@ def up(compose_file: Path, aim_repo_host_path: Path, timeout_s: float = 60.0) ->
         env=env,
         capture_output=True,
         text=True,
-        timeout=timeout_s,
+        timeout=build_timeout_s,
     )
     if result.returncode != 0:
         raise TestbedStartupError(
@@ -122,7 +134,7 @@ def up(compose_file: Path, aim_repo_host_path: Path, timeout_s: float = 60.0) ->
         aim_url_from_host=f"aim://localhost:{AIM_HOST_PORT}",
     )
 
-    wait_healthy(handle, timeout_s=timeout_s)
+    wait_healthy(handle, timeout_s=healthy_timeout_s)
     return handle
 
 

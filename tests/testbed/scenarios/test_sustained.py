@@ -5,9 +5,11 @@ RocksDB compaction issues, file-handle exhaustion, and drainer
 starvation under sustained load — bug classes that only surface over
 long windows and don't appear in the fast scenarios.
 
-Marker: ``testbed_scale``. Excluded from default CI. Run via the
-scheduled/event-triggered scale workflow or manually with
-``pytest -m testbed_scale``.
+Markers, applied per class:
+- ``testbed_scale_short`` — finish in <30min. Run on PR + dispatch.
+- ``testbed_scale_long`` — hours-long. Run on dispatch only.
+
+Both are excluded from the default ``pytest`` sweep.
 """
 from __future__ import annotations
 
@@ -21,9 +23,6 @@ from tests.testbed.harness.driver import DriverConfig, DriverResult
 
 if TYPE_CHECKING:
     from tests.testbed.harness.compose import TestbedHandle
-
-
-pytestmark = pytest.mark.testbed_scale
 
 
 def _load_config(
@@ -62,6 +61,7 @@ RunFixture = Callable[[DriverConfig], DriverResult]
 DROP_TOLERANCE_FRACTION = 0.05  # ≤5% of writes may drop under 5000/sec bursts
 
 
+@pytest.mark.testbed_scale_short
 class TestBurstThroughput:
     """5-minute sustained bursts at increasing rates."""
 
@@ -100,6 +100,7 @@ class TestBurstThroughput:
         )
 
 
+@pytest.mark.testbed_scale_long
 class TestLongDuration:
     """Longer windows to catch slow-burn bugs."""
 
@@ -152,6 +153,7 @@ class TestLongDuration:
         assert result.run_hash is not None
 
 
+@pytest.mark.testbed_scale_short
 class TestResourceInvariants:
     """Process-level invariants during sustained load.
 
