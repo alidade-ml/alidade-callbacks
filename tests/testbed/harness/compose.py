@@ -106,6 +106,11 @@ def up(
 
     env = os.environ.copy()
     env["AIM_REPO_HOST_PATH"] = str(aim_repo_host_path)
+    # Run aim-server + client containers as the calling user so files
+    # written into the bind-mounted repo are readable back on the host.
+    # See docker-compose.yml comment for the CI-visibility story.
+    env.setdefault("TESTBED_UID", str(os.getuid()))
+    env.setdefault("TESTBED_GID", str(os.getgid()))
 
     # TESTBED_KEEP=1 (local fast-iteration) and TESTBED_SKIP_BUILD=1 (CI,
     # images pre-built with GHA cache) both skip --build.
@@ -148,6 +153,8 @@ def down(handle: TestbedHandle, purge_volumes: bool = True) -> None:
     """
     env = os.environ.copy()
     env["AIM_REPO_HOST_PATH"] = str(handle.aim_repo_host_path)
+    env.setdefault("TESTBED_UID", str(os.getuid()))
+    env.setdefault("TESTBED_GID", str(os.getgid()))
 
     args = ["docker", "compose", "-f", str(handle.compose_file), "down"]
     if purge_volumes:
@@ -235,6 +242,10 @@ def reset_repo(handle: TestbedHandle) -> None:
 
 def logs(handle: TestbedHandle, service: str, tail: int = 200) -> str:
     """Return the last ``tail`` lines of a service's container logs."""
+    env = os.environ.copy()
+    env["AIM_REPO_HOST_PATH"] = str(handle.aim_repo_host_path)
+    env.setdefault("TESTBED_UID", str(os.getuid()))
+    env.setdefault("TESTBED_GID", str(os.getgid()))
     result = subprocess.run(
         [
             "docker",
@@ -246,6 +257,7 @@ def logs(handle: TestbedHandle, service: str, tail: int = 200) -> str:
             str(tail),
             service,
         ],
+        env=env,
         capture_output=True,
         text=True,
         timeout=30,
@@ -274,11 +286,14 @@ def exec_in(
     args.append(service)
     args.extend(cmd)
 
-    # docker-compose interpolates ${AIM_REPO_HOST_PATH} in the compose file
-    # every invocation — even `exec` reads the file. Set it from the handle
-    # so subprocess doesn't inherit a bare shell without the variable.
+    # docker-compose interpolates ${AIM_REPO_HOST_PATH}, ${TESTBED_UID},
+    # and ${TESTBED_GID} in the compose file on every invocation — even
+    # `exec` reads the file. Set them from the harness/host so subprocess
+    # doesn't inherit a bare shell missing any of them.
     subprocess_env = os.environ.copy()
     subprocess_env["AIM_REPO_HOST_PATH"] = str(handle.aim_repo_host_path)
+    subprocess_env.setdefault("TESTBED_UID", str(os.getuid()))
+    subprocess_env.setdefault("TESTBED_GID", str(os.getgid()))
 
     result = subprocess.run(
         args,

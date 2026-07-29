@@ -16,6 +16,15 @@ services:
       context: ../..
       dockerfile: tests/testbed/Dockerfile.aim
     container_name: astrolabe-callbacks-testbed-aim
+    # Run as the host's uid/gid so files written to the bind-mounted
+    # repo are readable by the pytest process on the host. Without
+    # this, aim runs as root and produces root-owned files that the
+    # unprivileged CI runner (uid 1001) can't enumerate — the failure
+    # mode that broke Testbed on GHA. macOS Docker Desktop remaps uid
+    # anyway so this is a no-op there. Harness sets TESTBED_UID +
+    # TESTBED_GID before `compose up`; the ?err makes accidental
+    # ambient invocations fail loud.
+    user: "${TESTBED_UID:?TESTBED_UID must be set}:${TESTBED_GID:?TESTBED_GID must be set}"
     volumes:
       - ${AIM_REPO_HOST_PATH:?AIM_REPO_HOST_PATH must be set}:/var/lib/aim
     ports:

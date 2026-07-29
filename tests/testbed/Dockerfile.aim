@@ -13,7 +13,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 RUN pip install --no-cache-dir "aim>=3.18"
 
-RUN mkdir -p /var/lib/aim
+# World-writable repo dir + fallback HOME so the container can run as
+# any uid (via compose ``user: "$UID:$GID"``). This is what lets the
+# bind-mounted repo files be readable by the calling user on the host
+# without root-owned files getting in the way — see the harness's
+# compose.py + docker-compose.yml comments.
+RUN mkdir -p /var/lib/aim /tmp/home && chmod 777 /var/lib/aim /tmp/home
+ENV HOME=/tmp/home
 
 EXPOSE 43800
 
