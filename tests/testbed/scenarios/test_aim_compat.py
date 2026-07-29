@@ -137,7 +137,14 @@ class TestMemtableContract:
                 "-c",
                 script,
             ],
-            env={**os.environ, "AIM_REPO_HOST_PATH": str(testbed.aim_repo_host_path)},
+            env={
+                **os.environ,
+                "AIM_REPO_HOST_PATH": str(testbed.aim_repo_host_path),
+                # Compose interpolates ${TESTBED_UID}/${TESTBED_GID} in
+                # the compose file on every exec — must be present.
+                "TESTBED_UID": str(os.getuid()),
+                "TESTBED_GID": str(os.getgid()),
+            },
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
