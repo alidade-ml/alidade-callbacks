@@ -1,0 +1,60 @@
+# Callback testbed — two containers on a shared bridge network.
+#
+# ``aim-server`` simulates the NUC's aim endpoint; ``client`` simulates a
+# compute host running the callback library. Bridge network + service
+# names give real TCP hops between them (bridge resolves ``aim-server``
+# to the container's IP).
+#
+# AIM_REPO_HOST_PATH is exported by the pytest harness before ``up``;
+# it points to a per-session tmp dir on the host that gets bind-mounted
+# as the aim repo. This lets host-side pytest assertions read directly
+# from the same directory the aim server writes to.
+services:
+  aim-server:
+    image: astrolabe-callbacks-testbed-aim:latest
+    build:
+      context: ../..
+      dockerfile: tests/testbed/Dockerfile.aim
+    container_name: astrolabe-callbacks-testbed-aim
+    # Run as the host's uid/gid so files written to the bind-mounted
+    # repo are readable by the pytest process on the host. Without
+    # this, aim runs as root and produces root-owned files that the
+    # unprivileged CI runner (uid 1001) can't enumerate — the failure
+    # mode that broke Testbed on GHA. macOS Docker Desktop remaps uid
+    # anyway so this is a no-op there. Harness sets TESTBED_UID +
+    # TESTBED_GID before `compose up`; the ?err makes accidental
+    # ambient invocations fail loud.
+    user: "${TESTBED_UID:?TESTBED_UID must be set}:${TESTBED_GID:?TESTBED_GID must be set}"
+    volumes:
+      - ${AIM_REPO_HOST_PATH:?AIM_REPO_HOST_PATH must be set}:/var/lib/aim
+    ports:
+      # Published for host-side aim SDK connections. Bridge port
+      # (43800) is used by the client container via service name.
+      - "127.0.0.1:43810:43800"
+    networks:
+      - testbed
+    restart: "no"
+
+  client:
+    image: astrolabe-callbacks-testbed-client:latest
+    build:
+      context: ../..
+      dockerfile: tests/testbed/Dockerfile.client
+    container_name: astrolabe-callbacks-testbed-client
+    depends_on:
+      - aim-server
+    volumes:
+      # Live-edit: local source overrides the container's baked-in copy
+      # so callback PRs iterate against the tree they're editing.
+      - ../../src:/app/src:ro
+      - ../../tests:/app/tests:ro
+    environment:
+      ASTROLABE_AIM_URL: "aim://aim-server:43800"
+      PYTHONUNBUFFERED: "1"
+    networks:
+      - testbed
+    restart: "no"
+
+networks:
+  testbed:
+    driver: bridge

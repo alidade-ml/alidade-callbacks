@@ -1,0 +1,25 @@
+# Client container — simulates a compute host running the callback library.
+#
+# The callback source (src/) and testbed harness (tests/testbed/) are
+# bind-mounted at runtime by docker-compose, so any local edit to the
+# callback library is immediately visible to the client without a rebuild.
+# The install below pulls dev dependencies (pytest, framework extras)
+# so the driver scripts have what they need — including real Composer /
+# Lightning / HF Trainers for framework-mode integration tests.
+FROM python:3.12-slim
+
+WORKDIR /app
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    git \
+    build-essential \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY pyproject.toml README.md /app/
+COPY src /app/src
+
+RUN pip install --no-cache-dir -e '.[dev]'
+
+# Source will be bind-mounted at runtime, overriding the copy above.
+# Keeps the container idle; docker-compose exec drives all activity.
+CMD ["sleep", "infinity"]

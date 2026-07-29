@@ -1,0 +1,30 @@
+# Aim server container — simulates the NUC's Aim endpoint.
+#
+# Runs ``aim server`` bound to 0.0.0.0:43800 (bridge network reachable).
+# Bind-mounted volume at /var/lib/aim is shared with the pytest host so
+# host-side assertions can read the repo via ``aim.Repo(read_only=True)``.
+FROM python:3.12-slim
+
+# aim's wheel needs g++ + build tools to compile its C++ extensions on
+# arm64 (no prebuilt wheel available for py3.12-slim aarch64).
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN pip install --no-cache-dir "aim>=3.18"
+
+# World-writable repo dir + fallback HOME so the container can run as
+# any uid (via compose ``user: "$UID:$GID"``). This is what lets the
+# bind-mounted repo files be readable by the calling user on the host
+# without root-owned files getting in the way — see the harness's
+# compose.py + docker-compose.yml comments.
+RUN mkdir -p /var/lib/aim /tmp/home && chmod 777 /var/lib/aim /tmp/home
+ENV HOME=/tmp/home
+
+EXPOSE 43800
+
+# `aim server` refuses to start on an uninitialized repo and prompts
+# interactively. The bind-mount from the host is empty on first run,
+# so init the repo (if empty) then serve. Idempotent — `aim init`
+# is a no-op if the repo already exists.
+CMD ["sh", "-c", "aim init --repo /var/lib/aim >/dev/null 2>&1 || true; exec aim server --host 0.0.0.0 --port 43800 --repo /var/lib/aim"]

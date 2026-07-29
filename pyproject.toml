@@ -56,6 +56,14 @@ dev = [
     "mosaicml>=0.20",
     "lightning>=2.0",
     "transformers>=4.30",
+    # pandas is needed on the host running pytest — the testbed's
+    # assertion helpers pull metric values via aim's ``.dataframe()``,
+    # which returns a pandas DataFrame and imports pandas at call time.
+    # Framework deps above happen to pull pandas transitively locally,
+    # but the resolver picks a slimmer chain on CI where pandas isn't
+    # guaranteed. Pin explicitly so tests never depend on the shape of
+    # transitive resolution.
+    "pandas>=2.0",
 ]
 
 [project.urls]
@@ -68,3 +76,9 @@ where = ["src"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+markers = [
+    "testbed: integration tests against a real aim server subprocess; excluded from default runs",
+    "testbed_scale_short: sustained-load scenarios that finish in <30min (burst throughput + resource invariants); run on PR + dispatch",
+    "testbed_scale_long: sustained-load scenarios that run for hours (1hr + 4hr durations); dispatch-only",
+]
+addopts = "-m 'not testbed and not testbed_scale_short and not testbed_scale_long'"
