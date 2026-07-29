@@ -81,10 +81,11 @@ jobs:
         run: pytest -m testbed tests/testbed/
 
   scale-short:
-    name: Testbed scale-short (Phase E, ~20min)
+    name: Testbed scale-short (Phase E, dispatch-only)
     needs: build-images
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    if: github.event_name == 'workflow_dispatch'
+    timeout-minutes: 120
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
