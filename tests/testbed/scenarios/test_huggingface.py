@@ -62,7 +62,7 @@ class TestTraining:
     def test_on_log_emits_metric(
         self,
         testbed: "TestbedHandle",
-        aim_repo: str,
+        aim_repo: Path,
         stats_jsonl_path: Path,
         run_driver: RunFixture,
     ) -> None:
@@ -80,7 +80,7 @@ class TestValidation:
     def test_on_evaluate_emits_val_metric(
         self,
         testbed: "TestbedHandle",
-        aim_repo: str,
+        aim_repo: Path,
         stats_jsonl_path: Path,
         run_driver: RunFixture,
     ) -> None:
@@ -100,7 +100,7 @@ class TestTeardown:
     def test_on_train_end_sets_end_time(
         self,
         testbed: "TestbedHandle",
-        aim_repo: str,
+        aim_repo: Path,
         stats_jsonl_path: Path,
         run_driver: RunFixture,
     ) -> None:
@@ -114,7 +114,7 @@ class TestTeardown:
     def test_on_train_end_drains_buffer(
         self,
         testbed: "TestbedHandle",
-        aim_repo: str,
+        aim_repo: Path,
         stats_jsonl_path: Path,
         run_driver: RunFixture,
     ) -> None:

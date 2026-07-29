@@ -69,7 +69,7 @@ class TestBurstThroughput:
     def test_five_minute_burst(
         self,
         testbed: "TestbedHandle",
-        aim_repo: str,
+        aim_repo: Path,
         stats_jsonl_path: Path,
         run_driver: RunFixture,
         rate: int,
@@ -107,7 +107,7 @@ class TestLongDuration:
     def test_one_hour_at_1000_per_sec(
         self,
         testbed: "TestbedHandle",
-        aim_repo: str,
+        aim_repo: Path,
         stats_jsonl_path: Path,
         run_driver: RunFixture,
     ) -> None:
@@ -133,7 +133,7 @@ class TestLongDuration:
     def test_four_hour_at_100_per_sec(
         self,
         testbed: "TestbedHandle",
-        aim_repo: str,
+        aim_repo: Path,
         stats_jsonl_path: Path,
         run_driver: RunFixture,
     ) -> None:

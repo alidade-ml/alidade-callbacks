@@ -66,7 +66,7 @@ class TestTraining:
     def test_direct_track_emits_metric(
         self,
         testbed: "TestbedHandle",
-        aim_repo: str,
+        aim_repo: Path,
         stats_jsonl_path: Path,
         run_driver: RunFixture,
     ) -> None:
@@ -82,7 +82,7 @@ class TestTeardown:
     def test_close_sets_end_time(
         self,
         testbed: "TestbedHandle",
-        aim_repo: str,
+        aim_repo: Path,
         stats_jsonl_path: Path,
         run_driver: RunFixture,
     ) -> None:
@@ -94,7 +94,7 @@ class TestTeardown:
     def test_close_drains_buffer(
         self,
         testbed: "TestbedHandle",
-        aim_repo: str,
+        aim_repo: Path,
         stats_jsonl_path: Path,
         run_driver: RunFixture,
     ) -> None:
@@ -125,7 +125,7 @@ class TestContextManager:
     def test_context_manager_closes_on_normal_exit(
         self,
         testbed: "TestbedHandle",
-        aim_repo: str,
+        aim_repo: Path,
         stats_jsonl_path: Path,
         run_driver: RunFixture,
     ) -> None:
@@ -146,7 +146,7 @@ class TestContextManager:
     def test_context_manager_closes_on_exception(
         self,
         testbed: "TestbedHandle",
-        aim_repo: str,
+        aim_repo: Path,
         stats_jsonl_path: Path,
         run_driver: RunFixture,
     ) -> None:

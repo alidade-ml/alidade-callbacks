@@ -95,7 +95,7 @@ class TestMemtableContract:
     def test_unflushed_writes_are_invisible_to_readonly_reader(
         self,
         testbed: "TestbedHandle",
-        aim_repo: str,
+        aim_repo: Path,
     ) -> None:
         """Documents the semantic. If this test starts FAILING, Aim changed its memtable model.
 
@@ -189,7 +189,7 @@ class TestMemtableContract:
     def test_writes_become_visible_after_aim_flush(
         self,
         testbed: "TestbedHandle",
-        aim_repo: str,
+        aim_repo: Path,
     ) -> None:
         """When Aim flushes (however triggered), reader sees the metrics."""
         script = (
@@ -226,7 +226,7 @@ class TestLocalVsRemoteRepoBehavior:
     def test_local_repo_writes_visible_to_same_process(
         self,
         testbed: "TestbedHandle",
-        aim_repo: str,
+        aim_repo: Path,
     ) -> None:
         """Within a single process, local Aim.Run reads back its own writes without finalize."""
         # Exec a script that opens a LOCAL repo (path, not URL) inside the container,
@@ -253,7 +253,7 @@ class TestLocalVsRemoteRepoBehavior:
     def test_remote_repo_writes_require_finalize_for_readonly(
         self,
         testbed: "TestbedHandle",
-        aim_repo: str,
+        aim_repo: Path,
     ) -> None:
         """Remote Aim.Run writes NOT visible to a separate read-only Repo until finalize.
 
@@ -333,7 +333,7 @@ class TestSDKVersionSurface:
     def test_run_close_flushes(
         self,
         testbed: "TestbedHandle",
-        aim_repo: str,
+        aim_repo: Path,
     ) -> None:
         """Run.close() actually flushes; downstream state visible after return."""
         script = (

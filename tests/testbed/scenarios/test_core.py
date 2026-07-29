@@ -80,7 +80,7 @@ class TestLifecycle:
     def test_double_close_is_safe(
         self,
         testbed: "TestbedHandle",
-        aim_repo: str,
+        aim_repo: Path,
         stats_jsonl_path: Path,
         run_driver: RunFixture,
     ) -> None:
@@ -120,7 +120,7 @@ class TestLifecycle:
     def test_track_after_close_is_noop(
         self,
         testbed: "TestbedHandle",
-        aim_repo: str,
+        aim_repo: Path,
         stats_jsonl_path: Path,
         run_driver: RunFixture,
     ) -> None:
@@ -152,7 +152,7 @@ class TestNameFidelity:
     def test_name_survives_single_schema_finalize(
         self,
         testbed: "TestbedHandle",
-        aim_repo: str,
+        aim_repo: Path,
         stats_jsonl_path: Path,
         run_driver: RunFixture,
     ) -> None:
@@ -171,7 +171,7 @@ class TestNameFidelity:
     def test_name_survives_ten_schema_finalizes(
         self,
         testbed: "TestbedHandle",
-        aim_repo: str,
+        aim_repo: Path,
         stats_jsonl_path: Path,
         run_driver: RunFixture,
     ) -> None:
@@ -192,7 +192,7 @@ class TestNameFidelity:
     def test_name_survives_explicit_close_reopen(
         self,
         testbed: "TestbedHandle",
-        aim_repo: str,
+        aim_repo: Path,
         stats_jsonl_path: Path,
         run_driver: RunFixture,
     ) -> None:
@@ -217,7 +217,7 @@ class TestTagFidelity:
     def test_astrolabe_tags_survive_finalize(
         self,
         testbed: "TestbedHandle",
-        aim_repo: str,
+        aim_repo: Path,
         stats_jsonl_path: Path,
         run_driver: RunFixture,
     ) -> None:
@@ -244,7 +244,7 @@ class TestTagFidelity:
     def test_custom_tags_survive_finalize(
         self,
         testbed: "TestbedHandle",
-        aim_repo: str,
+        aim_repo: Path,
         stats_jsonl_path: Path,
         run_driver: RunFixture,
     ) -> None:
@@ -271,7 +271,7 @@ class TestSchemaFinalize:
     def test_first_new_metric_finalizes(
         self,
         testbed: "TestbedHandle",
-        aim_repo: str,
+        aim_repo: Path,
         stats_jsonl_path: Path,
         run_driver: RunFixture,
     ) -> None:
@@ -296,7 +296,7 @@ class TestSchemaFinalize:
     def test_repeated_same_metric_no_extra_finalize(
         self,
         testbed: "TestbedHandle",
-        aim_repo: str,
+        aim_repo: Path,
         stats_jsonl_path: Path,
         run_driver: RunFixture,
     ) -> None:
@@ -311,7 +311,7 @@ class TestSchemaFinalize:
     def test_no_more_than_ten_finalizes(
         self,
         testbed: "TestbedHandle",
-        aim_repo: str,
+        aim_repo: Path,
         stats_jsonl_path: Path,
         run_driver: RunFixture,
     ) -> None:
@@ -336,7 +336,7 @@ class TestSchemaFinalize:
     def test_cap_hit_logs_warning(
         self,
         testbed: "TestbedHandle",
-        aim_repo: str,
+        aim_repo: Path,
         stats_jsonl_path: Path,
         run_driver: RunFixture,
     ) -> None:
@@ -353,7 +353,7 @@ class TestSchemaFinalize:
     def test_metrics_still_land_after_cap(
         self,
         testbed: "TestbedHandle",
-        aim_repo: str,
+        aim_repo: Path,
         stats_jsonl_path: Path,
         run_driver: RunFixture,
     ) -> None:
@@ -371,7 +371,7 @@ class TestSchemaFinalize:
     def test_finalize_flushes_new_metric_to_disk(
         self,
         testbed: "TestbedHandle",
-        aim_repo: str,
+        aim_repo: Path,
         stats_jsonl_path: Path,
         run_driver: RunFixture,
     ) -> None:
@@ -392,7 +392,7 @@ class TestSchemaFinalize:
     def test_finalize_event_lists_metric_names(
         self,
         testbed: "TestbedHandle",
-        aim_repo: str,
+        aim_repo: Path,
         stats_jsonl_path: Path,
         run_driver: RunFixture,
     ) -> None:
@@ -409,7 +409,7 @@ class TestSchemaFinalize:
     def test_finalize_event_carries_timestamp(
         self,
         testbed: "TestbedHandle",
-        aim_repo: str,
+        aim_repo: Path,
         stats_jsonl_path: Path,
         run_driver: RunFixture,
     ) -> None:
@@ -436,7 +436,7 @@ class TestBufferDrainer:
     def test_writes_land_within_expected_latency(
         self,
         testbed: "TestbedHandle",
-        aim_repo: str,
+        aim_repo: Path,
         stats_jsonl_path: Path,
         run_driver: RunFixture,
     ) -> None:
@@ -451,7 +451,7 @@ class TestBufferDrainer:
     def test_close_drains_pending_writes(
         self,
         testbed: "TestbedHandle",
-        aim_repo: str,
+        aim_repo: Path,
         stats_jsonl_path: Path,
         run_driver: RunFixture,
     ) -> None:
@@ -476,7 +476,7 @@ class TestBufferDrainer:
     def test_overflow_drops_oldest(
         self,
         testbed: "TestbedHandle",
-        aim_repo: str,
+        aim_repo: Path,
         stats_jsonl_path: Path,
         run_driver: RunFixture,
     ) -> None:
@@ -500,7 +500,7 @@ class TestBufferDrainer:
     def test_overflow_counter_increments(
         self,
         testbed: "TestbedHandle",
-        aim_repo: str,
+        aim_repo: Path,
         stats_jsonl_path: Path,
         run_driver: RunFixture,
     ) -> None:
@@ -522,7 +522,7 @@ class TestBufferDrainer:
     def test_drainer_retries_on_transient_error(
         self,
         testbed: "TestbedHandle",
-        aim_repo: str,
+        aim_repo: Path,
         stats_jsonl_path: Path,
         run_driver: RunFixture,
     ) -> None:
@@ -584,7 +584,7 @@ class TestBufferDrainer:
     def test_writes_after_aim_server_restart_land(
         self,
         testbed: "TestbedHandle",
-        aim_repo: str,
+        aim_repo: Path,
         stats_jsonl_path: Path,
         run_driver: RunFixture,
     ) -> None:
@@ -698,7 +698,7 @@ class TestFrameworkParityInvariants:
     def test_same_metrics_yield_same_series(
         self,
         testbed: "TestbedHandle",
-        aim_repo: str,
+        aim_repo: Path,
         stats_jsonl_path: Path,
         run_driver: RunFixture,
         framework: str,

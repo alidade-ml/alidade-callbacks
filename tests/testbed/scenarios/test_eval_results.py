@@ -104,7 +104,7 @@ class TestLogEvalTable:
     def test_writes_all_rows_at_step_zero(
         self,
         testbed: "TestbedHandle",
-        aim_repo: str,
+        aim_repo: Path,
         run_eval_driver: RunEvalFixture,
     ) -> None:
         """Each row appears as one metric with a single (step=0, value) point."""
@@ -130,7 +130,7 @@ class TestLogEvalTable:
     def test_sets_identity_tags(
         self,
         testbed: "TestbedHandle",
-        aim_repo: str,
+        aim_repo: Path,
         run_eval_driver: RunEvalFixture,
     ) -> None:
         """astrolabe.kind=eval, astrolabe.task_set, astrolabe.model_run_hash all set."""
@@ -153,7 +153,7 @@ class TestLogEvalTable:
     def test_closes_run(
         self,
         testbed: "TestbedHandle",
-        aim_repo: str,
+        aim_repo: Path,
         run_eval_driver: RunEvalFixture,
     ) -> None:
         """Helper closes the run before returning (has end_time)."""
@@ -206,7 +206,7 @@ class TestStartEvalRun:
     def test_returns_open_run_with_tags(
         self,
         testbed: "TestbedHandle",
-        aim_repo: str,
+        aim_repo: Path,
         run_eval_driver: RunEvalFixture,
     ) -> None:
         """Returned aim.Run has identity tags and is open for track()."""
@@ -227,7 +227,7 @@ class TestStartEvalRun:
     def test_caller_owns_close(
         self,
         testbed: "TestbedHandle",
-        aim_repo: str,
+        aim_repo: Path,
         run_eval_driver: RunEvalFixture,
     ) -> None:
         """Helper does NOT auto-close; caller must call close().
@@ -248,7 +248,7 @@ class TestStartEvalRun:
     def test_multi_step_tracking_lands(
         self,
         testbed: "TestbedHandle",
-        aim_repo: str,
+        aim_repo: Path,
         run_eval_driver: RunEvalFixture,
     ) -> None:
         """Successive track() calls at different steps produce a full series."""
@@ -278,7 +278,7 @@ class TestStartEvalRunFromCheckpoint:
     def test_reads_embedded_meta_from_pt(
         self,
         testbed: "TestbedHandle",
-        aim_repo: str,
+        aim_repo: Path,
         run_eval_driver: RunEvalFixture,
     ) -> None:
         """Loads a .pt checkpoint with embedded astrolabe meta, sets model_run_hash."""
@@ -300,7 +300,7 @@ class TestStartEvalRunFromCheckpoint:
     def test_reads_embedded_meta_from_safetensors(
         self,
         testbed: "TestbedHandle",
-        aim_repo: str,
+        aim_repo: Path,
         run_eval_driver: RunEvalFixture,
     ) -> None:
         """Loads a .safetensors checkpoint via header-only read, sets model_run_hash."""
@@ -323,7 +323,7 @@ class TestStartEvalRunFromCheckpoint:
     def test_explicit_model_run_hash_wins(
         self,
         testbed: "TestbedHandle",
-        aim_repo: str,
+        aim_repo: Path,
         run_eval_driver: RunEvalFixture,
     ) -> None:
         """Explicit ``model_run_hash=`` param overrides embedded meta."""
@@ -348,7 +348,7 @@ class TestStartEvalRunFromCheckpoint:
     def test_on_missing_parent_warn_returns_unlinked_run(
         self,
         testbed: "TestbedHandle",
-        aim_repo: str,
+        aim_repo: Path,
         run_eval_driver: RunEvalFixture,
     ) -> None:
         """No meta + on_missing_parent='warn' → logs WARNING, returns unlinked run."""

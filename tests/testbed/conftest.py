@@ -87,17 +87,9 @@ def testbed(tmp_path_factory: pytest.TempPathFactory) -> Generator[TestbedHandle
 
 
 @pytest.fixture
-def aim_repo(testbed: TestbedHandle) -> str:
-    """Aim URL for reading what the server has written.
-
-    Returns the aim server's host-published URL (``aim://localhost:<port>``)
-    rather than the bind-mount filesystem path. URL-based reads work
-    identically across dev environments and don't depend on bind-mount
-    file visibility, which is flaky on CI Linux runners where the aim
-    container runs as root while pytest runs as an unprivileged user.
-    See ``harness/assertions.py`` module docstring for the full story.
-    """
-    return testbed.aim_url_from_host
+def aim_repo(testbed: TestbedHandle) -> Path:
+    """Host-side aim repo path — same directory the aim server writes to."""
+    return testbed.aim_repo_host_path
 
 
 @pytest.fixture

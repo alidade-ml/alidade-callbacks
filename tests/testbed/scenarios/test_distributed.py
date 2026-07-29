@@ -64,7 +64,7 @@ class TestRankGating:
     def test_rank_zero_writes_land(
         self,
         testbed: "TestbedHandle",
-        aim_repo: str,
+        aim_repo: Path,
         stats_jsonl_path: Path,
         run_driver: RunFixture,
     ) -> None:
@@ -84,7 +84,7 @@ class TestRankGating:
     def test_rank_nonzero_skips_writes(
         self,
         testbed: "TestbedHandle",
-        aim_repo: str,
+        aim_repo: Path,
         stats_jsonl_path: Path,
         run_driver: RunFixture,
     ) -> None:
@@ -104,7 +104,7 @@ class TestRankGating:
     def test_local_rank_env_respected_when_global_absent(
         self,
         testbed: "TestbedHandle",
-        aim_repo: str,
+        aim_repo: Path,
         stats_jsonl_path: Path,
         run_driver: RunFixture,
     ) -> None:
@@ -124,7 +124,7 @@ class TestRankGating:
     def test_single_process_fallback_is_rank_zero(
         self,
         testbed: "TestbedHandle",
-        aim_repo: str,
+        aim_repo: Path,
         stats_jsonl_path: Path,
         run_driver: RunFixture,
     ) -> None:
@@ -148,7 +148,7 @@ class TestDetectionOrder:
     def test_torch_distributed_wins_over_env(
         self,
         testbed: "TestbedHandle",
-        aim_repo: str,
+        aim_repo: Path,
         stats_jsonl_path: Path,
         run_driver: RunFixture,
     ) -> None:
@@ -178,7 +178,7 @@ class TestDetectionOrder:
     def test_rank_env_wins_over_local_rank(
         self,
         testbed: "TestbedHandle",
-        aim_repo: str,
+        aim_repo: Path,
         stats_jsonl_path: Path,
         run_driver: RunFixture,
     ) -> None:
