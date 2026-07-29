@@ -68,7 +68,7 @@ class TestTraining:
     def test_batch_end_emits_metric(
         self,
         testbed: "TestbedHandle",
-        aim_repo: Path,
+        aim_repo: str,
         stats_jsonl_path: Path,
         run_driver: RunFixture,
     ) -> None:
@@ -82,7 +82,7 @@ class TestTraining:
     def test_epoch_end_flushes_new_metrics(
         self,
         testbed: "TestbedHandle",
-        aim_repo: Path,
+        aim_repo: str,
         stats_jsonl_path: Path,
         run_driver: RunFixture,
     ) -> None:
@@ -110,7 +110,7 @@ class TestValidation:
     def test_eval_batch_end_emits_val_metric(
         self,
         testbed: "TestbedHandle",
-        aim_repo: Path,
+        aim_repo: str,
         stats_jsonl_path: Path,
         run_driver: RunFixture,
     ) -> None:
@@ -131,7 +131,7 @@ class TestTeardown:
     def test_close_hook_sets_end_time(
         self,
         testbed: "TestbedHandle",
-        aim_repo: Path,
+        aim_repo: str,
         stats_jsonl_path: Path,
         run_driver: RunFixture,
     ) -> None:
@@ -145,7 +145,7 @@ class TestTeardown:
     def test_close_hook_drains_buffer(
         self,
         testbed: "TestbedHandle",
-        aim_repo: Path,
+        aim_repo: str,
         stats_jsonl_path: Path,
         run_driver: RunFixture,
     ) -> None:

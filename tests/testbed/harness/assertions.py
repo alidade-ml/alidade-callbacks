@@ -1,25 +1,34 @@
 """Assertion helpers for testbed scenarios.
 
-Every helper opens the Aim repo, indexes the target run so its writes
-are visible (this is the read-visibility step astrolabe's sync sidecar
-performs), then queries for the expected condition. Raises
-AssertionError with a diagnostic on mismatch. Helpers do NOT clean up
-the repo — teardown is the fixture's job.
+Every helper opens the Aim repo via the aim server's host-published URL
+(``aim://localhost:<port>``), indexes the target run so its writes are
+visible, then queries for the expected condition. Raises AssertionError
+with a diagnostic on mismatch. Helpers do NOT clean up the repo —
+teardown is the fixture's job.
 
-Read-visibility discipline (learned during Stage 3 debug):
+URL vs. bind-mount reads:
+
+Earlier revisions opened ``aim.Repo(<bind_mount_path>)`` because the
+sync sidecar's ``RepoIndexManager`` was thought to only work against
+local repos. Empirically it works over ``aim://`` URLs too. Reading
+via URL sidesteps a CI-only failure mode: on GHA Linux runners the
+aim container runs as root, so its files land on the host bind-mount
+owned by root. The unprivileged runner user then can't enumerate the
+repo. macOS Docker Desktop hides this with uid-remapping, so the bug
+only surfaced in CI.
+
+Read-visibility discipline:
 
 The aim server accepts writes via its tracking API and stores them
-under ``seqs/chunks/<run_hash>/`` on disk. Those writes are NOT
-visible to a fresh ``Repo.get_run(hash).metrics()`` call by default —
-the meta index (``meta/index/``, ``run_metadata.sqlite``) must be
-populated first. Astrolabe's ``sync.py`` does this via:
+under ``seqs/chunks/<run_hash>/``. Those writes are NOT visible to a
+fresh ``Repo.get_run(hash).metrics()`` call by default — the meta
+index must be populated first. Astrolabe's ``sync.py`` does this via:
 
     repo.request_props(run_hash, read_only=False, created_at=...)
     RepoIndexManager.get_index_manager(repo).index(run_hash)
 
 Every helper here that queries by hash calls ``_index_run()`` first.
-The call is idempotent — after the first call for a hash it's near
-no-op.
+Idempotent — after the first call for a hash it's near no-op.
 """
 from __future__ import annotations
 
@@ -42,16 +51,16 @@ __all__ = [
 ]
 
 
-def _open_repo(repo_path: Path) -> Any:
-    """Open the on-disk Aim repo at the bind-mounted host path.
+def _open_repo(repo_url: str) -> Any:
+    """Open the Aim repo via the aim server's host-published URL.
 
-    Reads from the same directory the aim server writes to via bind
-    mount. Indexing (``_index_run``) is required before writes become
-    visible — see module docstring.
+    ``repo_url`` is expected to be an ``aim://`` URL (typically
+    ``testbed.aim_url_from_host``). See module docstring for why we
+    read via URL rather than the bind-mount path.
     """
     import aim
 
-    return aim.Repo(str(repo_path))
+    return aim.Repo(str(repo_url))
 
 
 def _index_run(repo: Any, run_hash: str) -> None:
@@ -77,24 +86,24 @@ def _index_run(repo: Any, run_hash: str) -> None:
         pass
 
 
-def _get_run(repo_path: Path, run_hash: str) -> Any:
-    repo = _open_repo(repo_path)
+def _get_run(repo_url: str, run_hash: str) -> Any:
+    repo = _open_repo(repo_url)
     _index_run(repo, run_hash)
     run = repo.get_run(run_hash)
     if run is None:
-        raise AssertionError(f"run {run_hash!r} not found in {repo_path}")
+        raise AssertionError(f"run {run_hash!r} not found in {repo_url}")
     return run
 
 
-def assert_run_name(repo_path: Path, run_hash: str, expected_name: str) -> None:
-    """Assert that ``repo_path``'s run ``run_hash`` has ``run.name == expected_name``.
+def assert_run_name(repo_url: str, run_hash: str, expected_name: str) -> None:
+    """Assert that the run at ``run_hash`` has ``run.name == expected_name``.
 
     Non-obvious contract: reads ``run.name`` not ``run.props.name`` — after
     schema-finalize, callers hit a subtle attribute vs. property fallback
     that changes across Aim versions. Helper canonicalizes to the value the
     dashboard actually renders.
     """
-    run = _get_run(repo_path, run_hash)
+    run = _get_run(repo_url, run_hash)
     actual = run.name
     if actual != expected_name:
         raise AssertionError(
@@ -102,9 +111,9 @@ def assert_run_name(repo_path: Path, run_hash: str, expected_name: str) -> None:
         )
 
 
-def assert_run_tag(repo_path: Path, run_hash: str, tag: str, expected_value: str) -> None:
+def assert_run_tag(repo_url: str, run_hash: str, tag: str, expected_value: str) -> None:
     """Assert that ``run[tag] == expected_value``. Raises if tag missing."""
-    run = _get_run(repo_path, run_hash)
+    run = _get_run(repo_url, run_hash)
     actual = run.get(tag, default=None)
     if actual is None:
         raise AssertionError(
@@ -116,13 +125,13 @@ def assert_run_tag(repo_path: Path, run_hash: str, tag: str, expected_value: str
         )
 
 
-def assert_metric_landed(repo_path: Path, run_hash: str, metric_name: str) -> None:
+def assert_metric_landed(repo_url: str, run_hash: str, metric_name: str) -> None:
     """Assert that at least one value has been written under ``metric_name``.
 
     Passes iff the metric appears in the run's metrics enumeration AND its
     series has at least one (step, value) point that survived memtable flush.
     """
-    series = get_metric_series(repo_path, run_hash, metric_name)
+    series = get_metric_series(repo_url, run_hash, metric_name)
     if not series:
         raise AssertionError(
             f"run {run_hash!r}: metric {metric_name!r} has no values (or not enumerated)"
@@ -130,13 +139,13 @@ def assert_metric_landed(repo_path: Path, run_hash: str, metric_name: str) -> No
 
 
 def assert_metric_count(
-    repo_path: Path,
+    repo_url: str,
     run_hash: str,
     metric_name: str,
     expected_count: int,
 ) -> None:
     """Assert exactly ``expected_count`` values under ``metric_name``."""
-    series = get_metric_series(repo_path, run_hash, metric_name)
+    series = get_metric_series(repo_url, run_hash, metric_name)
     if len(series) != expected_count:
         raise AssertionError(
             f"run {run_hash!r}: metric {metric_name!r}: expected {expected_count} values, got {len(series)}"
@@ -144,13 +153,13 @@ def assert_metric_count(
 
 
 def assert_metric_values(
-    repo_path: Path,
+    repo_url: str,
     run_hash: str,
     metric_name: str,
     expected: list[tuple[int, float]],
 ) -> None:
     """Assert (step, value) pairs match ``expected`` exactly, in order."""
-    actual = get_metric_series(repo_path, run_hash, metric_name)
+    actual = get_metric_series(repo_url, run_hash, metric_name)
     if actual != expected:
         raise AssertionError(
             f"run {run_hash!r}: metric {metric_name!r}:\n"
@@ -188,25 +197,25 @@ def assert_schema_finalized_event(
             )
 
 
-def assert_run_closed(repo_path: Path, run_hash: str) -> None:
+def assert_run_closed(repo_url: str, run_hash: str) -> None:
     """Assert the run is closed (has a non-null ``end_time``)."""
-    run = _get_run(repo_path, run_hash)
+    run = _get_run(repo_url, run_hash)
     end_time = getattr(run, "end_time", None)
     if end_time is None:
         raise AssertionError(f"run {run_hash!r}: end_time is None (run not closed)")
 
 
-def assert_no_run_exists(repo_path: Path, run_hash: str) -> None:
+def assert_no_run_exists(repo_url: str, run_hash: str) -> None:
     """Assert no run with the given hash exists in the repo."""
-    repo = _open_repo(repo_path)
+    repo = _open_repo(repo_url)
     run = repo.get_run(run_hash)
     if run is not None:
-        raise AssertionError(f"run {run_hash!r} unexpectedly exists in {repo_path}")
+        raise AssertionError(f"run {run_hash!r} unexpectedly exists in {repo_url}")
 
 
-def get_run_tags(repo_path: Path, run_hash: str) -> dict[str, str]:
+def get_run_tags(repo_url: str, run_hash: str) -> dict[str, str]:
     """Return all tags on the run as a dict. Used for tag-fidelity checks."""
-    run = _get_run(repo_path, run_hash)
+    run = _get_run(repo_url, run_hash)
     # aim.Run exposes tags via .props / .dataframe(); iterate to build a dict.
     tags: dict[str, str] = {}
     for key in run.dataframe().columns:
@@ -217,7 +226,7 @@ def get_run_tags(repo_path: Path, run_hash: str) -> dict[str, str]:
 
 
 def get_metric_series(
-    repo_path: Path,
+    repo_url: str,
     run_hash: str,
     metric_name: str,
 ) -> list[tuple[int, float]]:
@@ -232,7 +241,7 @@ def get_metric_series(
     ``SequenceV2Data`` don't survive ``list()`` reliably; the dataframe
     is the tested read path.
     """
-    repo = _open_repo(repo_path)
+    repo = _open_repo(repo_url)
     _index_run(repo, run_hash)
     run = repo.get_run(run_hash)
     if run is None:
