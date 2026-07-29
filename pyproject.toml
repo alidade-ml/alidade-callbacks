@@ -45,8 +45,7 @@ composer = ["mosaicml>=0.20"]
 lightning = ["lightning>=2.0"]
 # transformers>=4.42 requires accelerate for the PyTorch Trainer
 # backend. Anyone instantiating a Trainer with our AstrolabeHFTrainerCallback
-# hits ImportError without it; testbed caught the gap
-# (tests/testbed/RED_FLAGS.md — 2026-07-27).
+# hits ImportError without it; testbed caught the gap.
 hf = ["transformers>=4.30", "accelerate>=1.1.0"]
 # `all` is the convenience extra for users who don't want to think
 # about which framework they need. Most users should pick a single one.
