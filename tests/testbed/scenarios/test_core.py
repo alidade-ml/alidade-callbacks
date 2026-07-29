@@ -472,7 +472,6 @@ class TestBufferDrainer:
         for i in range(5):
             assert_metric_count(aim_repo, result.run_hash, f"metric_{i}", 50)
 
-    @pytest.mark.skip(reason="testbed-todo: TESTBED_INJECT_DRAINER_DELAY class-level monkey-patch on aim.Run.track works in isolation but doesn't slow the drainer's calls in-process. Root cause unclear — possibly Aim's bound-method caching. Requires deeper investigation.")
     def test_overflow_drops_oldest(
         self,
         testbed: "TestbedHandle",
@@ -496,7 +495,6 @@ class TestBufferDrainer:
         close_events = [e for e in result.stats_events if e.get("kind") == "close"]
         assert close_events and close_events[-1].get("dropped", 0) > 0
 
-    @pytest.mark.skip(reason="testbed-todo: same TESTBED_INJECT_DRAINER_DELAY limitation as test_overflow_drops_oldest.")
     def test_overflow_counter_increments(
         self,
         testbed: "TestbedHandle",
@@ -518,7 +516,6 @@ class TestBufferDrainer:
         close_events = [e for e in result.stats_events if e.get("kind") == "close"]
         assert close_events and close_events[-1].get("dropped", 0) > 0
 
-    @pytest.mark.skip(reason="RED FLAG: aim.Run.track's @noexcept decorator swallows exceptions; callback lib's retry loop never sees them. See tests/testbed/RED_FLAGS.md.")
     def test_drainer_retries_on_transient_error(
         self,
         testbed: "TestbedHandle",
@@ -540,7 +537,6 @@ class TestBufferDrainer:
         # Write eventually lands after retry
         assert_metric_count(aim_repo, result.run_hash, "metric_0", 5)
 
-    @pytest.mark.skip(reason="RED FLAG: aim.Run.track's @noexcept swallows the injected error; drainer never dies. See tests/testbed/RED_FLAGS.md.")
     def test_drainer_death_surfaces_in_stats(
         self,
         testbed: "TestbedHandle",
@@ -562,7 +558,6 @@ class TestBufferDrainer:
         ]
         assert len(drainer_events) == 1
 
-    @pytest.mark.skip(reason="RED FLAG: same as test_drainer_death_surfaces_in_stats — @noexcept prevents forcing drainer death via track exceptions.")
     def test_close_after_drainer_death_does_not_hang(
         self,
         testbed: "TestbedHandle",
@@ -580,7 +575,6 @@ class TestBufferDrainer:
         )
         assert result.exit_code == 0, result.stderr
 
-    @pytest.mark.skip(reason="testbed-todo: driver + harness don't yet implement TESTBED_RESTART_AIM_AT (needs host-docker access from inside client)")
     def test_writes_after_aim_server_restart_land(
         self,
         testbed: "TestbedHandle",
@@ -594,7 +588,13 @@ class TestBufferDrainer:
                 testbed,
                 stats_jsonl_path,
                 steps=10,
-                driver_flags={"TESTBED_RESTART_AIM_AT": "5"},
+                # Paced writes so the restart window (a few seconds) sits
+                # inside the run rather than after close. The drainer's
+                # in-flight retry needs a live driver + open run to have
+                # somewhere to land recovered items.
+                metrics_per_sec=2.0,
+                run_name="restart-recovery-probe",
+                driver_flags={"TESTBED_RESTART_AIM_AT": "3"},
             )
         )
         assert result.exit_code == 0, result.stderr

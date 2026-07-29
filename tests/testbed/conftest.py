@@ -17,6 +17,9 @@ from __future__ import annotations
 
 import json
 import re
+import subprocess
+import threading
+import time
 from pathlib import Path
 from typing import Callable, Generator
 
@@ -113,6 +116,46 @@ def _parse_run_hash(stdout: str, pattern: re.Pattern) -> str | None:
     return match.group(1) if match else None
 
 
+def _watch_and_restart_aim(testbed: TestbedHandle, stop: threading.Event) -> None:
+    """Poll the client container for the driver's restart-signal file.
+
+    Once seen, ``docker restart`` the aim container and wait for it to
+    accept connections again. Idempotent: fires at most once per
+    invocation. Silently exits if ``stop`` is set before the signal
+    ever appears (driver finished without triggering restart).
+    """
+    signal_path = "/tmp/testbed-restart-signal.txt"
+    poll_deadline = time.monotonic() + 120.0
+    while not stop.is_set() and time.monotonic() < poll_deadline:
+        code, _, _ = compose.exec_in(
+            testbed,
+            service="client",
+            cmd=["test", "-f", signal_path],
+            check=False,
+            timeout_s=5.0,
+        )
+        if code == 0:
+            break
+        time.sleep(0.1)
+    else:
+        return
+    if stop.is_set():
+        return
+
+    subprocess.run(
+        ["docker", "restart", testbed.aim_container],
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    # Wait for aim to be accepting connections + actually serving.
+    # ``wait_healthy`` uses the same probe the initial startup relied
+    # on; it returns as soon as an aim.Run open/close round-trip
+    # succeeds from the client container. The drainer's next retry
+    # after this point should succeed.
+    compose.wait_healthy(testbed, timeout_s=60.0)
+
+
 def _read_stats_events(host_path: Path) -> list[dict]:
     if not host_path.exists():
         return []
@@ -150,17 +193,46 @@ def run_driver(
             check=False,
             timeout_s=10.0,
         )
+        # Aim-server restart hook (TESTBED_RESTART_AIM_AT). Driver writes
+        # /tmp/testbed-restart-signal.txt inside the client container at
+        # step N. We poll for it here on the host and issue docker
+        # restart on the aim container once it appears. The container's
+        # bridge network + restart="no" means the container comes back
+        # under the same name and rejoins the same network.
+        restart_stop = threading.Event()
+        restart_thread: threading.Thread | None = None
+        if "TESTBED_RESTART_AIM_AT" in config.driver_flags:
+            # Clear any stale signal from a prior test.
+            compose.exec_in(
+                testbed,
+                service="client",
+                cmd=["rm", "-f", "/tmp/testbed-restart-signal.txt"],
+                check=False,
+                timeout_s=10.0,
+            )
+            restart_thread = threading.Thread(
+                target=_watch_and_restart_aim,
+                args=(testbed, restart_stop),
+                daemon=True,
+            )
+            restart_thread.start()
+
         # Container-side stats path is bind-mounted per exec; driver writes to
         # the path in `config.stats_jsonl_container_path` and we retrieve it
         # after via `docker cp`.
-        exit_code, stdout, stderr = compose.exec_in(
-            testbed,
-            service="client",
-            cmd=["python", "-m", "tests.testbed.harness.driver"],
-            env=env,
-            check=False,
-            timeout_s=600.0,
-        )
+        try:
+            exit_code, stdout, stderr = compose.exec_in(
+                testbed,
+                service="client",
+                cmd=["python", "-m", "tests.testbed.harness.driver"],
+                env=env,
+                check=False,
+                timeout_s=600.0,
+            )
+        finally:
+            restart_stop.set()
+            if restart_thread is not None:
+                restart_thread.join(timeout=10.0)
         run_hash = _parse_run_hash(stdout, _RUN_HASH_RE)
 
         # Copy container-side stats jsonl back to host tmp_path for assertions.

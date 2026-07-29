@@ -135,7 +135,6 @@ class TestTeardown:
         assert result.run_hash is not None
         assert_run_closed(aim_repo, result.run_hash)
 
-    @pytest.mark.skip(reason="testbed-todo: flaky when run with other Lightning tests in same session — passes in isolation. Likely Lightning global-state interaction across successive Trainer instances.")
     def test_teardown_drains_buffer(
         self,
         testbed: "TestbedHandle",

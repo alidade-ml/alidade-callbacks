@@ -30,6 +30,25 @@ The eval helpers need only the base install (`aim`) — no framework extra.
 
 from __future__ import annotations
 
+# Disable Aim's default "safe mode" — aim.Run.track is decorated with
+# @noexcept which silently swallows exceptions. Our _MetricBuffer's
+# retry loop in _core._drain_loop_inner catches exceptions to trigger
+# transient-error retries + record ``_retried`` / ``_dropped_failed``
+# counters. Without this call, aim silently absorbs those exceptions
+# and our retry logic is unreachable. Testbed caught the gap
+# (tests/testbed/RED_FLAGS.md — 2026-07-27).
+#
+# Import-time side effect is intentional: users importing
+# astrolabe_callbacks are opting into our reliability posture, which
+# depends on Aim exceptions propagating.
+try:
+    from aim.ext.exception_resistant import disable_safe_mode as _disable_aim_safe_mode
+
+    _disable_aim_safe_mode()
+except ImportError:
+    # Older Aim versions or aim not installed — nothing to disable.
+    pass
+
 from astrolabe_callbacks.eval_results import (
     EvalInputError,
     log_eval_table,
