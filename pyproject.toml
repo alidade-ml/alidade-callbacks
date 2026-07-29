@@ -56,6 +56,14 @@ dev = [
     "mosaicml>=0.20",
     "lightning>=2.0",
     "transformers>=4.30",
+    # pandas is needed on the host running pytest — the testbed's
+    # assertion helpers pull metric values via aim's ``.dataframe()``,
+    # which returns a pandas DataFrame and imports pandas at call time.
+    # Framework deps above happen to pull pandas transitively locally,
+    # but the resolver picks a slimmer chain on CI where pandas isn't
+    # guaranteed. Pin explicitly so tests never depend on the shape of
+    # transitive resolution.
+    "pandas>=2.0",
 ]
 
 [project.urls]
