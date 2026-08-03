@@ -43,12 +43,16 @@ lost the moment someone copies just the weights.
 
 from __future__ import annotations
 
+import json
 import os
-from dataclasses import dataclass, field
+from dataclasses import dataclass, fields
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Literal
 
-from astrolabe_callbacks import contract
+from loguru import logger
+
+from astrolabe_callbacks import _core, contract
 
 __all__ = [
     "CheckpointMeta",
@@ -68,6 +72,16 @@ __all__ = [
 # have no native callback-state slot (.pt via raw torch.save, and the
 # safetensors header).
 META_KEY = "_astrolabe_meta"
+
+# Composer stores callback state under the callback's class qualname.
+# Renaming AstrolabeComposerCheckpointer orphans every checkpoint
+# written by an older version, so the reader pins the old name here.
+_COMPOSER_STATE_KEY = "AstrolabeComposerCheckpointer"
+
+# Keyed by path rather than a single boolean: touch() bumps mtime, so
+# "once" has to mean once per marker file. One submit only ever sets one
+# path, so this is the module-level latch in practice.
+_FIRST_CHECKPOINT_MARKERS_WRITTEN: set[str] = set()
 
 ExportFormat = Literal["pt", "safetensors"]
 
@@ -115,18 +129,24 @@ class CheckpointMeta:
     def linked(self) -> bool:
         """``True`` when enough identity is present to attribute this
         checkpoint to a training run."""
-        raise NotImplementedError
+        # experiment alone is not identity — names repeat across submits.
+        return bool(self.submit_id or self.aim_run_hash)
 
     def to_dict(self) -> dict[str, Any]:
         """Serialize to the on-disk form. Omits ``None`` fields so the
         embedded block stays small and forward-compatible."""
-        raise NotImplementedError
+        return {
+            f.name: getattr(self, f.name)
+            for f in fields(self)
+            if getattr(self, f.name) is not None
+        }
 
     @classmethod
     def from_dict(cls, raw: dict[str, Any]) -> "CheckpointMeta":
         """Parse an embedded block, tolerating unknown keys written by
         a newer callback version."""
-        raise NotImplementedError
+        known = {f.name for f in fields(cls)}
+        return cls(**{k: v for k, v in raw.items() if k in known})
 
 
 def build_checkpoint_meta(
@@ -153,7 +173,25 @@ def build_checkpoint_meta(
         Never raises. Outside astrolabe orchestration every propagated
         field is ``None`` and the result is an unlinked stamp.
     """
-    raise NotImplementedError
+    submit_id = experiment = version = aim_run_hash = None
+    try:
+        submit_id = os.environ.get(contract.ENV_SUBMIT_ID) or None
+        experiment = os.environ.get(contract.ENV_EXPERIMENT_NAME) or None
+        tags = contract.parse_aim_run_tags(os.environ.get(contract.ENV_AIM_RUN_TAGS))
+        version = tags.get(contract.TAG_VERSION) or None
+        aim_run_hash = _core.current_run_hash()
+    except Exception as exc:
+        logger.debug("Checkpoint identity lookup failed, stamping unlinked: {}", exc)
+
+    return CheckpointMeta(
+        submit_id=submit_id,
+        experiment=experiment,
+        version=version,
+        aim_run_hash=aim_run_hash,
+        created_at=datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        derived_from=derived_from,
+        derivation_chain_length=derivation_chain_length,
+    )
 
 
 def read_checkpoint_meta(
@@ -184,7 +222,22 @@ def read_checkpoint_meta(
     ValueError
         Path exists but is not a recognized checkpoint format.
     """
-    raise NotImplementedError
+    if isinstance(checkpoint, dict):
+        return _meta_from_block(_extract_meta_block(checkpoint))
+
+    path = Path(checkpoint)
+    if not path.exists():
+        raise FileNotFoundError(f"no such checkpoint: {path}")
+
+    fmt = _sniff_format(path)
+    if fmt is None:
+        raise ValueError(
+            f"{path} is not a recognized checkpoint "
+            f"(expected safetensors or torch-pickle magic bytes)"
+        )
+
+    reader = _read_meta_from_safetensors if fmt == "safetensors" else _read_meta_from_torch
+    return _meta_from_block(reader(path))
 
 
 def stamp_state_dict(
@@ -200,7 +253,8 @@ def stamp_state_dict(
     Mutates and returns ``state_dict`` for call-site convenience.
     Re-stamping overwrites any existing block.
     """
-    raise NotImplementedError
+    state_dict[META_KEY] = (meta or build_checkpoint_meta()).to_dict()
+    return state_dict
 
 
 def export_checkpoint(
@@ -243,7 +297,37 @@ def export_checkpoint(
         ``fmt="safetensors"`` with a state dict containing non-tensor
         values — safetensors holds tensors only, unlike torch pickle.
     """
-    raise NotImplementedError
+    if fmt not in ("pt", "safetensors"):
+        raise ValueError(f"unknown export format {fmt!r}; expected 'pt' or 'safetensors'")
+
+    out = Path(path)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    block = (meta or build_checkpoint_meta()).to_dict()
+    tensors = {k: v for k, v in state_dict.items() if k != META_KEY}
+
+    if fmt == "pt":
+        import torch
+
+        torch.save({**tensors, META_KEY: block}, out)
+        return out
+
+    try:
+        from safetensors.torch import save_file
+    except ImportError as exc:
+        raise ImportError(
+            "safetensors export needs the extra: pip install 'astrolabe-callbacks[safetensors]'"
+        ) from exc
+
+    import torch
+
+    non_tensors = sorted(k for k, v in tensors.items() if not isinstance(v, torch.Tensor))
+    if non_tensors:
+        raise ValueError(
+            f"safetensors holds tensors only; non-tensor keys: {non_tensors}. "
+            f"Use fmt='pt' to keep them."
+        )
+    save_file(tensors, str(out), metadata={META_KEY: json.dumps(block)})
+    return out
 
 
 def write_first_checkpoint_marker_once() -> None:
@@ -256,24 +340,105 @@ def write_first_checkpoint_marker_once() -> None:
     Silent no-op when the env var is unset. Best-effort: a failed touch
     degrades the healing bound but must never fail training.
     """
-    # TODO(stage3): reads contract.ENV_FIRST_CHECKPOINT_MARKER, which
-    # does not exist until the engine PR lands it and this repo
-    # re-vendors via tools/vendor-contract.py. Blocked on that.
-    raise NotImplementedError
+    path = os.environ.get(contract.ENV_FIRST_CHECKPOINT_MARKER)
+    if not path or path in _FIRST_CHECKPOINT_MARKERS_WRITTEN:
+        return
+    _FIRST_CHECKPOINT_MARKERS_WRITTEN.add(path)
+    try:
+        Path(os.path.expanduser(path)).touch()
+    except Exception as exc:
+        logger.debug("first-checkpoint marker touch failed ({}): {}", path, exc)
+
+
+def _derivation_kwargs(parent: CheckpointMeta | None) -> dict[str, Any]:
+    """``build_checkpoint_meta`` kwargs linking a checkpoint to the one
+    its run resumed from.
+
+    Empty when there is no parent, when the parent was never linked, or
+    when the parent is this same Aim run — resuming into the run that
+    wrote the parent is continuation, not derivation.
+    """
+    if parent is None or not parent.aim_run_hash:
+        return {}
+    if parent.aim_run_hash == _core.current_run_hash():
+        return {}
+    return {
+        "derived_from": parent.aim_run_hash,
+        "derivation_chain_length": parent.derivation_chain_length + 1,
+    }
+
+
+def _meta_from_block(block: Any) -> CheckpointMeta | None:
+    if block is None:
+        return None
+    if not isinstance(block, dict):
+        # The buffer mechanism writes a uint8 tensor under the same key.
+        return read_meta_from_buffer({BUFFER_NAME: block})
+    try:
+        return CheckpointMeta.from_dict(block)
+    except Exception as exc:
+        logger.debug("Unusable astrolabe meta block, treating as absent: {}", exc)
+        return None
+
+
+def _extract_meta_block(obj: dict[str, Any]) -> Any:
+    """Find the meta block wherever the writing mechanism put it."""
+    block = obj.get(META_KEY)
+    if block is not None:
+        return block
+    # Composer keys each callback's state by class qualname rather than
+    # writing to the top level, so its block lives one nest down.
+    state = obj.get("state")
+    callbacks = state.get("callbacks") if isinstance(state, dict) else None
+    if isinstance(callbacks, dict):
+        return callbacks.get(_COMPOSER_STATE_KEY)
+    return None
 
 
 def _read_meta_from_safetensors(path: Path) -> dict[str, Any] | None:
-    raise NotImplementedError
+    try:
+        with path.open("rb") as fh:
+            header_len = int.from_bytes(fh.read(8), "little")
+            header = json.loads(fh.read(header_len).decode("utf-8"))
+        block = (header.get("__metadata__") or {}).get(META_KEY)
+        return json.loads(block) if block else None
+    except Exception as exc:
+        logger.debug("Could not read safetensors header of {}: {}", path, exc)
+        return None
 
 
 def _read_meta_from_torch(path: Path) -> dict[str, Any] | None:
-    raise NotImplementedError
+    import torch
+
+    try:
+        obj = torch.load(path, map_location="meta", weights_only=True)
+    except Exception:
+        # Framework checkpoints carry non-tensor state (optimizer configs,
+        # RNG objects, numpy scalars) that weights_only refuses to unpickle.
+        try:
+            obj = torch.load(path, map_location="meta", weights_only=False)
+        except Exception as exc:
+            logger.debug("Could not load {}: {}", path, exc)
+            return None
+    return _extract_meta_block(obj) if isinstance(obj, dict) else None
 
 
 def _sniff_format(path: Path) -> ExportFormat | None:
     """Identify checkpoint format by magic bytes, not extension —
     callers name files whatever they like."""
-    raise NotImplementedError
+    with path.open("rb") as fh:
+        head = fh.read(9)
+    # torch.save writes a zip archive (modern) or a protocol-2+ pickle
+    # stream (legacy `_use_new_zipfile_serialization=False`).
+    if head[:4] == b"PK\x03\x04" or head[:1] == b"\x80":
+        return "pt"
+    # safetensors: u64 little-endian header length, then that many bytes
+    # of JSON. https://github.com/huggingface/safetensors#format
+    if len(head) == 9 and head[8:9] == b"{":
+        header_len = int.from_bytes(head[:8], "little")
+        if 0 < header_len <= path.stat().st_size - 8:
+            return "safetensors"
+    return None
 
 
 BUFFER_NAME = "_astrolabe_meta"
@@ -298,7 +463,14 @@ def embed_meta_as_buffer(model: Any, meta: CheckpointMeta | None = None) -> None
     Idempotent: re-registering replaces the existing buffer so the
     embedded hash tracks the live run.
     """
-    raise NotImplementedError
+    import torch
+
+    payload = json.dumps((meta or build_checkpoint_meta()).to_dict()).encode("utf-8")
+    model.register_buffer(
+        BUFFER_NAME,
+        torch.frombuffer(bytearray(payload), dtype=torch.uint8),
+        persistent=True,
+    )
 
 
 def read_meta_from_buffer(state_dict: dict[str, Any]) -> CheckpointMeta | None:
@@ -307,7 +479,21 @@ def read_meta_from_buffer(state_dict: dict[str, Any]) -> CheckpointMeta | None:
     Returns ``None`` when the buffer is absent or undecodable — an
     unstamped checkpoint is not an error.
     """
-    raise NotImplementedError
+    buffer = state_dict.get(BUFFER_NAME)
+    if buffer is None:
+        return None
+    try:
+        raw = json.loads(bytes(buffer.tolist()).decode("utf-8"))
+    except Exception as exc:
+        logger.debug("Undecodable astrolabe provenance buffer: {}", exc)
+        return None
+    if not isinstance(raw, dict):
+        return None
+    try:
+        return CheckpointMeta.from_dict(raw)
+    except Exception as exc:
+        logger.debug("Unusable astrolabe provenance buffer: {}", exc)
+        return None
 
 
 def strip_meta_buffer(state_dict: dict[str, Any]) -> dict[str, Any]:
@@ -316,4 +502,4 @@ def strip_meta_buffer(state_dict: dict[str, Any]) -> dict[str, Any]:
     For callers who want the weights without the extra key. Returns a
     new dict; the input is not mutated.
     """
-    raise NotImplementedError
+    return {k: v for k, v in state_dict.items() if k != BUFFER_NAME}

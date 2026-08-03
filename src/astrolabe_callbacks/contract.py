@@ -42,7 +42,7 @@ from __future__ import annotations
 # vendored from; the engine refuses submits whose pinned callback was
 # vendored against a contract older than what this engine version
 # requires.
-CONTRACT_VERSION = "1.3.0"
+CONTRACT_VERSION = "1.4.0"
 
 # --- Env vars: ENGINE sets in the training process -------------------------
 #
@@ -88,6 +88,11 @@ ENV_RANK_LOGS_DIR = "ASTROLABE_RANK_LOGS_DIR"
 # step-failure time to enforce ``until: first_metric`` healing bounds
 # (:class:`astrolabe.config.StepHealingConfig`).
 ENV_FIRST_METRIC_MARKER = "ASTROLABE_FIRST_METRIC_MARKER"
+
+# Same mechanism for ``until: first_checkpoint``.  Separate marker
+# because the two windows close on different events: a run can emit
+# metrics for hours before its first checkpoint.
+ENV_FIRST_CHECKPOINT_MARKER = "ASTROLABE_FIRST_CHECKPOINT_MARKER"
 
 # --- Aim run tags: CALLBACK writes, ENGINE + dashboard read ----------------
 #
@@ -218,12 +223,28 @@ def format_local_aim_repo_path(submit_id: str) -> str:
     return LOCAL_AIM_REPO_PATH_TEMPLATE.format(submit_id=submit_id)
 
 
-def format_first_metric_marker_path(submit_id: str) -> str:
-    """Construct the per-submit first-metric marker path.
+def format_first_metric_marker_path(submit_id: str, step_num: int) -> str:
+    """Construct the per-step first-metric marker path.
 
     Engine sets ``ASTROLABE_FIRST_METRIC_MARKER`` to this value.  The
     astrolabe-callbacks library touches this file on the first Aim
     metric write; the engine probes it to enforce
     ``until: first_metric`` healing bounds.
+
+    Keyed on step, not submit.  A submit-scoped marker leaks across
+    steps: step 1 emits a metric, step 2 crashes before emitting one,
+    and step 2's ``until: first_metric`` window is judged already
+    closed by step 1's evidence.
     """
-    return f"astrolabe-first-metric-{submit_id}.marker"
+    return f"astrolabe-first-metric-{submit_id}-step{step_num}.marker"
+
+
+def format_first_checkpoint_marker_path(submit_id: str, step_num: int) -> str:
+    """Construct the per-step first-checkpoint marker path.
+
+    Engine sets ``ASTROLABE_FIRST_CHECKPOINT_MARKER`` to this value.
+    The astrolabe-callbacks library touches this file when the first
+    checkpoint of the step is written; the engine probes it to enforce
+    ``until: first_checkpoint`` healing bounds.
+    """
+    return f"astrolabe-first-checkpoint-{submit_id}-step{step_num}.marker"

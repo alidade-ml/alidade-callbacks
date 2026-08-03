@@ -65,12 +65,21 @@ flip warnings into raised exceptions for fail-fast CI behavior. See
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 
 from loguru import logger
 
 from astrolabe_callbacks import _core
 from astrolabe_callbacks._distributed import is_rank_zero
+from astrolabe_callbacks.checkpoint import (
+    CheckpointMeta,
+    _derivation_kwargs,
+    _meta_from_block,
+    build_checkpoint_meta,
+    export_checkpoint,
+    write_first_checkpoint_marker_once,
+)
 
 try:
     # ``LoggerDestination`` itself inherits from ``Callback``, so we get
@@ -438,6 +447,20 @@ def _normalize_composer_metric_name(name: str) -> str:
     return name
 
 
+def _composer_checkpoint_dir(state) -> str:
+    """Directory Composer's ``CheckpointSaver`` last wrote to.
+
+    Composer exposes no checkpoint path on ``State``; the saver's own
+    ``saved_checkpoints`` list is the only handle on where the primary
+    file landed.
+    """
+    for callback in getattr(state, "callbacks", []):
+        saved = getattr(callback, "saved_checkpoints", None)
+        if saved:
+            return str(Path(str(saved[-1])).parent)
+    raise ValueError("no Composer CheckpointSaver output found — pass export_dir=")
+
+
 class AstrolabeComposerCheckpointer(Callback):
     """Stamps astrolabe provenance into Composer checkpoints.
 
@@ -478,7 +501,9 @@ class AstrolabeComposerCheckpointer(Callback):
         export_formats: list[str] | None = None,
         export_dir: str | None = None,
     ) -> None:
-        raise NotImplementedError
+        self.export_formats = list(export_formats or [])
+        self.export_dir = export_dir
+        self._parent: CheckpointMeta | None = None
 
     def state_dict(self) -> dict:
         """Provenance block written into the checkpoint by Composer.
@@ -488,7 +513,7 @@ class AstrolabeComposerCheckpointer(Callback):
         so the embedded hash reflects the run live at save time, not at
         callback construction.
         """
-        raise NotImplementedError
+        return build_checkpoint_meta(**_derivation_kwargs(self._parent)).to_dict()
 
     def load_state_dict(self, state: dict) -> None:
         """Capture the parent's provenance on resume.
@@ -497,18 +522,31 @@ class AstrolabeComposerCheckpointer(Callback):
         what it was resumed *from*. Never raises on a malformed or
         absent block — resume must not fail on provenance.
         """
-        raise NotImplementedError
+        # Composer replays exactly what state_dict() returned, so ``state``
+        # is the block itself rather than a checkpoint wrapping it.
+        self._parent = _meta_from_block(state)
 
     def batch_checkpoint(self, state, logger) -> None:
-        # TODO(stage3): touch the first-checkpoint marker, then run
-        # derived-format exports. BATCH_CHECKPOINT fires after
-        # CheckpointSaver has written, so the primary file exists here.
-        raise NotImplementedError
+        write_first_checkpoint_marker_once()
+        self._export_derived(state)
 
     def epoch_checkpoint(self, state, logger) -> None:
-        # TODO(stage3): same as batch_checkpoint; Composer fires
-        # whichever matches the user's save_interval unit.
-        raise NotImplementedError
+        write_first_checkpoint_marker_once()
+        self._export_derived(state)
 
     def _export_derived(self, state) -> None:
-        raise NotImplementedError
+        if not self.export_formats or not is_rank_zero():
+            return
+        try:
+            destination = Path(self.export_dir or _composer_checkpoint_dir(state))
+            weights = state.model.state_dict()
+            meta = build_checkpoint_meta(**_derivation_kwargs(self._parent))
+            for fmt in self.export_formats:
+                export_checkpoint(
+                    weights,
+                    destination / f"{state.run_name}-derived.{fmt}",
+                    fmt=fmt,
+                    meta=meta,
+                )
+        except Exception as exc:
+            logger.warning("Derived checkpoint export failed: {}", exc)

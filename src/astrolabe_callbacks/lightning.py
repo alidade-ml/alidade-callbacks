@@ -61,12 +61,22 @@ behavior. See ``_core.py`` for the full contract.
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 
 from loguru import logger
 
 from astrolabe_callbacks import _core
 from astrolabe_callbacks._distributed import is_rank_zero
+from astrolabe_callbacks.checkpoint import (
+    CheckpointMeta,
+    _derivation_kwargs,
+    build_checkpoint_meta,
+    export_checkpoint,
+    read_checkpoint_meta,
+    stamp_state_dict,
+    write_first_checkpoint_marker_once,
+)
 
 try:
     # Lightning 2.x unified package. ``pytorch-lightning`` (pre-2.x) is
@@ -309,6 +319,13 @@ def _to_scalar(value: Any) -> float | None:
         return None
 
 
+def _lightning_checkpoint_dir(trainer) -> str:
+    dirpath = getattr(getattr(trainer, "checkpoint_callback", None), "dirpath", None)
+    if not dirpath:
+        raise ValueError("trainer has no ModelCheckpoint dirpath — pass export_dir=")
+    return str(dirpath)
+
+
 class AstrolabeLightningCheckpointer(Callback):
     """Stamps astrolabe provenance into Lightning checkpoints.
 
@@ -344,7 +361,9 @@ class AstrolabeLightningCheckpointer(Callback):
         export_formats: list[str] | None = None,
         export_dir: str | None = None,
     ) -> None:
-        raise NotImplementedError
+        self.export_formats = list(export_formats or [])
+        self.export_dir = export_dir
+        self._parent: CheckpointMeta | None = None
 
     def on_save_checkpoint(self, trainer, pl_module, checkpoint: dict) -> None:
         """Inject provenance into the checkpoint dict Lightning is about
@@ -352,7 +371,14 @@ class AstrolabeLightningCheckpointer(Callback):
 
         Mutates ``checkpoint`` in place — Lightning's contract.
         """
-        raise NotImplementedError
+        try:
+            stamp_state_dict(
+                checkpoint, build_checkpoint_meta(**_derivation_kwargs(self._parent))
+            )
+        except Exception as exc:
+            logger.warning("Could not stamp checkpoint provenance: {}", exc)
+        write_first_checkpoint_marker_once()
+        self._export_derived(trainer, checkpoint)
 
     def on_load_checkpoint(self, trainer, pl_module, checkpoint: dict) -> None:
         """Capture the parent's provenance on resume.
@@ -360,7 +386,23 @@ class AstrolabeLightningCheckpointer(Callback):
         Never raises on a malformed or absent block; resume must not
         fail on provenance.
         """
-        raise NotImplementedError
+        self._parent = (
+            read_checkpoint_meta(checkpoint) if isinstance(checkpoint, dict) else None
+        )
 
     def _export_derived(self, trainer, checkpoint: dict) -> None:
-        raise NotImplementedError
+        if not self.export_formats or not is_rank_zero():
+            return
+        try:
+            destination = Path(self.export_dir or _lightning_checkpoint_dir(trainer))
+            weights = checkpoint["state_dict"]
+            meta = build_checkpoint_meta(**_derivation_kwargs(self._parent))
+            for fmt in self.export_formats:
+                export_checkpoint(
+                    weights,
+                    destination / f"epoch{trainer.current_epoch}-derived.{fmt}",
+                    fmt=fmt,
+                    meta=meta,
+                )
+        except Exception as exc:
+            logger.warning("Derived checkpoint export failed: {}", exc)

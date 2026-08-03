@@ -53,6 +53,11 @@ from loguru import logger
 
 from astrolabe_callbacks import _core
 from astrolabe_callbacks._distributed import is_rank_zero
+from astrolabe_callbacks.checkpoint import (
+    build_checkpoint_meta,
+    export_checkpoint,
+    write_first_checkpoint_marker_once,
+)
 
 __all__ = ["AstrolabeRun", "Run", "save_checkpoint"]
 
@@ -347,4 +352,18 @@ def save_checkpoint(
     orchestration that is a no-op and the embedded block is unlinked —
     both supported.
     """
-    raise NotImplementedError
+    # One meta for the primary and every derived copy, so a researcher
+    # comparing the .pt against the .safetensors sees the same identity.
+    meta = build_checkpoint_meta()
+    primary = export_checkpoint(state_dict, path, fmt="pt", meta=meta)
+    write_first_checkpoint_marker_once()
+
+    for fmt in export_formats or []:
+        try:
+            export_checkpoint(
+                state_dict, primary.with_suffix(f".{fmt}"), fmt=fmt, meta=meta
+            )
+        except Exception as exc:
+            logger.warning("Derived {} export failed: {}", fmt, exc)
+
+    return str(primary)

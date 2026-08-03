@@ -45,12 +45,20 @@ flip warnings into raised exceptions for fail-fast CI behavior.
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 
 from loguru import logger
 
 from astrolabe_callbacks import _core
 from astrolabe_callbacks._distributed import is_rank_zero
+from astrolabe_callbacks.checkpoint import (
+    build_checkpoint_meta,
+    embed_meta_as_buffer,
+    export_checkpoint,
+    strip_meta_buffer,
+    write_first_checkpoint_marker_once,
+)
 
 try:
     from transformers import TrainerCallback
@@ -325,7 +333,8 @@ class AstrolabeHFCheckpointer(TrainerCallback):
         embed_in_weights: bool = True,
         export_formats: list[str] | None = None,
     ) -> None:
-        raise NotImplementedError
+        self.embed_in_weights = embed_in_weights
+        self.export_formats = list(export_formats or [])
 
     def on_train_begin(self, args, state, control, **kwargs) -> None:
         """Register the provenance buffer on the model.
@@ -334,7 +343,19 @@ class AstrolabeHFCheckpointer(TrainerCallback):
         exist before HF builds the state dict, and ``on_save`` is too
         late.
         """
-        raise NotImplementedError
+        if not self.embed_in_weights:
+            return
+        model = kwargs.get("model")
+        if model is None:
+            logger.warning(
+                "No model passed to on_train_begin — checkpoint provenance "
+                "will not be embedded in the weights."
+            )
+            return
+        try:
+            embed_meta_as_buffer(model)
+        except Exception as exc:
+            logger.warning("Could not register the provenance buffer: {}", exc)
 
     def on_save(self, args, state, control, **kwargs) -> None:
         """Touch the first-checkpoint healing marker.
@@ -344,4 +365,21 @@ class AstrolabeHFCheckpointer(TrainerCallback):
         this is why `until: first_checkpoint` works for HF users even
         with ``embed_in_weights=False``.
         """
-        raise NotImplementedError
+        write_first_checkpoint_marker_once()
+        self._export_derived(args, state, kwargs.get("model"))
+
+    def _export_derived(self, args, state, model) -> None:
+        if not self.export_formats or model is None or not is_rank_zero():
+            return
+        try:
+            # HF writes each checkpoint to output_dir/checkpoint-<step>;
+            # derived copies sit beside the primary.
+            destination = Path(args.output_dir) / f"checkpoint-{state.global_step}"
+            weights = strip_meta_buffer(model.state_dict())
+            meta = build_checkpoint_meta()
+            for fmt in self.export_formats:
+                export_checkpoint(
+                    weights, destination / f"derived.{fmt}", fmt=fmt, meta=meta
+                )
+        except Exception as exc:
+            logger.warning("Derived checkpoint export failed: {}", exc)
