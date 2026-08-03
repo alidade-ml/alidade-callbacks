@@ -79,13 +79,22 @@ try:
     # class. The user attaches via ``loggers=`` rather than
     # ``callbacks=``; see the module docstring.
     from composer.loggers import LoggerDestination
+
+    # The checkpointer is a plain Callback: it attaches via
+    # ``callbacks=`` and has no metric-broadcast role.
+    from composer.core import Callback
 except ImportError:  # pragma: no cover — Composer is an optional extra
     LoggerDestination = object  # type: ignore[misc,assignment]
+    Callback = object  # type: ignore[misc,assignment]
 
 # Re-export from _core for callers reaching for the parser directly.
 parse_aim_run_tags = _core.parse_aim_run_tags
 
-__all__ = ["AstrolabeComposerLogger", "parse_aim_run_tags"]
+__all__ = [
+    "AstrolabeComposerLogger",
+    "AstrolabeComposerCheckpointer",
+    "parse_aim_run_tags",
+]
 
 
 class AstrolabeComposerLogger(LoggerDestination):
@@ -427,3 +436,79 @@ def _normalize_composer_metric_name(name: str) -> str:
         suffix = name[len("metrics/eval/") :]
         return f"{_core.EVAL_METRIC_PREFIX}/{suffix}"
     return name
+
+
+class AstrolabeComposerCheckpointer(Callback):
+    """Stamps astrolabe provenance into Composer checkpoints.
+
+    Attach via ``callbacks=`` (not ``loggers=``) alongside your
+    existing ``AstrolabeComposerLogger``::
+
+        trainer = Trainer(
+            ...,
+            save_folder="checkpoints",
+            loggers=[AstrolabeComposerLogger()],
+            callbacks=[AstrolabeComposerCheckpointer()],
+        )
+
+    **This does not save checkpoints.** Composer's own
+    ``CheckpointSaver`` — constructed automatically from ``save_folder``
+    — does that. This callback only contributes provenance, plus
+    optional derived-format exports.
+
+    The embedding is free: Composer serializes every callback's
+    ``state_dict()`` into the checkpoint under its class qualname and
+    replays it through ``load_state_dict`` on resume. No file is
+    reopened or rewritten on this path.
+
+    Parameters
+    ----------
+    export_formats : list of {"pt", "safetensors"}, optional
+        Additional formats to write alongside each Composer checkpoint.
+        Empty by default — framework-native only. ``safetensors``
+        requires the ``[safetensors]`` extra.
+    export_dir : str, optional
+        Destination for derived exports. Defaults to the Composer
+        checkpoint's own directory.
+    """
+
+    def __init__(
+        self,
+        *,
+        export_formats: list[str] | None = None,
+        export_dir: str | None = None,
+    ) -> None:
+        raise NotImplementedError
+
+    def state_dict(self) -> dict:
+        """Provenance block written into the checkpoint by Composer.
+
+        Composer calls this on every save. Returns the ``to_dict()``
+        form of a freshly-built :class:`~astrolabe_callbacks.checkpoint.CheckpointMeta`
+        so the embedded hash reflects the run live at save time, not at
+        callback construction.
+        """
+        raise NotImplementedError
+
+    def load_state_dict(self, state: dict) -> None:
+        """Capture the parent's provenance on resume.
+
+        Retained so a checkpoint written by a resumed run can record
+        what it was resumed *from*. Never raises on a malformed or
+        absent block — resume must not fail on provenance.
+        """
+        raise NotImplementedError
+
+    def batch_checkpoint(self, state, logger) -> None:
+        # TODO(stage3): touch the first-checkpoint marker, then run
+        # derived-format exports. BATCH_CHECKPOINT fires after
+        # CheckpointSaver has written, so the primary file exists here.
+        raise NotImplementedError
+
+    def epoch_checkpoint(self, state, logger) -> None:
+        # TODO(stage3): same as batch_checkpoint; Composer fires
+        # whichever matches the user's save_interval unit.
+        raise NotImplementedError
+
+    def _export_derived(self, state) -> None:
+        raise NotImplementedError

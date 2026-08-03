@@ -54,7 +54,7 @@ from loguru import logger
 from astrolabe_callbacks import _core
 from astrolabe_callbacks._distributed import is_rank_zero
 
-__all__ = ["AstrolabeRun", "Run"]
+__all__ = ["AstrolabeRun", "Run", "save_checkpoint"]
 
 
 class AstrolabeRun:
@@ -313,3 +313,38 @@ class AstrolabeRun:
 # import Run` is shorter and reads as "open a run", which matches the
 # context manager idiom users already know from `wandb.init()` etc.
 Run = AstrolabeRun
+
+
+def save_checkpoint(
+    state_dict: dict,
+    path: str,
+    *,
+    export_formats: list[str] | None = None,
+) -> str:
+    """Save a checkpoint with astrolabe provenance embedded.
+
+    Drop-in for ``torch.save(state_dict, path)`` in hand-rolled
+    training loops. Raw PyTorch has no framework checkpoint slot, so
+    provenance goes in as a top-level ``_astrolabe_meta`` key.
+
+    Parameters
+    ----------
+    state_dict : dict
+        What you would have passed to ``torch.save``.
+    path : str
+        Destination ``.pt`` path.
+    export_formats : list of {"pt", "safetensors"}, optional
+        Extra formats to write alongside. Empty by default.
+
+    Returns
+    -------
+    str
+        The written path.
+
+    Notes
+    -----
+    Also touches the first-checkpoint healing marker. Outside astrolabe
+    orchestration that is a no-op and the embedded block is unlinked —
+    both supported.
+    """
+    raise NotImplementedError

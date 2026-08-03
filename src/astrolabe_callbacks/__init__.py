@@ -59,6 +59,12 @@ __version__ = "2.0.0"
 
 __all__ = [
     "AstrolabeComposerLogger",
+    "AstrolabeComposerCheckpointer",
+    "CheckpointMeta",
+    "build_checkpoint_meta",
+    "read_checkpoint_meta",
+    "export_checkpoint",
+    "save_checkpoint",
     "AstrolabeLightningLogger",
     "AstrolabeHFTrainerCallback",
     "AstrolabeRun",
@@ -78,6 +84,17 @@ def __getattr__(name: str):
     if name == "AstrolabeComposerLogger":
         from astrolabe_callbacks.composer import AstrolabeComposerLogger
         return AstrolabeComposerLogger
+    if name == "AstrolabeComposerCheckpointer":
+        from astrolabe_callbacks.composer import AstrolabeComposerCheckpointer
+        return AstrolabeComposerCheckpointer
+    if name in ("CheckpointMeta", "build_checkpoint_meta",
+                "read_checkpoint_meta", "export_checkpoint"):
+        # checkpoint.py imports no framework — safe to load eagerly here.
+        from astrolabe_callbacks import checkpoint
+        return getattr(checkpoint, name)
+    if name == "save_checkpoint":
+        from astrolabe_callbacks.pytorch import save_checkpoint
+        return save_checkpoint
     if name == "AstrolabeLightningLogger":
         from astrolabe_callbacks.lightning import AstrolabeLightningLogger
         return AstrolabeLightningLogger
