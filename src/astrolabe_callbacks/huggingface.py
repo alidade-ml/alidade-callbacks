@@ -53,6 +53,9 @@ from loguru import logger
 from astrolabe_callbacks import _core
 from astrolabe_callbacks._distributed import is_rank_zero
 from astrolabe_callbacks.checkpoint import (
+    CheckpointMeta,
+    _derivation_kwargs,
+    _meta_from_block,
     build_checkpoint_meta,
     embed_meta_as_buffer,
     export_checkpoint,
@@ -62,8 +65,14 @@ from astrolabe_callbacks.checkpoint import (
 
 try:
     from transformers import TrainerCallback
+
+    # HF's callback-state slot: anything ExportableState is serialized
+    # into ``trainer_state.json`` and restored on resume. Added in
+    # transformers 4.38; older versions simply lose the resume link.
+    from transformers.trainer_callback import ExportableState
 except ImportError:  # pragma: no cover — transformers is an optional extra
     TrainerCallback = object  # type: ignore[misc,assignment]
+    ExportableState = object  # type: ignore[misc,assignment]
 
 __all__ = ["AstrolabeHFTrainerCallback", "AstrolabeHFCheckpointer"]
 
@@ -292,7 +301,28 @@ def _normalize_log_key(key: str) -> str | None:
     return key
 
 
-class AstrolabeHFCheckpointer(TrainerCallback):
+# Key under which the provenance block rides in trainer_state.json.
+# Renaming it orphans the resume link on every checkpoint written by an
+# older version, so the reader pins it here rather than deriving it.
+_STATE_ATTRIBUTE = "astrolabe_provenance"
+
+
+def _parent_from_trainer_state(state: Any) -> CheckpointMeta | None:
+    """Provenance of the checkpoint this run resumed from.
+
+    On a fresh run ``stateful_callbacks`` holds this run's own block,
+    built before the Aim run existed and therefore hashless — which
+    ``_derivation_kwargs`` correctly reads as "no parent".
+    """
+    stored = (getattr(state, "stateful_callbacks", None) or {}).get(
+        "AstrolabeHFCheckpointer"
+    )
+    if not isinstance(stored, dict):
+        return None
+    return _meta_from_block((stored.get("attributes") or {}).get(_STATE_ATTRIBUTE))
+
+
+class AstrolabeHFCheckpointer(TrainerCallback, ExportableState):
     """Stamps astrolabe provenance into HuggingFace checkpoints.
 
     Attach like any other callback::
@@ -335,14 +365,38 @@ class AstrolabeHFCheckpointer(TrainerCallback):
     ) -> None:
         self.embed_in_weights = embed_in_weights
         self.export_formats = list(export_formats or [])
+        self._parent: CheckpointMeta | None = None
+
+    def state(self) -> dict:
+        """Provenance HF persists into ``trainer_state.json``.
+
+        This is HF's equivalent of Composer's ``state_dict()`` slot, and
+        the only one that survives a resume: the buffer does not, because
+        a fresh model has no such key and HF's non-strict weight load
+        drops it silently.
+
+        The block goes under ``attributes`` rather than ``args`` because
+        ``restore_callback_states_from_checkpoint`` reconstructs the
+        callback as ``type(cb)(**args)`` — provenance there would be a
+        constructor call with unknown keywords.
+        """
+        return {
+            "args": {},
+            "attributes": {
+                _STATE_ATTRIBUTE: build_checkpoint_meta(
+                    **_derivation_kwargs(self._parent)
+                ).to_dict()
+            },
+        }
 
     def on_train_begin(self, args, state, control, **kwargs) -> None:
-        """Register the provenance buffer on the model.
+        """Capture the resumed-from provenance, then register the buffer.
 
-        Done once at train start rather than per-save: the buffer has to
-        exist before HF builds the state dict, and ``on_save`` is too
-        late.
+        Registration happens once at train start rather than per-save:
+        the buffer has to exist before HF builds the state dict, and
+        ``on_save`` is too late.
         """
+        self._parent = _parent_from_trainer_state(state)
         if not self.embed_in_weights:
             return
         model = kwargs.get("model")
@@ -353,7 +407,9 @@ class AstrolabeHFCheckpointer(TrainerCallback):
             )
             return
         try:
-            embed_meta_as_buffer(model)
+            embed_meta_as_buffer(
+                model, build_checkpoint_meta(**_derivation_kwargs(self._parent))
+            )
         except Exception as exc:
             logger.warning("Could not register the provenance buffer: {}", exc)
 
@@ -376,7 +432,7 @@ class AstrolabeHFCheckpointer(TrainerCallback):
             # derived copies sit beside the primary.
             destination = Path(args.output_dir) / f"checkpoint-{state.global_step}"
             weights = strip_meta_buffer(model.state_dict())
-            meta = build_checkpoint_meta()
+            meta = build_checkpoint_meta(**_derivation_kwargs(self._parent))
             for fmt in self.export_formats:
                 export_checkpoint(
                     weights, destination / f"derived.{fmt}", fmt=fmt, meta=meta

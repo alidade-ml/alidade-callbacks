@@ -32,6 +32,12 @@ from tests.testbed.harness.driver import (
     DriverResult,
     config_to_env as driver_config_to_env,
 )
+from tests.testbed.harness.checkpoint_driver import (
+    PROBE_PREFIX,
+    CheckpointDriverConfig,
+    CheckpointDriverResult,
+    config_to_env as checkpoint_config_to_env,
+)
 from tests.testbed.harness.eval_driver import (
     EvalDriverConfig,
     EvalDriverResult,
@@ -45,6 +51,7 @@ __all__ = [
     "stats_jsonl_path",
     "run_driver",
     "run_eval_driver",
+    "run_checkpoint_driver",
 ]
 
 
@@ -271,6 +278,78 @@ def run_driver(
         )
 
     return _run
+
+
+@pytest.fixture
+def run_checkpoint_driver(
+    testbed: TestbedHandle,
+    stats_jsonl_path: Path,
+    tmp_path: Path,
+) -> Callable[[CheckpointDriverConfig], CheckpointDriverResult]:
+    """Run the checkpoint driver in the client container and pull its output back.
+
+    Copies the driver's whole workdir to the host so scenarios can read
+    the written checkpoints with the real ``safetensors`` /
+    ``transformers`` libraries rather than only through the reader whose
+    correctness is under test.
+    """
+
+    def _run(config: CheckpointDriverConfig) -> CheckpointDriverResult:
+        for path in (config.workdir, config.stats_jsonl_container_path):
+            compose.exec_in(
+                testbed,
+                service="client",
+                cmd=["rm", "-rf", path],
+                check=False,
+                timeout_s=30.0,
+            )
+        exit_code, stdout, stderr = compose.exec_in(
+            testbed,
+            service="client",
+            cmd=["python", "-m", "tests.testbed.harness.checkpoint_driver"],
+            env=checkpoint_config_to_env(config),
+            check=False,
+            timeout_s=900.0,
+        )
+        host_workdir = tmp_path / "ckpt-workdir"
+        _copy_from_container(testbed, config.workdir, host_workdir)
+        _copy_from_container(
+            testbed, config.stats_jsonl_container_path, stats_jsonl_path
+        )
+        return CheckpointDriverResult(
+            exit_code=exit_code,
+            probe=_parse_probe(stdout),
+            stdout=stdout,
+            stderr=stderr,
+            stats_events=_read_stats_events(stats_jsonl_path),
+            host_workdir=host_workdir,
+        )
+
+    return _run
+
+
+def _copy_from_container(
+    testbed: TestbedHandle, container_path: str, host_path: Path
+) -> None:
+    host_path.parent.mkdir(parents=True, exist_ok=True)
+    subprocess.run(
+        [
+            "docker",
+            "cp",
+            f"{testbed.client_container}:{container_path}",
+            str(host_path),
+        ],
+        capture_output=True,
+        text=True,
+        timeout=120,
+    )
+
+
+def _parse_probe(stdout: str) -> dict:
+    for line in stdout.splitlines():
+        if line.startswith(PROBE_PREFIX):
+            return json.loads(line[len(PROBE_PREFIX) :])
+    return {}
 
 
 @pytest.fixture

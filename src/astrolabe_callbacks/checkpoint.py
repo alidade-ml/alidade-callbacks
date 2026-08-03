@@ -400,11 +400,33 @@ def _read_meta_from_safetensors(path: Path) -> dict[str, Any] | None:
         with path.open("rb") as fh:
             header_len = int.from_bytes(fh.read(8), "little")
             header = json.loads(fh.read(header_len).decode("utf-8"))
-        block = (header.get("__metadata__") or {}).get(META_KEY)
-        return json.loads(block) if block else None
+            block = (header.get("__metadata__") or {}).get(META_KEY)
+            if block:
+                return json.loads(block)
+            return _read_buffer_tensor(fh, header, data_start=8 + header_len)
     except Exception as exc:
         logger.debug("Could not read safetensors header of {}: {}", path, exc)
         return None
+
+
+def _read_buffer_tensor(fh: Any, header: dict[str, Any], *, data_start: int) -> dict[str, Any] | None:
+    """Decode the provenance buffer out of a safetensors *tensor*.
+
+    HuggingFace writes the file itself and hardcodes its own
+    ``__metadata__``, so mechanism 3's block arrives as a uint8 tensor
+    among the weights rather than in the header. Without this branch
+    ``read_checkpoint_meta`` returns ``None`` for every HF checkpoint —
+    the artifact carries provenance the public reader cannot see.
+
+    https://github.com/huggingface/safetensors#format
+    """
+    entry = header.get(BUFFER_NAME)
+    if not isinstance(entry, dict) or entry.get("dtype") != "U8":
+        return None
+    start, end = entry["data_offsets"]
+    fh.seek(data_start + start)
+    raw = json.loads(fh.read(end - start).decode("utf-8"))
+    return raw if isinstance(raw, dict) else None
 
 
 def _read_meta_from_torch(path: Path) -> dict[str, Any] | None:
