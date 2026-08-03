@@ -18,12 +18,27 @@ process, and every step inherits the same ``AIM_RUN_TAGS``. Propagated
 identity is therefore 1:N, and the hash is what disambiguates. Single
 -step experiments (the common case) do not need it.
 
-**Two embedding mechanisms, by necessity.** Composer and Lightning
-serialize callback state into the checkpoint natively, so on those
-paths we fill the framework's own slot rather than reopening the file
-(see ``composer.AstrolabeComposerCheckpointer.state_dict``). Raw
-PyTorch and derived exports have no such slot, so they get an explicit
-top-level ``_astrolabe_meta`` key.
+**Three embedding mechanisms, by necessity.** Every one of them writes
+provenance *into* the artifact — never beside it — because a sidecar is
+lost the moment someone copies just the weights.
+
+1. **Native slot** (Composer, Lightning). Both serialize callback state
+   into the checkpoint themselves, so we fill their slot and never
+   reopen the written file.
+2. **Top-level key** (raw PyTorch, derived exports). No framework
+   involved, so the block goes in directly under ``META_KEY``.
+3. **Registered buffer** (HuggingFace). HF has no checkpoint-dict hook
+   at all: ``on_save`` fires post-write with no dict, and
+   ``save_pretrained`` hardcodes the safetensors metadata. The
+   alternatives were subclassing ``Trainer`` (permanent residence in
+   the user's MRO) or rewriting the finished file (O(model size) I/O
+   per save). A persistent uint8 buffer rides into ``state_dict()``
+   instead, costs O(metadata), and needs no override.
+
+   Mechanism 3 has a real cost: it adds a key a freshly-built model
+   lacks, so ``load_state_dict(..., strict=True)`` on such a model
+   raises. ``from_pretrained`` is non-strict and only warns. See
+   :func:`embed_meta_as_buffer` and :func:`strip_meta_buffer`.
 """
 
 from __future__ import annotations
@@ -42,6 +57,10 @@ __all__ = [
     "read_checkpoint_meta",
     "stamp_state_dict",
     "export_checkpoint",
+    "embed_meta_as_buffer",
+    "read_meta_from_buffer",
+    "strip_meta_buffer",
+    "BUFFER_NAME",
 ]
 
 
@@ -254,4 +273,47 @@ def _read_meta_from_torch(path: Path) -> dict[str, Any] | None:
 def _sniff_format(path: Path) -> ExportFormat | None:
     """Identify checkpoint format by magic bytes, not extension —
     callers name files whatever they like."""
+    raise NotImplementedError
+
+
+BUFFER_NAME = "_astrolabe_meta"
+
+
+def embed_meta_as_buffer(model: Any, meta: CheckpointMeta | None = None) -> None:
+    """Register provenance on ``model`` as a persistent uint8 buffer.
+
+    The escape hatch for frameworks with no checkpoint-dict hook —
+    HuggingFace specifically. A registered buffer lands in
+    ``state_dict()``, so it rides into every subsequent save (including
+    safetensors, which holds tensors only) with no override of the
+    framework's save path and no rewrite of the finished file.
+
+    Cost, and it is deliberate: this adds a key that a freshly-built
+    model does not have, so ``load_state_dict(..., strict=True)`` on
+    such a model raises ``Unexpected key(s)``. HF's ``from_pretrained``
+    loads non-strict and only warns. The break is asymmetric — saving
+    with the callback and loading without it. See
+    :func:`strip_meta_buffer`.
+
+    Idempotent: re-registering replaces the existing buffer so the
+    embedded hash tracks the live run.
+    """
+    raise NotImplementedError
+
+
+def read_meta_from_buffer(state_dict: dict[str, Any]) -> CheckpointMeta | None:
+    """Recover provenance written by :func:`embed_meta_as_buffer`.
+
+    Returns ``None`` when the buffer is absent or undecodable — an
+    unstamped checkpoint is not an error.
+    """
+    raise NotImplementedError
+
+
+def strip_meta_buffer(state_dict: dict[str, Any]) -> dict[str, Any]:
+    """Remove the provenance buffer so a strict load succeeds.
+
+    For callers who want the weights without the extra key. Returns a
+    new dict; the input is not mutated.
+    """
     raise NotImplementedError

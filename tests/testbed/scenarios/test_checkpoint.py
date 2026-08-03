@@ -29,13 +29,15 @@ differs:
 - **Composer** — collects our dict via ``Callback.state_dict()``
 - **Lightning** — hands us the dict to mutate via ``on_save_checkpoint``
 - **raw PyTorch** — no framework slot; explicit ``_astrolabe_meta`` key
+- **HuggingFace** — no hook at all; a registered uint8 buffer rides
+  into ``state_dict()`` and therefore into every save
 
-**HuggingFace is deliberately absent.** ``TrainerCallback`` exposes no
-checkpoint-dict hook at all, so HF needs a different mechanism entirely
-(monkey-patching ``Trainer._save`` or a post-save header rewrite) — an
-unresolved design question, not an oversight. Adding it here would mean
-designing that mechanism inside a test file. Tracked as the next
-checkpointer to land; see the PR description.
+HF's mechanism is the one that needs real exercising: it was chosen over
+subclassing ``Trainer`` and over rewriting the finished file, and it was
+validated against plain ``nn.Module`` + safetensors, NOT through a live
+``Trainer``. "The mechanism is PyTorch-level so it should carry" is
+exactly the shape of claim this repo has been burned by. See
+``TestHuggingFaceBufferMechanism``.
 
 Each framework skips if its extra is not installed.
 """
@@ -54,7 +56,7 @@ pytestmark = pytest.mark.testbed
 
 # Mechanism differs per framework; behavior must not. Any test taking
 # this fixture asserts a cross-framework contract.
-FRAMEWORKS = ["composer", "lightning", "pytorch"]
+FRAMEWORKS = ["composer", "lightning", "pytorch", "huggingface"]
 
 
 @pytest.fixture(params=FRAMEWORKS)
@@ -62,9 +64,12 @@ def framework(request):
     """Drives one training run per framework with its checkpointer
     attached. Skips when the framework's extra is absent."""
     pytest.importorskip(
-        {"composer": "composer", "lightning": "lightning", "pytorch": "torch"}[
-            request.param
-        ]
+        {
+            "composer": "composer",
+            "lightning": "lightning",
+            "pytorch": "torch",
+            "huggingface": "transformers",
+        }[request.param]
     )
     return request.param
 
@@ -150,4 +155,40 @@ class TestFirstCheckpointMarker:
         raise NotImplementedError("stage3")
 
     def test_training_survives_unwritable_marker_path(self, testbed, framework):
+        raise NotImplementedError("stage3")
+
+
+class TestHuggingFaceBufferMechanism:
+    """HF-specific. The buffer was validated against plain nn.Module +
+    safetensors, not through a real Trainer — that gap closes here."""
+
+    def test_buffer_survives_a_real_trainer_save(self, testbed):
+        """The load-bearing claim. If HF's save path drops or renames
+        non-parameter buffers, the whole mechanism is void and we owe
+        the design question a second look."""
+        pytest.importorskip("transformers")
+        raise NotImplementedError("stage3")
+
+    def test_buffer_present_in_safetensors_shard(self, testbed):
+        """HF shards large models. Provenance must not land in only one
+        shard, or a partial load loses it."""
+        pytest.importorskip("transformers")
+        raise NotImplementedError("stage3")
+
+    def test_from_pretrained_warns_but_loads(self, testbed):
+        """The documented cost. from_pretrained is non-strict — assert
+        it stays a warning and never becomes an error."""
+        pytest.importorskip("transformers")
+        raise NotImplementedError("stage3")
+
+    def test_strict_load_fails_and_strip_fixes_it(self, testbed):
+        """Pins the footgun AND its escape hatch. If a future HF version
+        changes this, we want to know from a test, not a user."""
+        pytest.importorskip("transformers")
+        raise NotImplementedError("stage3")
+
+    def test_embed_in_weights_false_still_touches_marker(self, testbed):
+        """Opting out of eval linkage must not cost you
+        `until: first_checkpoint`."""
+        pytest.importorskip("transformers")
         raise NotImplementedError("stage3")

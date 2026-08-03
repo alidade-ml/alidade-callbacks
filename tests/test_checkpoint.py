@@ -25,12 +25,16 @@ import pytest
 
 from astrolabe_callbacks import _core, contract
 from astrolabe_callbacks.checkpoint import (
+    BUFFER_NAME,
     META_KEY,
     CheckpointMeta,
     build_checkpoint_meta,
     export_checkpoint,
     read_checkpoint_meta,
+    embed_meta_as_buffer,
+    read_meta_from_buffer,
     stamp_state_dict,
+    strip_meta_buffer,
     write_first_checkpoint_marker_once,
 )
 
@@ -339,3 +343,59 @@ class TestCurrentRunRegistry:
             assert _core.current_run_hash() == "bbb"
         finally:
             _core.unregister_current_run(b)
+
+
+class TestBufferEmbedding:
+    """HuggingFace's mechanism. Verified against real safetensors in
+    the testbed; these pin the contract around it."""
+
+    def test_buffer_lands_in_state_dict(self):
+        torch = pytest.importorskip("torch")
+        model = torch.nn.Linear(4, 4)
+        embed_meta_as_buffer(model, make_meta())
+        assert BUFFER_NAME in model.state_dict()
+
+    def test_round_trips_through_state_dict(self):
+        torch = pytest.importorskip("torch")
+        model = torch.nn.Linear(4, 4)
+        meta = make_meta()
+        embed_meta_as_buffer(model, meta)
+        assert read_meta_from_buffer(model.state_dict()) == meta
+
+    def test_reembedding_replaces_rather_than_duplicates(self):
+        """The hash must track the live run, not the first one seen."""
+        torch = pytest.importorskip("torch")
+        model = torch.nn.Linear(4, 4)
+        embed_meta_as_buffer(model, make_meta(aim_run_hash="first"))
+        embed_meta_as_buffer(model, make_meta(aim_run_hash="second"))
+        assert read_meta_from_buffer(model.state_dict()).aim_run_hash == "second"
+
+    def test_read_returns_none_when_buffer_absent(self):
+        torch = pytest.importorskip("torch")
+        assert read_meta_from_buffer(torch.nn.Linear(4, 4).state_dict()) is None
+
+    def test_read_returns_none_on_undecodable_buffer(self):
+        torch = pytest.importorskip("torch")
+        garbage = torch.tensor([255, 254, 253], dtype=torch.uint8)
+        assert read_meta_from_buffer({BUFFER_NAME: garbage}) is None
+
+    def test_strip_restores_a_strict_loadable_state_dict(self):
+        """The documented escape hatch for the strict-load footgun."""
+        torch = pytest.importorskip("torch")
+        model = torch.nn.Linear(4, 4)
+        embed_meta_as_buffer(model, make_meta())
+        stripped = strip_meta_buffer(model.state_dict())
+        torch.nn.Linear(4, 4).load_state_dict(stripped, strict=True)
+
+    def test_strip_does_not_mutate_input(self):
+        torch = pytest.importorskip("torch")
+        model = torch.nn.Linear(4, 4)
+        embed_meta_as_buffer(model, make_meta())
+        sd = model.state_dict()
+        strip_meta_buffer(sd)
+        assert BUFFER_NAME in sd
+
+    def test_buffer_name_matches_meta_key(self):
+        """One name across all three mechanisms — a reader scanning a
+        state dict shouldn't have to know which path wrote it."""
+        assert BUFFER_NAME == META_KEY

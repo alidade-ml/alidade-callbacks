@@ -57,7 +57,7 @@ try:
 except ImportError:  # pragma: no cover — transformers is an optional extra
     TrainerCallback = object  # type: ignore[misc,assignment]
 
-__all__ = ["AstrolabeHFTrainerCallback"]
+__all__ = ["AstrolabeHFTrainerCallback", "AstrolabeHFCheckpointer"]
 
 
 # Keys in HF Trainer's `logs` dict that we treat as training-side metrics.
@@ -282,3 +282,66 @@ def _normalize_log_key(key: str) -> str | None:
         # ``"eval_loss"`` → currently ``"eval/loss"``, future ``"val/loss"``
         return f"{_core.EVAL_METRIC_PREFIX}/{suffix}"
     return key
+
+
+class AstrolabeHFCheckpointer(TrainerCallback):
+    """Stamps astrolabe provenance into HuggingFace checkpoints.
+
+    Attach like any other callback::
+
+        trainer = Trainer(..., callbacks=[AstrolabeHFTrainerCallback(),
+                                          AstrolabeHFCheckpointer()])
+
+    **HF is the one framework with no checkpoint-dict hook.**
+    ``TrainerCallback.on_save`` fires *after* the write and receives no
+    dict, and ``save_pretrained`` hardcodes the safetensors metadata
+    block, so there is nothing to fill. Rather than subclass ``Trainer``
+    (which puts us in the user's MRO permanently) or rewrite the
+    finished file (O(model size) I/O per save), this registers a
+    persistent uint8 buffer on the model. It rides into ``state_dict()``
+    and therefore into every save, untouched.
+
+    Known consequence, documented rather than hidden: the buffer adds a
+    key a freshly-built model lacks, so a manual
+    ``load_state_dict(..., strict=True)`` of one of these checkpoints
+    raises. ``from_pretrained`` is non-strict and only warns. Pass
+    ``embed_in_weights=False`` to fall back to marker-only if that
+    matters more than eval linkage.
+
+    Parameters
+    ----------
+    embed_in_weights : bool, default True
+        Register the provenance buffer. When ``False`` the callback
+        still touches the first-checkpoint healing marker, so
+        ``until: first_checkpoint`` keeps working — only eval linkage
+        is given up.
+    export_formats : list of {"pt", "safetensors"}, optional
+        Additional formats written alongside each checkpoint.
+    """
+
+    def __init__(
+        self,
+        *,
+        embed_in_weights: bool = True,
+        export_formats: list[str] | None = None,
+    ) -> None:
+        raise NotImplementedError
+
+    def on_train_begin(self, args, state, control, **kwargs) -> None:
+        """Register the provenance buffer on the model.
+
+        Done once at train start rather than per-save: the buffer has to
+        exist before HF builds the state dict, and ``on_save`` is too
+        late.
+        """
+        raise NotImplementedError
+
+    def on_save(self, args, state, control, **kwargs) -> None:
+        """Touch the first-checkpoint healing marker.
+
+        Fires after HF has written the checkpoint. The marker only needs
+        to record *that* a checkpoint happened, so post-save is fine —
+        this is why `until: first_checkpoint` works for HF users even
+        with ``embed_in_weights=False``.
+        """
+        raise NotImplementedError

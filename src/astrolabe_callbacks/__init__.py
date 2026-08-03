@@ -61,6 +61,7 @@ __all__ = [
     "AstrolabeComposerLogger",
     "AstrolabeComposerCheckpointer",
     "AstrolabeLightningCheckpointer",
+    "AstrolabeHFCheckpointer",
     "CheckpointMeta",
     "build_checkpoint_meta",
     "read_checkpoint_meta",
@@ -91,6 +92,9 @@ def __getattr__(name: str):
     if name == "AstrolabeLightningCheckpointer":
         from astrolabe_callbacks.lightning import AstrolabeLightningCheckpointer
         return AstrolabeLightningCheckpointer
+    if name == "AstrolabeHFCheckpointer":
+        from astrolabe_callbacks.huggingface import AstrolabeHFCheckpointer
+        return AstrolabeHFCheckpointer
     if name in ("CheckpointMeta", "build_checkpoint_meta",
                 "read_checkpoint_meta", "export_checkpoint"):
         # checkpoint.py imports no framework — safe to load eagerly here.
