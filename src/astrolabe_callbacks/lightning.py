@@ -75,7 +75,7 @@ try:
 except ImportError:  # pragma: no cover — Lightning is an optional extra
     Callback = object  # type: ignore[misc,assignment]
 
-__all__ = ["AstrolabeLightningLogger"]
+__all__ = ["AstrolabeLightningLogger", "AstrolabeLightningCheckpointer"]
 
 
 class AstrolabeLightningLogger(Callback):
@@ -307,3 +307,60 @@ def _to_scalar(value: Any) -> float | None:
         return float(value)
     except (TypeError, ValueError):
         return None
+
+
+class AstrolabeLightningCheckpointer(Callback):
+    """Stamps astrolabe provenance into Lightning checkpoints.
+
+    Attach alongside your existing logger::
+
+        trainer = Trainer(
+            callbacks=[AstrolabeLightningLogger(),
+                       AstrolabeLightningCheckpointer()],
+        )
+
+    **This does not save checkpoints.** Lightning's ``ModelCheckpoint``
+    does. This callback only contributes provenance, plus optional
+    derived-format exports.
+
+    Same design as the Composer checkpointer, different hook: Lightning
+    hands the checkpoint dict directly to ``on_save_checkpoint`` for
+    mutation, where Composer collects it via ``state_dict()``. Both are
+    native slots — neither reopens the written file.
+
+    Parameters
+    ----------
+    export_formats : list of {"pt", "safetensors"}, optional
+        Additional formats written alongside each checkpoint. Empty by
+        default. ``safetensors`` requires the ``[safetensors]`` extra.
+    export_dir : str, optional
+        Destination for derived exports. Defaults to the checkpoint's
+        own directory.
+    """
+
+    def __init__(
+        self,
+        *,
+        export_formats: list[str] | None = None,
+        export_dir: str | None = None,
+    ) -> None:
+        raise NotImplementedError
+
+    def on_save_checkpoint(self, trainer, pl_module, checkpoint: dict) -> None:
+        """Inject provenance into the checkpoint dict Lightning is about
+        to write, then touch the first-checkpoint healing marker.
+
+        Mutates ``checkpoint`` in place — Lightning's contract.
+        """
+        raise NotImplementedError
+
+    def on_load_checkpoint(self, trainer, pl_module, checkpoint: dict) -> None:
+        """Capture the parent's provenance on resume.
+
+        Never raises on a malformed or absent block; resume must not
+        fail on provenance.
+        """
+        raise NotImplementedError
+
+    def _export_derived(self, trainer, checkpoint: dict) -> None:
+        raise NotImplementedError
