@@ -47,6 +47,9 @@ from astrolabe_callbacks import contract
 
 __all__ = [
     "EVAL_METRIC_PREFIX",
+    "current_run_hash",
+    "register_current_run",
+    "unregister_current_run",
     "DEFAULT_AIM_URL",
     "RunConfig",
     "SchemaPhaseState",
@@ -761,6 +764,8 @@ def open_aim_run(cfg: RunConfig, *, run_name: str | None = None) -> Any:
             "Could not attach metric buffer (writes will be synchronous): {}", exc
         )
 
+    register_current_run(run)
+
     return run
 
 
@@ -848,6 +853,8 @@ def close_run(run: Any, *, status: str = "completed") -> None:
         logger.info("Aim run finalized (status={})", status)
     except Exception as exc:
         logger.debug("Aim run close failed: {}", exc)
+
+    unregister_current_run(run)
 
     # If we started a local aim server in open_aim_run, shut it down
     # gracefully now. The subprocess writes a final SST flush on
@@ -1352,6 +1359,8 @@ def maybe_finalize_schema(run: Any, state: SchemaPhaseState, *, cfg: RunConfig) 
         )
         return run  # degrade: keep the (now-broken) run, writes will fail gracefully
 
+    unregister_current_run(run)
+
     # Reopen with the same hash via force_resume. Aim will replay any
     # remaining WAL into the newly opened memtable.
     try:
@@ -1383,6 +1392,8 @@ def maybe_finalize_schema(run: Any, state: SchemaPhaseState, *, cfg: RunConfig) 
             finalize_count=state.finalize_count,
         )
         return run  # caller's self._run is now the closed Run; track_safely will skip
+
+    register_current_run(new_run)
 
     # Reattach a fresh metric buffer to the new Run. The old buffer is
     # closed (drainer thread exits cleanly); GC will release it.
@@ -1420,3 +1431,60 @@ def maybe_finalize_schema(run: Any, state: SchemaPhaseState, *, cfg: RunConfig) 
     )
 
     return new_run
+
+
+# ---- Live-run registry (best-effort) ----
+#
+# The checkpoint callback needs the Aim run hash, which only exists
+# once a run is open in this process. Correctness must NOT depend on
+# this: a checkpoint stamped with propagated identity and no hash is a
+# supported state. This registry is enrichment only.
+
+_CURRENT_RUN: Any | None = None
+_CURRENT_RUN_HASH: str | None = None
+
+
+def register_current_run(run: Any) -> None:
+    """Record the live Aim run so checkpoint stamping can enrich with
+    its hash.
+
+    Called by each logger on init. Last registration wins: sequential
+    runs in one process (sweeps) replace the previous entry. Concurrent
+    runs in one process are not supported and emit a warning — the
+    checkpoint would otherwise be stamped with an arbitrary sibling's
+    hash.
+    """
+    global _CURRENT_RUN, _CURRENT_RUN_HASH
+    if _CURRENT_RUN is not None and _CURRENT_RUN is not run:
+        # A properly closed sequential run has already unregistered, so
+        # a live entry here means two runs are open at once.
+        logger.warning(
+            "A second Aim run was opened while one was still live. Checkpoints "
+            "will carry the newer run's hash; concurrent runs in one process "
+            "are not supported."
+        )
+    _CURRENT_RUN = run
+    _CURRENT_RUN_HASH = getattr(run, "hash", None)
+
+
+def unregister_current_run(run: Any) -> None:
+    """Clear the registry if ``run`` is the one registered.
+
+    Guarded on identity so an out-of-order close (run A closes after
+    run B registered) doesn't blank B's entry.
+    """
+    global _CURRENT_RUN, _CURRENT_RUN_HASH
+    if _CURRENT_RUN is not run:
+        return
+    _CURRENT_RUN = None
+    _CURRENT_RUN_HASH = None
+
+
+def current_run_hash() -> str | None:
+    """Hash of the live Aim run, or ``None`` when no logger is active.
+
+    ``None`` is an expected return, not a failure: raw ``torch.save``
+    outside a framework, eval-only processes, and ad-hoc scripts all
+    legitimately have no run.
+    """
+    return _CURRENT_RUN_HASH

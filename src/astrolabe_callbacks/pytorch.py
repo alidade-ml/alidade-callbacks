@@ -53,8 +53,15 @@ from loguru import logger
 
 from astrolabe_callbacks import _core
 from astrolabe_callbacks._distributed import is_rank_zero
+from astrolabe_callbacks.checkpoint import (
+    _derivation_kwargs,
+    build_checkpoint_meta,
+    export_checkpoint,
+    read_checkpoint_meta,
+    write_first_checkpoint_marker_once,
+)
 
-__all__ = ["AstrolabeRun", "Run"]
+__all__ = ["AstrolabeRun", "Run", "save_checkpoint"]
 
 
 class AstrolabeRun:
@@ -313,3 +320,60 @@ class AstrolabeRun:
 # import Run` is shorter and reads as "open a run", which matches the
 # context manager idiom users already know from `wandb.init()` etc.
 Run = AstrolabeRun
+
+
+def save_checkpoint(
+    state_dict: dict,
+    path: str,
+    *,
+    export_formats: list[str] | None = None,
+) -> str:
+    """Save a checkpoint with astrolabe provenance embedded.
+
+    Drop-in for ``torch.save(state_dict, path)`` in hand-rolled
+    training loops. Raw PyTorch has no framework checkpoint slot, so
+    provenance goes in as a top-level ``_astrolabe_meta`` key.
+
+    Parameters
+    ----------
+    state_dict : dict
+        What you would have passed to ``torch.save``.
+    path : str
+        Destination ``.pt`` path.
+    export_formats : list of {"pt", "safetensors"}, optional
+        Extra formats to write alongside. Empty by default.
+
+    Returns
+    -------
+    str
+        The written path.
+
+    Notes
+    -----
+    Also touches the first-checkpoint healing marker. Outside astrolabe
+    orchestration that is a no-op and the embedded block is unlinked —
+    both supported.
+
+    A ``state_dict`` that still carries a provenance block — the shape a
+    ``torch.load`` of an earlier astrolabe checkpoint produces — is
+    treated as a resume: the new checkpoint records the old one as its
+    parent instead of silently dropping the link. Reloading into the
+    same Aim run is continuation, not derivation, and stays unlinked.
+    """
+    # One meta for the primary and every derived copy, so a researcher
+    # comparing the .pt against the .safetensors sees the same identity.
+    meta = build_checkpoint_meta(
+        **_derivation_kwargs(read_checkpoint_meta(state_dict))
+    )
+    primary = export_checkpoint(state_dict, path, fmt="pt", meta=meta)
+    write_first_checkpoint_marker_once()
+
+    for fmt in export_formats or []:
+        try:
+            export_checkpoint(
+                state_dict, primary.with_suffix(f".{fmt}"), fmt=fmt, meta=meta
+            )
+        except Exception as exc:
+            logger.warning("Derived {} export failed: {}", fmt, exc)
+
+    return str(primary)

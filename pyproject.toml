@@ -47,6 +47,10 @@ lightning = ["lightning>=2.0"]
 # backend. Anyone instantiating a Trainer with our AstrolabeHFTrainerCallback
 # hits ImportError without it; testbed caught the gap.
 hf = ["transformers>=4.30", "accelerate>=1.1.0"]
+# Checkpoint export only. The stamping path (metadata into a framework
+# -native checkpoint) needs nothing extra; this is required solely to
+# WRITE .safetensors.
+safetensors = ["safetensors>=0.4"]
 # `all` is the convenience extra for users who don't want to think
 # about which framework they need. Most users should pick a single one.
 all = [
@@ -54,6 +58,7 @@ all = [
     "lightning>=2.0",
     "transformers>=4.30",
     "accelerate>=1.1.0",
+    "safetensors>=0.4",
 ]
 dev = [
     "pytest>=7.0",
@@ -61,6 +66,7 @@ dev = [
     "lightning>=2.0",
     "transformers>=4.30",
     "accelerate>=1.1.0",
+    "safetensors>=0.4",
     # pandas is needed on the host running pytest — the testbed's
     # assertion helpers pull metric values via aim's ``.dataframe()``,
     # which returns a pandas DataFrame and imports pandas at call time.

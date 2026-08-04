@@ -45,19 +45,36 @@ flip warnings into raised exceptions for fail-fast CI behavior.
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 
 from loguru import logger
 
 from astrolabe_callbacks import _core
 from astrolabe_callbacks._distributed import is_rank_zero
+from astrolabe_callbacks.checkpoint import (
+    CheckpointMeta,
+    _derivation_kwargs,
+    _meta_from_block,
+    build_checkpoint_meta,
+    embed_meta_as_buffer,
+    export_checkpoint,
+    strip_meta_buffer,
+    write_first_checkpoint_marker_once,
+)
 
 try:
     from transformers import TrainerCallback
+
+    # HF's callback-state slot: anything ExportableState is serialized
+    # into ``trainer_state.json`` and restored on resume. Added in
+    # transformers 4.38; older versions simply lose the resume link.
+    from transformers.trainer_callback import ExportableState
 except ImportError:  # pragma: no cover — transformers is an optional extra
     TrainerCallback = object  # type: ignore[misc,assignment]
+    ExportableState = object  # type: ignore[misc,assignment]
 
-__all__ = ["AstrolabeHFTrainerCallback"]
+__all__ = ["AstrolabeHFTrainerCallback", "AstrolabeHFCheckpointer"]
 
 
 # Keys in HF Trainer's `logs` dict that we treat as training-side metrics.
@@ -282,3 +299,143 @@ def _normalize_log_key(key: str) -> str | None:
         # ``"eval_loss"`` → currently ``"eval/loss"``, future ``"val/loss"``
         return f"{_core.EVAL_METRIC_PREFIX}/{suffix}"
     return key
+
+
+# Key under which the provenance block rides in trainer_state.json.
+# Renaming it orphans the resume link on every checkpoint written by an
+# older version, so the reader pins it here rather than deriving it.
+_STATE_ATTRIBUTE = "astrolabe_provenance"
+
+
+def _parent_from_trainer_state(state: Any) -> CheckpointMeta | None:
+    """Provenance of the checkpoint this run resumed from.
+
+    On a fresh run ``stateful_callbacks`` holds this run's own block,
+    built before the Aim run existed and therefore hashless — which
+    ``_derivation_kwargs`` correctly reads as "no parent".
+    """
+    stored = (getattr(state, "stateful_callbacks", None) or {}).get(
+        "AstrolabeHFCheckpointer"
+    )
+    if not isinstance(stored, dict):
+        return None
+    return _meta_from_block((stored.get("attributes") or {}).get(_STATE_ATTRIBUTE))
+
+
+class AstrolabeHFCheckpointer(TrainerCallback, ExportableState):
+    """Stamps astrolabe provenance into HuggingFace checkpoints.
+
+    Attach like any other callback::
+
+        trainer = Trainer(..., callbacks=[AstrolabeHFTrainerCallback(),
+                                          AstrolabeHFCheckpointer()])
+
+    **HF is the one framework with no checkpoint-dict hook.**
+    ``TrainerCallback.on_save`` fires *after* the write and receives no
+    dict, and ``save_pretrained`` hardcodes the safetensors metadata
+    block, so there is nothing to fill. Rather than subclass ``Trainer``
+    (which puts us in the user's MRO permanently) or rewrite the
+    finished file (O(model size) I/O per save), this registers a
+    persistent uint8 buffer on the model. It rides into ``state_dict()``
+    and therefore into every save, untouched.
+
+    Known consequence, documented rather than hidden: the buffer adds a
+    key a freshly-built model lacks, so a manual
+    ``load_state_dict(..., strict=True)`` of one of these checkpoints
+    raises. ``from_pretrained`` is non-strict and only warns. Pass
+    ``embed_in_weights=False`` to fall back to marker-only if that
+    matters more than eval linkage.
+
+    Parameters
+    ----------
+    embed_in_weights : bool, default True
+        Register the provenance buffer. When ``False`` the callback
+        still touches the first-checkpoint healing marker, so
+        ``until: first_checkpoint`` keeps working — only eval linkage
+        is given up.
+    export_formats : list of {"pt", "safetensors"}, optional
+        Additional formats written alongside each checkpoint.
+    """
+
+    def __init__(
+        self,
+        *,
+        embed_in_weights: bool = True,
+        export_formats: list[str] | None = None,
+    ) -> None:
+        self.embed_in_weights = embed_in_weights
+        self.export_formats = list(export_formats or [])
+        self._parent: CheckpointMeta | None = None
+
+    def state(self) -> dict:
+        """Provenance HF persists into ``trainer_state.json``.
+
+        This is HF's equivalent of Composer's ``state_dict()`` slot, and
+        the only one that survives a resume: the buffer does not, because
+        a fresh model has no such key and HF's non-strict weight load
+        drops it silently.
+
+        The block goes under ``attributes`` rather than ``args`` because
+        ``restore_callback_states_from_checkpoint`` reconstructs the
+        callback as ``type(cb)(**args)`` — provenance there would be a
+        constructor call with unknown keywords.
+        """
+        return {
+            "args": {},
+            "attributes": {
+                _STATE_ATTRIBUTE: build_checkpoint_meta(
+                    **_derivation_kwargs(self._parent)
+                ).to_dict()
+            },
+        }
+
+    def on_train_begin(self, args, state, control, **kwargs) -> None:
+        """Capture the resumed-from provenance, then register the buffer.
+
+        Registration happens once at train start rather than per-save:
+        the buffer has to exist before HF builds the state dict, and
+        ``on_save`` is too late.
+        """
+        self._parent = _parent_from_trainer_state(state)
+        if not self.embed_in_weights:
+            return
+        model = kwargs.get("model")
+        if model is None:
+            logger.warning(
+                "No model passed to on_train_begin — checkpoint provenance "
+                "will not be embedded in the weights."
+            )
+            return
+        try:
+            embed_meta_as_buffer(
+                model, build_checkpoint_meta(**_derivation_kwargs(self._parent))
+            )
+        except Exception as exc:
+            logger.warning("Could not register the provenance buffer: {}", exc)
+
+    def on_save(self, args, state, control, **kwargs) -> None:
+        """Touch the first-checkpoint healing marker.
+
+        Fires after HF has written the checkpoint. The marker only needs
+        to record *that* a checkpoint happened, so post-save is fine —
+        this is why `until: first_checkpoint` works for HF users even
+        with ``embed_in_weights=False``.
+        """
+        write_first_checkpoint_marker_once()
+        self._export_derived(args, state, kwargs.get("model"))
+
+    def _export_derived(self, args, state, model) -> None:
+        if not self.export_formats or model is None or not is_rank_zero():
+            return
+        try:
+            # HF writes each checkpoint to output_dir/checkpoint-<step>;
+            # derived copies sit beside the primary.
+            destination = Path(args.output_dir) / f"checkpoint-{state.global_step}"
+            weights = strip_meta_buffer(model.state_dict())
+            meta = build_checkpoint_meta(**_derivation_kwargs(self._parent))
+            for fmt in self.export_formats:
+                export_checkpoint(
+                    weights, destination / f"derived.{fmt}", fmt=fmt, meta=meta
+                )
+        except Exception as exc:
+            logger.warning("Derived checkpoint export failed: {}", exc)
