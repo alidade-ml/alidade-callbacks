@@ -33,14 +33,19 @@ full namespace split.
 from __future__ import annotations
 
 import os
+from pathlib import Path
 from typing import Any
+
+from loguru import logger
 
 from ._core import DEFAULT_AIM_URL
 
 __all__ = [
     "EvalInputError",
+    "MissingParentError",
     "log_eval_table",
     "start_eval_run",
+    "start_eval_run_from_checkpoint",
 ]
 
 
@@ -50,6 +55,16 @@ class EvalInputError(ValueError):
     Surfaces in the researcher's eval script with a clear message —
     we'd rather fail loudly at the call site than write a half-formed
     Aim run that confuses the dashboard later.
+    """
+
+
+class MissingParentError(Exception):
+    """Raised when an eval cannot be attributed to any training run.
+
+    Deliberately not an :class:`EvalInputError`: the call was
+    well-formed, the *artifact* carries no provenance. Distinct so a
+    pilot running ``on_missing_parent="raise"`` in CI can catch exactly
+    this without also catching malformed arguments.
     """
 
 
@@ -197,6 +212,156 @@ def start_eval_run(
     run["astrolabe.kind"] = "eval"
     run["astrolabe.task_set"] = task_set
     run["astrolabe.model_run_hash"] = model_run_hash
+    return run
+
+
+def start_eval_run_from_checkpoint(
+    *,
+    checkpoint: str | Path | dict[str, Any],
+    task_set: str,
+    aim_url: str | None = None,
+    model_run_hash: str | None = None,
+    on_missing_parent: str = "warn",
+) -> Any:
+    """Open an eval run already linked to the training that produced a
+    checkpoint.
+
+    The eval author names the file they are about to evaluate; the
+    training run comes out of the file's own provenance. No hash, no
+    tag key, and no knowledge of astrolabe internals at the call site.
+
+    Resolution order: an explicit ``model_run_hash`` wins, then the
+    checkpoint's embedded ``aim_run_hash``, then ``on_missing_parent``
+    decides. Resolution is **offline** — the checkpoint is read, Aim is
+    never queried. A file that carries a submit but no run is treated as
+    unresolved rather than triggering a lookup, because picking among
+    several runs under one submit would be a guess, and guessing by
+    resemblance is the mechanism this helper exists to replace.
+
+    A derived checkpoint (surgery, quantization, extraction) carries the
+    run that trained the model it came from, so evaluating one attributes
+    to the original training rather than to nothing.
+
+    Parameters
+    ----------
+    checkpoint : str | Path | dict
+        Path to a ``.pt`` / ``.safetensors`` file, or an already-loaded
+        state dict. Paths are read cheaply — header-only for
+        safetensors, ``map_location="meta"`` for torch pickle — so
+        passing a path costs no tensor allocation.
+    task_set : str
+        Benchmark suite label (``"glue"``, ``"mmlu"``, ...).
+    aim_url : str, optional
+        Aim tracking URL. ``ASTROLABE_AIM_URL`` wins over this argument.
+    model_run_hash : str, optional
+        Explicit parent, overriding whatever the file says. For
+        checkpoints written before provenance existed, or when you know
+        the parent and the artifact does not.
+    on_missing_parent : {"warn", "raise"}, default "warn"
+        What to do when no parent resolves. ``"warn"`` logs and returns
+        an unlinked run — it lands in Aim but stays invisible to the
+        dashboard's Eval tab until stamped after the fact. ``"raise"``
+        raises :class:`MissingParentError`, for CI that should fail
+        loudly rather than accumulate orphans.
+
+    Returns
+    -------
+    aim.Run
+        Open, and carrying ``astrolabe_linked`` so a caller can branch
+        on whether attribution actually happened rather than inferring
+        it from log output.
+
+    Raises
+    ------
+    EvalInputError
+        ``task_set`` or an explicitly passed ``model_run_hash`` is
+        empty or not a string, or ``on_missing_parent`` is not one of
+        the two accepted values.
+    MissingParentError
+        No parent resolved and ``on_missing_parent="raise"``.
+    FileNotFoundError
+        ``checkpoint`` is a path that does not exist.
+    ValueError
+        ``checkpoint`` is a path that is not a recognized format.
+
+    Examples
+    --------
+    >>> run = start_eval_run_from_checkpoint(
+    ...     checkpoint="ckpt.pt",
+    ...     task_set="cola",
+    ... )
+    >>> for step, mcc in scores:
+    ...     run.track(mcc, name="eval/cola/matthews", step=step)
+    >>> run.close()
+    """
+    if on_missing_parent not in ("warn", "raise"):
+        raise EvalInputError(
+            f"on_missing_parent must be 'warn' or 'raise', got {on_missing_parent!r}"
+        )
+    if not isinstance(task_set, str) or not task_set:
+        raise EvalInputError("task_set must be a non-empty string")
+    if model_run_hash is not None and (
+        not isinstance(model_run_hash, str) or not model_run_hash
+    ):
+        raise EvalInputError(
+            "model_run_hash, when given, must be a non-empty string; pass None "
+            "to resolve from the checkpoint"
+        )
+
+    resolved = model_run_hash or _parent_run_hash(checkpoint)
+    if resolved:
+        run = start_eval_run(
+            model_run_hash=resolved, task_set=task_set, aim_url=aim_url
+        )
+        run.astrolabe_linked = True
+        return run
+
+    if on_missing_parent == "raise":
+        raise MissingParentError(
+            "no training run could be resolved for this checkpoint: it carries "
+            "no astrolabe provenance and no model_run_hash was given. Stamp the "
+            "checkpoint, or pass model_run_hash= explicitly."
+        )
+
+    logger.warning(
+        "Eval run for task_set={} is UNLINKED — the checkpoint carries no "
+        "training run hash. It will not appear in the dashboard's Eval tab "
+        "until the run is stamped with its parent.",
+        task_set,
+    )
+    run = _open_unlinked_eval_run(task_set=task_set, aim_url=aim_url)
+    run.astrolabe_linked = False
+    return run
+
+
+def _parent_run_hash(checkpoint: str | Path | dict[str, Any]) -> str | None:
+    """The training run a checkpoint attributes to, or ``None``.
+
+    Deliberately a two-line read rather than a resolution helper: the
+    checkpoint's own ``aim_run_hash`` is the answer, because transforms
+    copy it forward at write time instead of leaving the reader to walk
+    a chain.
+    """
+    from astrolabe_callbacks.checkpoint import read_checkpoint_meta
+
+    meta = read_checkpoint_meta(checkpoint)
+    return meta.aim_run_hash if meta else None
+
+
+def _open_unlinked_eval_run(*, task_set: str, aim_url: str | None) -> Any:
+    """An eval run with no parent.
+
+    Not routed through :func:`start_eval_run`, which requires a
+    non-empty hash by design — a half-tagged run written through the
+    normal path would be worse than an openly unlinked one. ``kind`` and
+    ``task_set`` are still set so the run is recognizable as an eval
+    once someone stamps it.
+    """
+    from aim import Run
+
+    run = Run(experiment=f"eval/{task_set}", repo=_resolve_aim_url(aim_url))
+    run["astrolabe.kind"] = "eval"
+    run["astrolabe.task_set"] = task_set
     return run
 
 

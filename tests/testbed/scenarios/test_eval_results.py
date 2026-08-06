@@ -271,9 +271,8 @@ class TestStartEvalRun:
         )
 
 
-@pytest.mark.skip(reason="testbed-blocked: start_eval_run_from_checkpoint lands with eval-linkage Milestone 1 (see plans/eval-linkage-and-checkpoint-callbacks.md). Unskip when M1 ships.")
 class TestStartEvalRunFromCheckpoint:
-    """Checkpoint-based eval linkage (lands with eval-linkage Milestone 0)."""
+    """Checkpoint-based eval linkage. Unskipped when the helper landed."""
 
     def test_reads_embedded_meta_from_pt(
         self,
