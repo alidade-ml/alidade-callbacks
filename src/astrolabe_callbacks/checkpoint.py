@@ -173,17 +173,17 @@ def build_checkpoint_meta(
         Never raises. Outside astrolabe orchestration every propagated
         field is ``None`` and the result is an unlinked stamp.
     """
-    submit_id = experiment = version = live = None
+    submit_id = experiment = version = live_run_hash = None
     try:
         submit_id = os.environ.get(contract.ENV_SUBMIT_ID) or None
         experiment = os.environ.get(contract.ENV_EXPERIMENT_NAME) or None
         tags = contract.parse_aim_run_tags(os.environ.get(contract.ENV_AIM_RUN_TAGS))
         version = tags.get(contract.TAG_VERSION) or None
-        live = _core.current_run_hash()
+        live_run_hash = _core.current_run_hash()
     except Exception as exc:
         logger.debug("Checkpoint identity lookup failed, stamping unlinked: {}", exc)
 
-    aim_run_hash, derived_from, chain_length = _lineage(parent, live)
+    aim_run_hash, derived_from, chain_length = _lineage(parent, live_run_hash)
     return CheckpointMeta(
         submit_id=submit_id,
         experiment=experiment,
@@ -303,7 +303,6 @@ def save_derived_checkpoint(
     parent_meta = (
         parent if isinstance(parent, CheckpointMeta) else read_checkpoint_meta(parent)
     )
-    dest = Path(dest)
     return export_checkpoint(
         state_dict,
         dest,
@@ -502,7 +501,8 @@ _SUFFIX_FORMATS: dict[str, ExportFormat] = {
 }
 
 
-def _fmt_from_suffix(dest: Path) -> ExportFormat:
+def _fmt_from_suffix(dest: str | Path) -> ExportFormat:
+    dest = Path(dest)
     fmt = _SUFFIX_FORMATS.get(dest.suffix.lower())
     if fmt is None:
         raise ValueError(
@@ -548,7 +548,7 @@ def _restamp_torch(path: Path, meta: CheckpointMeta) -> None:
 
 
 def _lineage(
-    parent: CheckpointMeta | None, live: str | None
+    parent: CheckpointMeta | None, live_run_hash: str | None
 ) -> tuple[str | None, str | None, int]:
     """Resolve ``(aim_run_hash, derived_from, derivation_chain_length)``.
 
@@ -571,11 +571,11 @@ def _lineage(
     # describe nothing. HuggingFace depends on this — on a fresh run it
     # passes its own hashless block as the parent.
     if parent is None or not parent.aim_run_hash:
-        return live, None, 0
-    if parent.aim_run_hash == live:
-        return live, parent.derived_from, parent.derivation_chain_length
+        return live_run_hash, None, 0
+    if parent.aim_run_hash == live_run_hash:
+        return live_run_hash, parent.derived_from, parent.derivation_chain_length
     return (
-        live or parent.aim_run_hash,
+        live_run_hash or parent.aim_run_hash,
         parent.aim_run_hash,
         parent.derivation_chain_length + 1,
     )
