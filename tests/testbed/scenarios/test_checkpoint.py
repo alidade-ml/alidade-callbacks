@@ -674,3 +674,59 @@ def _host_path(result: CheckpointDriverResult, checkpoint: dict) -> str:
     """Re-root a container path onto the copy the harness pulled back."""
     relative = Path(checkpoint["path"]).relative_to(result.probe["workdir"])
     return str(result.host_workdir / relative)
+
+
+class TestDerivedCheckpointsKeepTheirOrigin:
+    def test_two_logger_free_transforms_still_resolve_to_the_training_run(
+        self,
+        testbed: "TestbedHandle",
+        aim_repo: Path,
+        stats_jsonl_path: Path,
+        framework: str,
+        run_checkpoint_driver: RunCheckpointFixture,
+    ) -> None:
+        """The GLUE-probe shape: train, then transform outside the run.
+
+        Surgery and quantization are preprocessing steps, so no logger
+        is live when they write. Before copy-forward the second hop saw
+        a parent with no hash of its own, gave up, and produced a file
+        indistinguishable from one trained from scratch — the eval then
+        attached to nothing and the Eval tab was silently empty.
+
+        Unit coverage of this monkeypatches the run registry. Here the
+        run is closed for real and the hash has to survive two hops of
+        genuine file I/O.
+        """
+        config = _config(
+            testbed,
+            framework,
+            stats_jsonl_path,
+            driver_flags={"TESTBED_DERIVE_CHAIN": "1"},
+        )
+        result = _run(run_checkpoint_driver, config)
+
+        derivation = result.probe["derivation"]
+        assert "error" not in derivation, derivation["error"]
+        assert derivation["live_run_at_derive"] is None, (
+            "a run was still registered while deriving, so inheritance was "
+            "never exercised — this test would pass for the wrong reason"
+        )
+
+        run_hash = result.probe["run_hash"]
+        assert get_metric_series(aim_repo, run_hash, "metric_0"), (
+            f"origin run {run_hash!r} carries no metrics; inheriting it "
+            f"would point evals at a run the dashboard cannot resolve"
+        )
+
+        hops = derivation["hops"]
+        assert len(hops) == 2
+        for depth, hop in enumerate(hops, start=1):
+            meta = result.meta_of(hop)
+            # .get, not []: to_dict() omits None fields, so a lost link
+            # is an absent key. Indexing would raise KeyError and bury
+            # the diagnostic.
+            assert meta.get("aim_run_hash") == run_hash, (
+                f"hop {depth} lost the origin run "
+                f"(got {meta.get('aim_run_hash')!r}, want {run_hash!r})"
+            )
+            assert meta.get("derivation_chain_length") == depth
