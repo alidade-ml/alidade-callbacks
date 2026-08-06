@@ -57,8 +57,12 @@ from astrolabe_callbacks import _core, contract
 __all__ = [
     "CheckpointMeta",
     "META_KEY",
+    "ParentResolution",
+    "ParentSource",
     "build_checkpoint_meta",
     "read_checkpoint_meta",
+    "resolve_parent_run_hash",
+    "resolve_parent_from_checkpoint",
     "stamp_state_dict",
     "export_checkpoint",
     "embed_meta_as_buffer",
@@ -240,6 +244,112 @@ def read_checkpoint_meta(
     return _meta_from_block(reader(path))
 
 
+ParentSource = Literal["own", "derived", "none"]
+
+
+@dataclass(frozen=True)
+class ParentResolution:
+    """Outcome of resolving which training run produced a checkpoint.
+
+    Attributes
+    ----------
+    run_hash : str | None
+        Aim run hash of the resolved parent, or ``None`` when no
+        ancestor could be linked.
+    source : {"own", "derived", "none"}
+        Which field answered. ``own`` — the checkpoint was written by a
+        tracked training run. ``derived`` — it was produced by
+        transforming one, and this is the run that ultimately trained
+        it. ``none`` — nothing linkable.
+
+        Callers use this to explain themselves: an eval helper warning
+        about a missing parent, or a logger announcing an automatic
+        link, both read better when they can say *how* the answer was
+        reached rather than just reporting a hash.
+    """
+
+    run_hash: str | None
+    source: ParentSource
+
+    @property
+    def linked(self) -> bool:
+        return self.run_hash is not None
+
+
+def resolve_parent_run_hash(meta: CheckpointMeta | None) -> ParentResolution:
+    """Resolve the training run a checkpoint should attribute to.
+
+    The rule is *nearest ancestor that is a tracked training run*:
+    prefer the checkpoint's own ``aim_run_hash``, and fall back to
+    ``derived_from`` when it has none.
+
+    This works because ``aim_run_hash`` is populated exactly when a
+    logger was live at save time — which is exactly when the checkpoint
+    came from a tracked run. It is therefore already a proxy for "this
+    is a real training run", with no extra field needed.
+
+    Two shapes the rule is built around:
+
+    - A probe fine-tune run *inside* an eval script (GLUE and friends)
+      is not tracked, so its checkpoint carries no hash of its own and
+      resolution falls through to the pretrain — which is the
+      comparison the researcher wants.
+    - A fine-tune submitted to astrolabe in its own right *is* tracked,
+      so its checkpoint has a hash and resolution stops there — which
+      is again what the researcher wants, because that pipeline is the
+      subject rather than the apparatus.
+
+    Pure: no Aim query, no filesystem access, no environment reads.
+    Resolution never leaves the process.
+
+    Parameters
+    ----------
+    meta : CheckpointMeta | None
+        Provenance read from a checkpoint. ``None`` (an unstamped or
+        externally-sourced file) resolves to an unlinked result rather
+        than raising.
+
+    Returns
+    -------
+    ParentResolution
+        Never ``None``; an unresolvable checkpoint yields
+        ``source="none"``.
+    """
+    raise NotImplementedError
+
+
+def resolve_parent_from_checkpoint(
+    checkpoint: str | Path | dict[str, Any],
+) -> ParentResolution:
+    """Read a checkpoint's provenance and resolve its parent run.
+
+    Convenience over :func:`read_checkpoint_meta` +
+    :func:`resolve_parent_run_hash`, for callers holding a path or a
+    loaded state dict rather than a meta block.
+
+    Parameters
+    ----------
+    checkpoint : str | Path | dict
+        Path to a ``.pt`` / ``.safetensors`` file, or an already-loaded
+        state dict. Paths are read cheaply — header-only for
+        safetensors, ``map_location="meta"`` for torch pickle — so no
+        tensor storage is allocated.
+
+    Returns
+    -------
+    ParentResolution
+        ``source="none"`` when the file carries no astrolabe block.
+
+    Raises
+    ------
+    FileNotFoundError
+        Path does not exist.
+    ValueError
+        Path exists but is not a recognized checkpoint format.
+    """
+    raise NotImplementedError
+
+
 def stamp_state_dict(
     state_dict: dict[str, Any],
     meta: CheckpointMeta | None = None,
@@ -358,6 +468,8 @@ def _derivation_kwargs(parent: CheckpointMeta | None) -> dict[str, Any]:
     when the parent is this same Aim run — resuming into the run that
     wrote the parent is continuation, not derivation.
     """
+    # TODO(stage3): route through resolve_parent_run_hash so the saver and
+    # the eval side share one definition of "which run made this".
     if parent is None or not parent.aim_run_hash:
         return {}
     if parent.aim_run_hash == _core.current_run_hash():
