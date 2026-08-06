@@ -158,6 +158,7 @@ class CheckpointMeta:
 # no compatibility burden.
 def build_checkpoint_meta(
     *,
+    parent: CheckpointMeta | None = None,
     derived_from: str | None = None,
     derivation_chain_length: int = 0,
 ) -> CheckpointMeta:
@@ -169,6 +170,13 @@ def build_checkpoint_meta(
 
     Parameters
     ----------
+    parent : CheckpointMeta, optional
+        Provenance of the checkpoint this one was produced from.
+        Supplying it makes ``aim_run_hash`` resolve to the live run if
+        there is one and the parent's otherwise, so a logger-free
+        transform inherits the training run rather than recording none.
+        Supersedes ``derived_from`` / ``derivation_chain_length``,
+        which Stage 3 removes.
     derived_from : str, optional
         Parent run hash when stamping a transformed checkpoint.
     derivation_chain_length : int, default 0
@@ -180,6 +188,8 @@ def build_checkpoint_meta(
         Never raises. Outside astrolabe orchestration every propagated
         field is ``None`` and the result is an unlinked stamp.
     """
+    if parent is not None:
+        raise NotImplementedError
     submit_id = experiment = version = aim_run_hash = None
     try:
         submit_id = os.environ.get(contract.ENV_SUBMIT_ID) or None
