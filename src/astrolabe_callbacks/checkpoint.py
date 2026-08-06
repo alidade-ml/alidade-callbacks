@@ -303,6 +303,7 @@ def save_derived_checkpoint(
     parent_meta = (
         parent if isinstance(parent, CheckpointMeta) else read_checkpoint_meta(parent)
     )
+    dest = Path(dest)
     return export_checkpoint(
         state_dict,
         dest,
@@ -501,8 +502,7 @@ _SUFFIX_FORMATS: dict[str, ExportFormat] = {
 }
 
 
-def _fmt_from_suffix(dest: str | Path) -> ExportFormat:
-    dest = Path(dest)
+def _fmt_from_suffix(dest: Path) -> ExportFormat:
     fmt = _SUFFIX_FORMATS.get(dest.suffix.lower())
     if fmt is None:
         raise ValueError(
