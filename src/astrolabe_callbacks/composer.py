@@ -513,6 +513,7 @@ class AstrolabeComposerCheckpointer(Callback):
         so the embedded hash reflects the run live at save time, not at
         callback construction.
         """
+        # TODO(stage3): becomes build_checkpoint_meta(parent=self._parent)
         return build_checkpoint_meta(**_derivation_kwargs(self._parent)).to_dict()
 
     def load_state_dict(self, state: dict) -> None:
@@ -540,6 +541,7 @@ class AstrolabeComposerCheckpointer(Callback):
         try:
             destination = Path(self.export_dir or _composer_checkpoint_dir(state))
             weights = state.model.state_dict()
+            # TODO(stage3): becomes build_checkpoint_meta(parent=self._parent)
             meta = build_checkpoint_meta(**_derivation_kwargs(self._parent))
             for fmt in self.export_formats:
                 export_checkpoint(

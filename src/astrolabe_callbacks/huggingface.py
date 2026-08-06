@@ -384,6 +384,7 @@ class AstrolabeHFCheckpointer(TrainerCallback, ExportableState):
             "args": {},
             "attributes": {
                 _STATE_ATTRIBUTE: build_checkpoint_meta(
+                    # TODO(stage3): becomes build_checkpoint_meta(parent=self._parent)
                     **_derivation_kwargs(self._parent)
                 ).to_dict()
             },
@@ -408,6 +409,7 @@ class AstrolabeHFCheckpointer(TrainerCallback, ExportableState):
             return
         try:
             embed_meta_as_buffer(
+                # TODO(stage3): becomes build_checkpoint_meta(parent=self._parent)
                 model, build_checkpoint_meta(**_derivation_kwargs(self._parent))
             )
         except Exception as exc:
@@ -432,6 +434,7 @@ class AstrolabeHFCheckpointer(TrainerCallback, ExportableState):
             # derived copies sit beside the primary.
             destination = Path(args.output_dir) / f"checkpoint-{state.global_step}"
             weights = strip_meta_buffer(model.state_dict())
+            # TODO(stage3): becomes build_checkpoint_meta(parent=self._parent)
             meta = build_checkpoint_meta(**_derivation_kwargs(self._parent))
             for fmt in self.export_formats:
                 export_checkpoint(

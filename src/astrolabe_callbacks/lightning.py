@@ -373,6 +373,7 @@ class AstrolabeLightningCheckpointer(Callback):
         """
         try:
             stamp_state_dict(
+                # TODO(stage3): becomes build_checkpoint_meta(parent=self._parent)
                 checkpoint, build_checkpoint_meta(**_derivation_kwargs(self._parent))
             )
         except Exception as exc:
@@ -396,6 +397,7 @@ class AstrolabeLightningCheckpointer(Callback):
         try:
             destination = Path(self.export_dir or _lightning_checkpoint_dir(trainer))
             weights = checkpoint["state_dict"]
+            # TODO(stage3): becomes build_checkpoint_meta(parent=self._parent)
             meta = build_checkpoint_meta(**_derivation_kwargs(self._parent))
             for fmt in self.export_formats:
                 export_checkpoint(

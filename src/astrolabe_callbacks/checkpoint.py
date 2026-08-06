@@ -59,6 +59,8 @@ __all__ = [
     "META_KEY",
     "build_checkpoint_meta",
     "read_checkpoint_meta",
+    "save_derived_checkpoint",
+    "stamp_checkpoint",
     "stamp_state_dict",
     "export_checkpoint",
     "embed_meta_as_buffer",
@@ -149,6 +151,11 @@ class CheckpointMeta:
         return cls(**{k: v for k, v in raw.items() if k in known})
 
 
+# TODO(stage3): replace the two derivation kwargs with `parent: CheckpointMeta
+# | None = None` and absorb _derivation_kwargs. aim_run_hash becomes
+# `current_run_hash() or parent.aim_run_hash` so a logger-free transform
+# inherits the training run instead of writing None. Unreleased surface —
+# no compatibility burden.
 def build_checkpoint_meta(
     *,
     derived_from: str | None = None,
@@ -238,6 +245,117 @@ def read_checkpoint_meta(
 
     reader = _read_meta_from_safetensors if fmt == "safetensors" else _read_meta_from_torch
     return _meta_from_block(reader(path))
+
+
+def save_derived_checkpoint(
+    state_dict: dict[str, Any],
+    dest: str | Path,
+    parent: str | Path | CheckpointMeta,
+    *,
+    fmt: ExportFormat | None = None,
+) -> Path:
+    """Write a transformed checkpoint that stays attributable to the
+    training run behind its source.
+
+    For user-owned transforms — surgery, layer extraction, quantization,
+    LoRA distillation, anything that turns one checkpoint into another.
+    Such code usually runs as a preprocessing step with no Aim logger
+    live, which is exactly when provenance would otherwise be lost: the
+    output would record no run of its own and evaluate as unlinked.
+
+    Provenance carried forward:
+
+    - ``aim_run_hash`` — **the live run if there is one, otherwise the
+      parent's.** A transform script has no live run, so the output
+      inherits the run that trained the model it came from. That is what
+      keeps the read side a plain lookup: whoever evaluates ``dest``
+      reads one field and gets a real training run, however many
+      logger-free hops happened in between.
+    - ``derived_from`` — the parent's own ``aim_run_hash``. Equal to the
+      inherited value in the no-logger case, and genuinely distinct when
+      a live run derived from someone else's checkpoint.
+    - ``derivation_chain_length`` — parent's, plus one.
+
+    Needs no logger, no Aim, and no network. Copying a string does not
+    require a live run.
+
+    Parameters
+    ----------
+    state_dict : dict
+        Transformed tensors to write.
+    dest : str | Path
+        Destination path. Parent directories are created.
+    parent : str | Path | CheckpointMeta
+        The checkpoint this was derived from — a path to read
+        provenance from, or an already-read block. A parent carrying no
+        astrolabe provenance is not an error; the result is simply
+        unlinked, same as any unstamped checkpoint.
+    fmt : {"pt", "safetensors"}, optional
+        Output format. Inferred from ``dest``'s extension when omitted.
+
+    Returns
+    -------
+    Path
+        The written path.
+
+    Raises
+    ------
+    FileNotFoundError
+        ``parent`` is a path that does not exist.
+    ValueError
+        ``fmt`` omitted and ``dest``'s extension is not recognized, or
+        ``fmt="safetensors"`` with non-tensor values in ``state_dict``.
+    """
+    raise NotImplementedError
+
+
+def stamp_checkpoint(
+    path: str | Path,
+    *,
+    aim_run_hash: str | None = None,
+    submit_id: str | None = None,
+    experiment: str | None = None,
+    version: str | None = None,
+) -> Path:
+    """Retrofit astrolabe provenance onto an existing checkpoint, in place.
+
+    For files written before the checkpointer existed, or by code that
+    never had it wired. Fields left as ``None`` fall back to the
+    propagated environment, so inside an astrolabe step this can be
+    called bare and pick up the ambient identity.
+
+    Cost differs sharply by format: ``safetensors`` rewrites the header
+    only, so it is fast regardless of model size. Torch pickle has to
+    load and re-save, which is O(model size) — acceptable because
+    retrofitting is a once-per-file operation, not a hot path.
+
+    Re-stamping overwrites any existing block rather than merging.
+    Retrofitting a wrong hash then correcting it is a supported
+    sequence.
+
+    Parameters
+    ----------
+    path : str | Path
+        Checkpoint to stamp. Modified in place.
+    aim_run_hash : str, optional
+        Training run to attribute to. This is the field an eval reads,
+        so a checkpoint stamped without it stays unlinked.
+    submit_id, experiment, version : str, optional
+        Propagated identity. Default to the ambient environment.
+
+    Returns
+    -------
+    Path
+        The stamped path, for chaining.
+
+    Raises
+    ------
+    FileNotFoundError
+        No such file.
+    ValueError
+        Not a recognized checkpoint format.
+    """
+    raise NotImplementedError
 
 
 def stamp_state_dict(
@@ -350,6 +468,9 @@ def write_first_checkpoint_marker_once() -> None:
         logger.debug("first-checkpoint marker touch failed ({}): {}", path, exc)
 
 
+# TODO(stage3): fold into build_checkpoint_meta(parent=...) and delete. The
+# `not parent.aim_run_hash -> {}` guard is the bug: it drops linkage whenever a
+# hop had no logger. Same-run resume must still read as continuation.
 def _derivation_kwargs(parent: CheckpointMeta | None) -> dict[str, Any]:
     """``build_checkpoint_meta`` kwargs linking a checkpoint to the one
     its run resumed from.
