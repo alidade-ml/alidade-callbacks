@@ -637,3 +637,14 @@ class TestDerivedCheckpointRoundTrip:
         )
         assert meta.submit_id is not None
         assert meta.linked is True
+
+
+class TestHashlessParentIsNotAnAncestor:
+    def test_parent_without_a_hash_does_not_count_as_a_hop(self, bare_env, monkeypatch):
+        """HuggingFace passes its own hashless block as the parent on a
+        fresh run. Counting that as a derivation would stamp
+        chain_length=1 onto a checkpoint derived from nothing."""
+        _live_run(monkeypatch)
+        meta = build_checkpoint_meta(parent=make_meta(aim_run_hash=None))
+        assert meta.derivation_chain_length == 0
+        assert meta.derived_from is None

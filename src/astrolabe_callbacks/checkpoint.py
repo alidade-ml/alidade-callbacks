@@ -45,7 +45,7 @@ from __future__ import annotations
 
 import json
 import os
-from dataclasses import dataclass, fields
+from dataclasses import dataclass, fields, replace
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Literal
@@ -151,16 +151,9 @@ class CheckpointMeta:
         return cls(**{k: v for k, v in raw.items() if k in known})
 
 
-# TODO(stage3): replace the two derivation kwargs with `parent: CheckpointMeta
-# | None = None` and absorb _derivation_kwargs. aim_run_hash becomes
-# `current_run_hash() or parent.aim_run_hash` so a logger-free transform
-# inherits the training run instead of writing None. Unreleased surface —
-# no compatibility burden.
 def build_checkpoint_meta(
     *,
     parent: CheckpointMeta | None = None,
-    derived_from: str | None = None,
-    derivation_chain_length: int = 0,
 ) -> CheckpointMeta:
     """Construct provenance for a checkpoint about to be written.
 
@@ -171,16 +164,8 @@ def build_checkpoint_meta(
     Parameters
     ----------
     parent : CheckpointMeta, optional
-        Provenance of the checkpoint this one was produced from.
-        Supplying it makes ``aim_run_hash`` resolve to the live run if
-        there is one and the parent's otherwise, so a logger-free
-        transform inherits the training run rather than recording none.
-        Supersedes ``derived_from`` / ``derivation_chain_length``,
-        which Stage 3 removes.
-    derived_from : str, optional
-        Parent run hash when stamping a transformed checkpoint.
-    derivation_chain_length : int, default 0
-        Hops from an originally-trained checkpoint.
+        Provenance of the checkpoint this one was produced from. See
+        :func:`_lineage` for how it resolves.
 
     Returns
     -------
@@ -188,18 +173,17 @@ def build_checkpoint_meta(
         Never raises. Outside astrolabe orchestration every propagated
         field is ``None`` and the result is an unlinked stamp.
     """
-    if parent is not None:
-        raise NotImplementedError
-    submit_id = experiment = version = aim_run_hash = None
+    submit_id = experiment = version = live = None
     try:
         submit_id = os.environ.get(contract.ENV_SUBMIT_ID) or None
         experiment = os.environ.get(contract.ENV_EXPERIMENT_NAME) or None
         tags = contract.parse_aim_run_tags(os.environ.get(contract.ENV_AIM_RUN_TAGS))
         version = tags.get(contract.TAG_VERSION) or None
-        aim_run_hash = _core.current_run_hash()
+        live = _core.current_run_hash()
     except Exception as exc:
         logger.debug("Checkpoint identity lookup failed, stamping unlinked: {}", exc)
 
+    aim_run_hash, derived_from, chain_length = _lineage(parent, live)
     return CheckpointMeta(
         submit_id=submit_id,
         experiment=experiment,
@@ -207,7 +191,7 @@ def build_checkpoint_meta(
         aim_run_hash=aim_run_hash,
         created_at=datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
         derived_from=derived_from,
-        derivation_chain_length=derivation_chain_length,
+        derivation_chain_length=chain_length,
     )
 
 
@@ -316,7 +300,16 @@ def save_derived_checkpoint(
         ``fmt`` omitted and ``dest``'s extension is not recognized, or
         ``fmt="safetensors"`` with non-tensor values in ``state_dict``.
     """
-    raise NotImplementedError
+    parent_meta = (
+        parent if isinstance(parent, CheckpointMeta) else read_checkpoint_meta(parent)
+    )
+    dest = Path(dest)
+    return export_checkpoint(
+        state_dict,
+        dest,
+        fmt=fmt or _fmt_from_suffix(dest),
+        meta=build_checkpoint_meta(parent=parent_meta),
+    )
 
 
 def stamp_checkpoint(
@@ -365,7 +358,30 @@ def stamp_checkpoint(
     ValueError
         Not a recognized checkpoint format.
     """
-    raise NotImplementedError
+    path = Path(path)
+    if not path.exists():
+        raise FileNotFoundError(f"no such checkpoint: {path}")
+    fmt = _sniff_format(path)
+    if fmt is None:
+        raise ValueError(
+            f"{path} is not a recognized checkpoint "
+            f"(expected safetensors or torch-pickle magic bytes)"
+        )
+
+    ambient = build_checkpoint_meta()
+    meta = replace(
+        ambient,
+        aim_run_hash=aim_run_hash if aim_run_hash is not None else ambient.aim_run_hash,
+        submit_id=submit_id if submit_id is not None else ambient.submit_id,
+        experiment=experiment if experiment is not None else ambient.experiment,
+        version=version if version is not None else ambient.version,
+    )
+
+    if fmt == "safetensors":
+        _restamp_safetensors(path, meta)
+    else:
+        _restamp_torch(path, meta)
+    return path
 
 
 def stamp_state_dict(
@@ -478,25 +494,91 @@ def write_first_checkpoint_marker_once() -> None:
         logger.debug("first-checkpoint marker touch failed ({}): {}", path, exc)
 
 
-# TODO(stage3): fold into build_checkpoint_meta(parent=...) and delete. The
-# `not parent.aim_run_hash -> {}` guard is the bug: it drops linkage whenever a
-# hop had no logger. Same-run resume must still read as continuation.
-def _derivation_kwargs(parent: CheckpointMeta | None) -> dict[str, Any]:
-    """``build_checkpoint_meta`` kwargs linking a checkpoint to the one
-    its run resumed from.
+_SUFFIX_FORMATS: dict[str, ExportFormat] = {
+    ".pt": "pt",
+    ".pth": "pt",
+    ".ckpt": "pt",
+    ".safetensors": "safetensors",
+}
 
-    Empty when there is no parent, when the parent was never linked, or
-    when the parent is this same Aim run — resuming into the run that
-    wrote the parent is continuation, not derivation.
+
+def _fmt_from_suffix(dest: Path) -> ExportFormat:
+    fmt = _SUFFIX_FORMATS.get(dest.suffix.lower())
+    if fmt is None:
+        raise ValueError(
+            f"cannot infer format from {dest.name!r}; pass fmt= explicitly "
+            f"(known suffixes: {', '.join(sorted(_SUFFIX_FORMATS))})"
+        )
+    return fmt
+
+
+def _restamp_safetensors(path: Path, meta: CheckpointMeta) -> None:
+    """Rewrite the header, copying the tensor block through as bytes.
+
+    Tensor offsets in the header are relative to the start of the data
+    block, not the file, so growing or shrinking the header does not
+    invalidate them. That lets this run without deserializing a single
+    tensor — the file is rewritten, but nothing is materialized.
     """
+    with path.open("rb") as fh:
+        header_len = int.from_bytes(fh.read(8), "little")
+        header = json.loads(fh.read(header_len).decode("utf-8"))
+        data = fh.read()
+
+    header.setdefault("__metadata__", {})[META_KEY] = json.dumps(meta.to_dict())
+    encoded = json.dumps(header, separators=(",", ":")).encode("utf-8")
+    encoded += b" " * (-len(encoded) % 8)
+
+    tmp = path.with_name(path.name + ".astrolabe-tmp")
+    with tmp.open("wb") as out:
+        out.write(len(encoded).to_bytes(8, "little"))
+        out.write(encoded)
+        out.write(data)
+    tmp.replace(path)
+
+
+def _restamp_torch(path: Path, meta: CheckpointMeta) -> None:
+    import torch
+
+    obj = torch.load(path, map_location="cpu", weights_only=False)
+    if not isinstance(obj, dict):
+        raise ValueError(f"{path} does not hold a state dict; cannot stamp")
+    obj[META_KEY] = meta.to_dict()
+    torch.save(obj, path)
+
+
+def _lineage(
+    parent: CheckpointMeta | None, live: str | None
+) -> tuple[str | None, str | None, int]:
+    """Resolve ``(aim_run_hash, derived_from, derivation_chain_length)``.
+
+    The rule that keeps attribution a plain lookup at read time: a
+    checkpoint's ``aim_run_hash`` is the run live when it was written,
+    or — when nothing was live — the one its parent carried.
+
+    Inheritance is the load-bearing half. Transforms (surgery,
+    quantization, extraction) run as preprocessing with no logger, so
+    without it every transformed checkpoint would record no run and
+    evaluate as unlinked. Because the inherited value lands in
+    ``aim_run_hash`` rather than a separate field, it survives any
+    number of further logger-free hops.
+
+    Resuming into the run that wrote the parent is continuation, not
+    derivation, so the chain is carried across unchanged.
+    """
+    # A parent with no hash of its own is not a usable ancestor: there is
+    # nothing to inherit and nothing to point at, so counting a hop would
+    # describe nothing. HuggingFace depends on this — on a fresh run it
+    # passes its own hashless block as the parent.
     if parent is None or not parent.aim_run_hash:
-        return {}
-    if parent.aim_run_hash == _core.current_run_hash():
-        return {}
-    return {
-        "derived_from": parent.aim_run_hash,
-        "derivation_chain_length": parent.derivation_chain_length + 1,
-    }
+        return live, None, 0
+    if parent.aim_run_hash == live:
+        return live, parent.derived_from, parent.derivation_chain_length
+    return (
+        live or parent.aim_run_hash,
+        parent.aim_run_hash,
+        parent.derivation_chain_length + 1,
+    )
 
 
 def _meta_from_block(block: Any) -> CheckpointMeta | None:
