@@ -70,7 +70,6 @@ from astrolabe_callbacks import _core
 from astrolabe_callbacks._distributed import is_rank_zero
 from astrolabe_callbacks.checkpoint import (
     CheckpointMeta,
-    _derivation_kwargs,
     build_checkpoint_meta,
     export_checkpoint,
     read_checkpoint_meta,
@@ -373,7 +372,7 @@ class AstrolabeLightningCheckpointer(Callback):
         """
         try:
             stamp_state_dict(
-                checkpoint, build_checkpoint_meta(**_derivation_kwargs(self._parent))
+                checkpoint, build_checkpoint_meta(parent=self._parent)
             )
         except Exception as exc:
             logger.warning("Could not stamp checkpoint provenance: {}", exc)
@@ -396,7 +395,7 @@ class AstrolabeLightningCheckpointer(Callback):
         try:
             destination = Path(self.export_dir or _lightning_checkpoint_dir(trainer))
             weights = checkpoint["state_dict"]
-            meta = build_checkpoint_meta(**_derivation_kwargs(self._parent))
+            meta = build_checkpoint_meta(parent=self._parent)
             for fmt in self.export_formats:
                 export_checkpoint(
                     weights,

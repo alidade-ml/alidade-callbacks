@@ -31,6 +31,8 @@ from astrolabe_callbacks.checkpoint import (
     build_checkpoint_meta,
     export_checkpoint,
     read_checkpoint_meta,
+    save_derived_checkpoint,
+    stamp_checkpoint,
     embed_meta_as_buffer,
     read_meta_from_buffer,
     stamp_state_dict,
@@ -399,3 +401,250 @@ class TestBufferEmbedding:
         """One name across all three mechanisms — a reader scanning a
         state dict shouldn't have to know which path wrote it."""
         assert BUFFER_NAME == META_KEY
+
+
+# --- Stage 2 (EVAL-6): copy-forward linkage + transform helpers -------------
+#
+# Contract re-derived from purpose, not from the Stage 1 stubs:
+#
+# - A transform normally runs with NO logger (surgery, quantization and
+#   friends are preprocessing steps). That is precisely when provenance
+#   must survive, so "no live run" is the primary path here, not an edge.
+# - aim_run_hash resolves to the live run if there is one, the parent's
+#   otherwise. Inheritance is what keeps the read side a plain lookup.
+# - derived_from always records the parent's OWN hash. It equals the
+#   inherited value in the no-logger case and diverges when a live run
+#   derives from someone else's checkpoint.
+# - Resuming into the run that wrote the parent is continuation, not
+#   derivation: the chain must not grow.
+# - An unstamped parent is not an error. It yields an unlinked result,
+#   the same as any checkpoint predating the feature.
+
+ORIGIN_HASH = "aaaa1111bbbb2222cccc3333"
+LIVE_HASH = "dddd4444eeee5555ffff6666"
+
+
+def _no_live_run(monkeypatch):
+    monkeypatch.setattr(_core, "current_run_hash", lambda: None)
+
+
+def _live_run(monkeypatch, run_hash=LIVE_HASH):
+    monkeypatch.setattr(_core, "current_run_hash", lambda: run_hash)
+
+
+def _parent_file(tmp_path, name="parent.pt", **meta_kwargs):
+    return export_checkpoint(
+        {}, tmp_path / name, fmt="pt", meta=make_meta(**meta_kwargs)
+    )
+
+
+class TestDerivedCheckpointFailureModes:
+    def test_missing_parent_path_raises(self, tmp_path, bare_env, monkeypatch):
+        _no_live_run(monkeypatch)
+        with pytest.raises(FileNotFoundError):
+            save_derived_checkpoint({}, tmp_path / "out.pt", tmp_path / "nope.pt")
+
+    def test_unrecognizable_parent_raises_value_error(
+        self, tmp_path, bare_env, monkeypatch
+    ):
+        _no_live_run(monkeypatch)
+        junk = tmp_path / "junk.pt"
+        junk.write_bytes(b"not a checkpoint at all")
+        with pytest.raises(ValueError):
+            save_derived_checkpoint({}, tmp_path / "out.pt", junk)
+
+    def test_unknown_dest_extension_without_fmt_raises(
+        self, tmp_path, bare_env, monkeypatch
+    ):
+        _no_live_run(monkeypatch)
+        parent = _parent_file(tmp_path)
+        with pytest.raises(ValueError):
+            save_derived_checkpoint({}, tmp_path / "out.bin", parent)
+
+    def test_safetensors_rejects_non_tensor_values(
+        self, tmp_path, bare_env, monkeypatch
+    ):
+        pytest.importorskip("safetensors")
+        _no_live_run(monkeypatch)
+        parent = _parent_file(tmp_path)
+        with pytest.raises(ValueError):
+            save_derived_checkpoint(
+                {"epoch": 3}, tmp_path / "out.safetensors", parent
+            )
+
+    def test_unstamped_parent_yields_unlinked_result_not_an_error(
+        self, tmp_path, bare_env, monkeypatch
+    ):
+        """A checkpoint predating the feature is a supported input."""
+        _no_live_run(monkeypatch)
+        plain = export_checkpoint({}, tmp_path / "plain.pt", fmt="pt")
+        out = save_derived_checkpoint({}, tmp_path / "out.pt", plain)
+        assert read_checkpoint_meta(out).aim_run_hash is None
+
+
+class TestCopyForwardWithoutALogger:
+    """The primary path: transforms run as preprocessing, no run live."""
+
+    def test_inherits_parent_run_hash(self, tmp_path, bare_env, monkeypatch):
+        _no_live_run(monkeypatch)
+        parent = _parent_file(tmp_path, aim_run_hash=ORIGIN_HASH)
+        out = save_derived_checkpoint({}, tmp_path / "out.pt", parent)
+        assert read_checkpoint_meta(out).aim_run_hash == ORIGIN_HASH
+
+    def test_records_parent_as_derived_from(self, tmp_path, bare_env, monkeypatch):
+        _no_live_run(monkeypatch)
+        parent = _parent_file(tmp_path, aim_run_hash=ORIGIN_HASH)
+        out = save_derived_checkpoint({}, tmp_path / "out.pt", parent)
+        assert read_checkpoint_meta(out).derived_from == ORIGIN_HASH
+
+    def test_increments_chain_length(self, tmp_path, bare_env, monkeypatch):
+        _no_live_run(monkeypatch)
+        parent = _parent_file(tmp_path, aim_run_hash=ORIGIN_HASH)
+        out = save_derived_checkpoint({}, tmp_path / "out.pt", parent)
+        assert read_checkpoint_meta(out).derivation_chain_length == 1
+
+    def test_two_chained_transforms_still_resolve_to_origin(
+        self, tmp_path, bare_env, monkeypatch
+    ):
+        """The regression this slice exists for.
+
+        Surgery then quantization, neither with a logger. Before the
+        fix the second hop saw a parent with no hash of its own, gave
+        up, and wrote a checkpoint indistinguishable from one trained
+        from scratch.
+        """
+        _no_live_run(monkeypatch)
+        origin = _parent_file(tmp_path, aim_run_hash=ORIGIN_HASH)
+        hop1 = save_derived_checkpoint({}, tmp_path / "hop1.pt", origin)
+        hop2 = save_derived_checkpoint({}, tmp_path / "hop2.pt", hop1)
+
+        meta = read_checkpoint_meta(hop2)
+        assert meta.aim_run_hash == ORIGIN_HASH
+        assert meta.derivation_chain_length == 2
+
+    def test_accepts_an_already_read_meta_block_as_parent(
+        self, tmp_path, bare_env, monkeypatch
+    ):
+        _no_live_run(monkeypatch)
+        out = save_derived_checkpoint(
+            {}, tmp_path / "out.pt", make_meta(aim_run_hash=ORIGIN_HASH)
+        )
+        assert read_checkpoint_meta(out).aim_run_hash == ORIGIN_HASH
+
+
+class TestCopyForwardWithALiveRun:
+    def test_live_run_wins_over_inheritance(self, tmp_path, bare_env, monkeypatch):
+        """A tracked fine-tune is its own training run, not a passthrough."""
+        _live_run(monkeypatch)
+        parent = _parent_file(tmp_path, aim_run_hash=ORIGIN_HASH)
+        out = save_derived_checkpoint({}, tmp_path / "out.pt", parent)
+        assert read_checkpoint_meta(out).aim_run_hash == LIVE_HASH
+
+    def test_derived_from_still_records_the_parent(
+        self, tmp_path, bare_env, monkeypatch
+    ):
+        """Where derived_from earns its place: it diverges from
+        aim_run_hash exactly when a live run derives from someone
+        else's checkpoint."""
+        _live_run(monkeypatch)
+        parent = _parent_file(tmp_path, aim_run_hash=ORIGIN_HASH)
+        meta = read_checkpoint_meta(
+            save_derived_checkpoint({}, tmp_path / "out.pt", parent)
+        )
+        assert meta.derived_from == ORIGIN_HASH
+        assert meta.aim_run_hash != meta.derived_from
+
+
+class TestContinuationIsNotDerivation:
+    def test_resuming_own_checkpoint_does_not_grow_the_chain(self, bare_env, monkeypatch):
+        """Run B resuming a checkpoint B itself wrote is continuation.
+
+        The guard for this currently sits inline next to the bug being
+        removed, which makes it the easiest thing to break in Stage 3.
+        """
+        _live_run(monkeypatch, ORIGIN_HASH)
+        parent = make_meta(aim_run_hash=ORIGIN_HASH, derivation_chain_length=0)
+        meta = build_checkpoint_meta(parent=parent)
+        assert meta.derivation_chain_length == 0
+        assert meta.derived_from is None
+
+    def test_resuming_someone_elses_checkpoint_is_derivation(
+        self, bare_env, monkeypatch
+    ):
+        _live_run(monkeypatch)
+        parent = make_meta(aim_run_hash=ORIGIN_HASH)
+        meta = build_checkpoint_meta(parent=parent)
+        assert meta.derived_from == ORIGIN_HASH
+        assert meta.derivation_chain_length == 1
+
+
+class TestStampCheckpointFailureModes:
+    def test_missing_file_raises(self, tmp_path, bare_env):
+        with pytest.raises(FileNotFoundError):
+            stamp_checkpoint(tmp_path / "nope.pt", aim_run_hash=ORIGIN_HASH)
+
+    def test_non_checkpoint_raises_value_error(self, tmp_path, bare_env):
+        junk = tmp_path / "junk.pt"
+        junk.write_bytes(b"still not a checkpoint")
+        with pytest.raises(ValueError):
+            stamp_checkpoint(junk, aim_run_hash=ORIGIN_HASH)
+
+
+class TestStampCheckpoint:
+    def test_retrofits_a_hash_onto_an_unstamped_file(self, tmp_path, bare_env):
+        plain = export_checkpoint({}, tmp_path / "plain.pt", fmt="pt")
+        stamp_checkpoint(plain, aim_run_hash=ORIGIN_HASH)
+        assert read_checkpoint_meta(plain).aim_run_hash == ORIGIN_HASH
+
+    def test_restamping_overwrites_rather_than_merges(self, tmp_path, bare_env):
+        """Correcting a wrong hash is a supported sequence."""
+        path = _parent_file(tmp_path, aim_run_hash=ORIGIN_HASH)
+        stamp_checkpoint(path, aim_run_hash=LIVE_HASH)
+        assert read_checkpoint_meta(path).aim_run_hash == LIVE_HASH
+
+    def test_omitted_fields_fall_back_to_the_environment(
+        self, tmp_path, astrolabe_env, monkeypatch
+    ):
+        _no_live_run(monkeypatch)
+        plain = export_checkpoint({}, tmp_path / "plain.pt", fmt="pt")
+        stamp_checkpoint(plain)
+        meta = read_checkpoint_meta(plain)
+        assert meta.submit_id == "8a562a3a-c392-4661-ab86-a31649a12d97"
+        assert meta.version == "v1"
+
+    def test_stamps_safetensors_via_header(self, tmp_path, bare_env):
+        pytest.importorskip("safetensors")
+        path = export_checkpoint({}, tmp_path / "m.safetensors", fmt="safetensors")
+        stamp_checkpoint(path, aim_run_hash=ORIGIN_HASH)
+        assert read_checkpoint_meta(path).aim_run_hash == ORIGIN_HASH
+
+
+class TestDerivedCheckpointRoundTrip:
+    def test_writes_a_readable_checkpoint(self, tmp_path, bare_env, monkeypatch):
+        _no_live_run(monkeypatch)
+        parent = _parent_file(tmp_path, aim_run_hash=ORIGIN_HASH)
+        out = save_derived_checkpoint({}, tmp_path / "nested" / "out.pt", parent)
+        assert out.exists()
+        assert read_checkpoint_meta(out) is not None
+
+    def test_propagated_identity_survives_the_hop(
+        self, tmp_path, astrolabe_env, monkeypatch
+    ):
+        _no_live_run(monkeypatch)
+        parent = _parent_file(tmp_path, aim_run_hash=ORIGIN_HASH)
+        meta = read_checkpoint_meta(
+            save_derived_checkpoint({}, tmp_path / "out.pt", parent)
+        )
+        assert meta.submit_id is not None
+        assert meta.linked is True
+
+
+class TestHashlessParentIsNotAnAncestor:
+    def test_parent_without_a_hash_does_not_count_as_a_hop(self, bare_env, monkeypatch):
+        """HuggingFace passes its own hashless block as the parent on a
+        fresh run. Counting that as a derivation would stamp
+        chain_length=1 onto a checkpoint derived from nothing."""
+        _live_run(monkeypatch)
+        meta = build_checkpoint_meta(parent=make_meta(aim_run_hash=None))
+        assert meta.derivation_chain_length == 0
+        assert meta.derived_from is None

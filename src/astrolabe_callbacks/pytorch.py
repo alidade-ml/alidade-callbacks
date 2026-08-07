@@ -54,7 +54,6 @@ from loguru import logger
 from astrolabe_callbacks import _core
 from astrolabe_callbacks._distributed import is_rank_zero
 from astrolabe_callbacks.checkpoint import (
-    _derivation_kwargs,
     build_checkpoint_meta,
     export_checkpoint,
     read_checkpoint_meta,
@@ -362,9 +361,7 @@ def save_checkpoint(
     """
     # One meta for the primary and every derived copy, so a researcher
     # comparing the .pt against the .safetensors sees the same identity.
-    meta = build_checkpoint_meta(
-        **_derivation_kwargs(read_checkpoint_meta(state_dict))
-    )
+    meta = build_checkpoint_meta(parent=read_checkpoint_meta(state_dict))
     primary = export_checkpoint(state_dict, path, fmt="pt", meta=meta)
     write_first_checkpoint_marker_once()
 

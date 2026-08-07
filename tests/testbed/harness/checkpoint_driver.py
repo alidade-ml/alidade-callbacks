@@ -83,6 +83,11 @@ class CheckpointDriverConfig:
     ``TESTBED_HF_SHARD_SAVE``
         After training, additionally ``save_pretrained`` with a tiny
         ``max_shard_size`` so HF's sharded-save path runs for real.
+    ``TESTBED_DERIVE_CHAIN``
+        After training closes its run, derive two checkpoints in
+        sequence with no logger live — the shape a preprocessing script
+        (surgery, quantization) actually has. Reports the run live at
+        derive time plus each hop's provenance.
     ``TESTBED_HF_LOAD_PROBE``
         Replay the two documented load paths against the written
         checkpoint — ``from_pretrained`` (non-strict) and a manual
@@ -397,11 +402,47 @@ def run_checkpoint_driver(config: CheckpointDriverConfig) -> dict[str, Any]:
         Path(config.marker_path).unlink(missing_ok=True)
         write_first_checkpoint_marker_once()
         probe["marker"]["recreated_after_unlink"] = Path(config.marker_path).exists()
+    if config.driver_flags.get("TESTBED_DERIVE_CHAIN"):
+        probe["derivation"] = _derive_chain_probe(written, workdir)
     if config.driver_flags.get("TESTBED_HF_LOAD_PROBE"):
         probe["hf_load"] = _hf_load_probe(written)
     if config.driver_flags.get("TESTBED_HF_SHARD_SAVE"):
         probe["hf_shard"] = _hf_shard_probe(workdir / "hf" / "sharded")
     return probe
+
+
+def _derive_chain_probe(
+    written: list[tuple[Path, str]], workdir: Path
+) -> dict[str, Any]:
+    """Two logger-free transforms in sequence.
+
+    The precondition is half the value: real transform code runs after
+    training has closed its run, so nothing is registered. Unit tests
+    reach that state by monkeypatching the registry — here it has to be
+    genuinely true, which is why ``live_run_at_derive`` is reported
+    rather than assumed.
+    """
+    import torch
+
+    from astrolabe_callbacks import _core
+    from astrolabe_callbacks.checkpoint import save_derived_checkpoint
+
+    report: dict[str, Any] = {
+        "live_run_at_derive": _core.current_run_hash(),
+        "hops": [],
+    }
+    primaries = [path for path, role in written if role == "primary"]
+    if not primaries:
+        report["error"] = "driver wrote no primary checkpoint to derive from"
+        return report
+
+    parent = primaries[0]
+    for hop in (1, 2):
+        dest = workdir / "derived" / f"hop{hop}.pt"
+        save_derived_checkpoint({"w": torch.zeros(2)}, dest, parent)
+        report["hops"].append(_inspect(dest, f"derived-hop{hop}"))
+        parent = dest
+    return report
 
 
 def _hf_load_probe(written: list[tuple[Path, str]]) -> dict[str, Any]:

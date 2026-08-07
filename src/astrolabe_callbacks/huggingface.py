@@ -54,7 +54,6 @@ from astrolabe_callbacks import _core
 from astrolabe_callbacks._distributed import is_rank_zero
 from astrolabe_callbacks.checkpoint import (
     CheckpointMeta,
-    _derivation_kwargs,
     _meta_from_block,
     build_checkpoint_meta,
     embed_meta_as_buffer,
@@ -312,7 +311,7 @@ def _parent_from_trainer_state(state: Any) -> CheckpointMeta | None:
 
     On a fresh run ``stateful_callbacks`` holds this run's own block,
     built before the Aim run existed and therefore hashless — which
-    ``_derivation_kwargs`` correctly reads as "no parent".
+    ``_lineage`` correctly reads as "no parent".
     """
     stored = (getattr(state, "stateful_callbacks", None) or {}).get(
         "AstrolabeHFCheckpointer"
@@ -384,7 +383,7 @@ class AstrolabeHFCheckpointer(TrainerCallback, ExportableState):
             "args": {},
             "attributes": {
                 _STATE_ATTRIBUTE: build_checkpoint_meta(
-                    **_derivation_kwargs(self._parent)
+                    parent=self._parent
                 ).to_dict()
             },
         }
@@ -408,7 +407,7 @@ class AstrolabeHFCheckpointer(TrainerCallback, ExportableState):
             return
         try:
             embed_meta_as_buffer(
-                model, build_checkpoint_meta(**_derivation_kwargs(self._parent))
+                model, build_checkpoint_meta(parent=self._parent)
             )
         except Exception as exc:
             logger.warning("Could not register the provenance buffer: {}", exc)
@@ -432,7 +431,7 @@ class AstrolabeHFCheckpointer(TrainerCallback, ExportableState):
             # derived copies sit beside the primary.
             destination = Path(args.output_dir) / f"checkpoint-{state.global_step}"
             weights = strip_meta_buffer(model.state_dict())
-            meta = build_checkpoint_meta(**_derivation_kwargs(self._parent))
+            meta = build_checkpoint_meta(parent=self._parent)
             for fmt in self.export_formats:
                 export_checkpoint(
                     weights, destination / f"derived.{fmt}", fmt=fmt, meta=meta
