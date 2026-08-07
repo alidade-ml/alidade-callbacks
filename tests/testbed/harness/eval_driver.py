@@ -21,6 +21,7 @@ import json
 import os
 import sys
 from dataclasses import dataclass
+from pathlib import Path
 
 
 __all__ = [
@@ -111,18 +112,38 @@ def config_to_env(config: EvalDriverConfig) -> dict[str, str]:
 def _prepare_checkpoint(config: EvalDriverConfig) -> None:
     """Honor driver_flags that ask us to create a checkpoint before eval runs.
 
-    Post-eval-linkage-M1 will use these to construct .pt / .safetensors
-    files with (or without) embedded astrolabe metadata. Until then,
-    these are no-ops that the scenario tests skip appropriately.
+    Written in the container so the file the helper reads was produced
+    by the same library version that reads it — the point of the
+    exercise is the real embed-then-read round trip, not a fixture.
     """
     flags = config.driver_flags
-    if "TESTBED_CREATE_PT_CHECKPOINT_WITH_HASH" in flags:
-        # Stub: real implementation lands with eval-linkage M1
-        pass
-    if "TESTBED_CREATE_SAFETENSORS_CHECKPOINT_WITH_HASH" in flags:
-        pass
-    if "TESTBED_CREATE_PT_CHECKPOINT_WITHOUT_META" in flags:
-        pass
+    if config.checkpoint_path is None:
+        return
+    path = Path(config.checkpoint_path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+
+    from astrolabe_callbacks.checkpoint import CheckpointMeta, export_checkpoint
+
+    stamped_at = "2026-08-06T00:00:00Z"
+    pt_hash = flags.get("TESTBED_CREATE_PT_CHECKPOINT_WITH_HASH")
+    if pt_hash:
+        export_checkpoint(
+            {}, path, fmt="pt",
+            meta=CheckpointMeta(aim_run_hash=pt_hash, created_at=stamped_at),
+        )
+    st_hash = flags.get("TESTBED_CREATE_SAFETENSORS_CHECKPOINT_WITH_HASH")
+    if st_hash:
+        export_checkpoint(
+            {}, path, fmt="safetensors",
+            meta=CheckpointMeta(aim_run_hash=st_hash, created_at=stamped_at),
+        )
+    if flags.get("TESTBED_CREATE_PT_CHECKPOINT_WITHOUT_META"):
+        # Raw torch.save, not export_checkpoint: this has to be a valid
+        # checkpoint carrying no astrolabe block at all, which is what a
+        # file predating the feature looks like.
+        import torch
+
+        torch.save({}, path)
 
 
 def run_eval_driver(config: EvalDriverConfig) -> tuple[str | None, bool]:

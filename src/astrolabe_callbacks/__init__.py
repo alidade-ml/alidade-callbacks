@@ -51,8 +51,10 @@ except ImportError:
 
 from astrolabe_callbacks.eval_results import (
     EvalInputError,
+    MissingParentError,
     log_eval_table,
     start_eval_run,
+    start_eval_run_from_checkpoint,
 )
 
 __version__ = "2.0.0"
@@ -75,7 +77,9 @@ __all__ = [
     "Run",
     "log_eval_table",
     "start_eval_run",
+    "start_eval_run_from_checkpoint",
     "EvalInputError",
+    "MissingParentError",
     "__version__",
 ]
 

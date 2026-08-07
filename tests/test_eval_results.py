@@ -450,3 +450,208 @@ class TestHappyPath:
         run.track.assert_any_call(0.876, name="eval/avg/mean", step=0)
         # Run closed
         run.close.assert_called_once()
+
+
+# ---------- start_eval_run_from_checkpoint ---------------------------
+#
+# Contract re-derived from purpose (this helper and its tests were
+# written in one sitting, so the contract is stated rather than read
+# off the implementation):
+#
+# - The eval author names a FILE. The training run comes out of that
+#   file. No hash, no tag key, no astrolabe internals at the call site.
+# - Resolution order: explicit model_run_hash > the checkpoint's
+#   aim_run_hash > on_missing_parent.
+# - Resolution is OFFLINE. Aim is never queried to find a parent. A
+#   checkpoint carrying a submit but no run is unresolved, not a lookup
+#   trigger — guessing among several runs under one submit is the
+#   mechanism this helper replaces.
+# - An unlinked run is a supported outcome, not an error, and must
+#   still be recognizable as an eval so it can be stamped later.
+# - Validation fires before any Aim run exists, same as the rest of
+#   this module: a half-formed run is worse than a loud failure.
+
+from pathlib import Path  # noqa: E402
+
+from astrolabe_callbacks.checkpoint import export_checkpoint  # noqa: E402
+from astrolabe_callbacks.checkpoint import CheckpointMeta  # noqa: E402
+from astrolabe_callbacks.eval_results import (  # noqa: E402
+    MissingParentError,
+    start_eval_run_from_checkpoint,
+)
+
+ORIGIN = "aaaa1111bbbb2222cccc3333"
+
+
+def _ckpt(tmp_path: Path, name="model.pt", **meta_fields) -> Path:
+    meta = CheckpointMeta(created_at="2026-08-06T00:00:00Z", **meta_fields)
+    return export_checkpoint({}, tmp_path / name, fmt="pt", meta=meta)
+
+
+class TestFromCheckpointValidation:
+    """Every one of these must fail before an Aim run is created."""
+
+    @pytest.mark.parametrize("bad", ["nope", "", None, "WARN", 1])
+    def test_rejects_unknown_on_missing_parent(self, tmp_path, bad):
+        factory = MagicMock()
+        with patch("aim.Run", factory):
+            with pytest.raises(EvalInputError, match="on_missing_parent"):
+                start_eval_run_from_checkpoint(
+                    checkpoint={}, task_set="glue", on_missing_parent=bad
+                )
+        factory.assert_not_called()
+
+    @pytest.mark.parametrize("bad", ["", None, 0, []])
+    def test_rejects_empty_task_set(self, tmp_path, bad):
+        factory = MagicMock()
+        with patch("aim.Run", factory):
+            with pytest.raises(EvalInputError, match="task_set"):
+                start_eval_run_from_checkpoint(checkpoint={}, task_set=bad)
+        factory.assert_not_called()
+
+    def test_rejects_empty_explicit_hash(self, tmp_path):
+        """Empty is a caller bug, not a request to fall through."""
+        factory = MagicMock()
+        with patch("aim.Run", factory):
+            with pytest.raises(EvalInputError, match="model_run_hash"):
+                start_eval_run_from_checkpoint(
+                    checkpoint={}, task_set="glue", model_run_hash=""
+                )
+        factory.assert_not_called()
+
+    def test_missing_checkpoint_path_raises(self, tmp_path):
+        with pytest.raises(FileNotFoundError):
+            start_eval_run_from_checkpoint(
+                checkpoint=tmp_path / "nope.pt", task_set="glue"
+            )
+
+    def test_unrecognizable_checkpoint_raises(self, tmp_path):
+        junk = tmp_path / "junk.pt"
+        junk.write_bytes(b"not a checkpoint")
+        with pytest.raises(ValueError):
+            start_eval_run_from_checkpoint(checkpoint=junk, task_set="glue")
+
+
+class TestUnresolvedParent:
+    def test_raise_mode_raises_missing_parent(self, tmp_path):
+        plain = export_checkpoint({}, tmp_path / "plain.pt", fmt="pt")
+        factory = MagicMock()
+        with patch("aim.Run", factory):
+            with pytest.raises(MissingParentError):
+                start_eval_run_from_checkpoint(
+                    checkpoint=plain, task_set="glue", on_missing_parent="raise"
+                )
+        factory.assert_not_called()
+
+    def test_missing_parent_error_is_not_an_input_error(self, tmp_path):
+        """Distinct type so CI can fail on orphaned evals without also
+        swallowing malformed arguments."""
+        assert not issubclass(MissingParentError, EvalInputError)
+
+    def test_warn_mode_returns_an_unlinked_run(self, tmp_path):
+        plain = export_checkpoint({}, tmp_path / "plain.pt", fmt="pt")
+        run = _make_run_mock()
+        with patch("aim.Run", return_value=run):
+            result = start_eval_run_from_checkpoint(
+                checkpoint=plain, task_set="glue"
+            )
+        assert result.astrolabe_linked is False
+
+    def test_unlinked_run_carries_no_model_run_hash_tag(self, tmp_path):
+        """A blank or placeholder hash would be worse than none — the
+        dashboard would join on it and render an empty section."""
+        plain = export_checkpoint({}, tmp_path / "plain.pt", fmt="pt")
+        run = _make_run_mock()
+        with patch("aim.Run", return_value=run):
+            start_eval_run_from_checkpoint(checkpoint=plain, task_set="glue")
+        tags = [c.args[0] for c in run.__setitem__.call_args_list]
+        assert "astrolabe.model_run_hash" not in tags
+
+    def test_unlinked_run_is_still_recognizable_as_an_eval(self, tmp_path):
+        """Stamping it later only works if kind and task_set are set."""
+        plain = export_checkpoint({}, tmp_path / "plain.pt", fmt="pt")
+        run = _make_run_mock()
+        with patch("aim.Run", return_value=run):
+            start_eval_run_from_checkpoint(checkpoint=plain, task_set="glue")
+        run.__setitem__.assert_any_call("astrolabe.kind", "eval")
+        run.__setitem__.assert_any_call("astrolabe.task_set", "glue")
+
+    def test_submit_without_a_run_hash_stays_unresolved(self, tmp_path):
+        """The offline rule. Env gave this checkpoint an identity but no
+        run existed in-process. Resolving it would mean asking Aim which
+        run under the submit to pick — ambiguous exactly when healing
+        fired, and a guess is what this helper replaces."""
+        ckpt = _ckpt(tmp_path, submit_id="sub-123", experiment="exp", version="v1")
+        run = _make_run_mock()
+        with patch("aim.Run", return_value=run):
+            result = start_eval_run_from_checkpoint(checkpoint=ckpt, task_set="glue")
+        assert result.astrolabe_linked is False
+
+
+class TestResolutionOrder:
+    def test_explicit_hash_overrides_the_checkpoint(self, tmp_path):
+        ckpt = _ckpt(tmp_path, aim_run_hash=ORIGIN)
+        run = _make_run_mock()
+        with patch("aim.Run", return_value=run):
+            start_eval_run_from_checkpoint(
+                checkpoint=ckpt, task_set="glue", model_run_hash="override-me"
+            )
+        run.__setitem__.assert_any_call("astrolabe.model_run_hash", "override-me")
+
+    def test_explicit_hash_used_when_checkpoint_has_none(self, tmp_path):
+        plain = export_checkpoint({}, tmp_path / "plain.pt", fmt="pt")
+        run = _make_run_mock()
+        with patch("aim.Run", return_value=run):
+            result = start_eval_run_from_checkpoint(
+                checkpoint=plain, task_set="glue", model_run_hash=ORIGIN
+            )
+        run.__setitem__.assert_any_call("astrolabe.model_run_hash", ORIGIN)
+        assert result.astrolabe_linked is True
+
+
+class TestFromCheckpointHappyPath:
+    def test_links_to_the_run_embedded_in_the_checkpoint(self, tmp_path):
+        ckpt = _ckpt(tmp_path, aim_run_hash=ORIGIN, submit_id="sub-1")
+        run = _make_run_mock()
+        with patch("aim.Run", return_value=run):
+            result = start_eval_run_from_checkpoint(checkpoint=ckpt, task_set="cola")
+        run.__setitem__.assert_any_call("astrolabe.model_run_hash", ORIGIN)
+        run.__setitem__.assert_any_call("astrolabe.kind", "eval")
+        run.__setitem__.assert_any_call("astrolabe.task_set", "cola")
+        assert result.astrolabe_linked is True
+
+    def test_a_derived_checkpoint_attributes_to_the_original_training(self, tmp_path):
+        """The GLUE-probe shape. Surgery copies the origin run forward
+        into aim_run_hash, so the reader needs no chain walking — it
+        reads one field and gets the pretrain."""
+        derived = _ckpt(
+            tmp_path,
+            name="disc.pt",
+            aim_run_hash=ORIGIN,
+            derived_from=ORIGIN,
+            derivation_chain_length=1,
+        )
+        run = _make_run_mock()
+        with patch("aim.Run", return_value=run):
+            result = start_eval_run_from_checkpoint(checkpoint=derived, task_set="cola")
+        run.__setitem__.assert_any_call("astrolabe.model_run_hash", ORIGIN)
+        assert result.astrolabe_linked is True
+
+    def test_accepts_an_already_loaded_state_dict(self, tmp_path):
+        """Script-level eval has usually already loaded the file to run
+        the model; making it pay a second read would be a papercut."""
+        from astrolabe_callbacks.checkpoint import stamp_state_dict
+
+        state = stamp_state_dict({}, CheckpointMeta(aim_run_hash=ORIGIN))
+        run = _make_run_mock()
+        with patch("aim.Run", return_value=run):
+            result = start_eval_run_from_checkpoint(checkpoint=state, task_set="glue")
+        run.__setitem__.assert_any_call("astrolabe.model_run_hash", ORIGIN)
+        assert result.astrolabe_linked is True
+
+    def test_filed_under_the_eval_task_set_experiment(self, tmp_path):
+        ckpt = _ckpt(tmp_path, aim_run_hash=ORIGIN)
+        factory = MagicMock(return_value=_make_run_mock())
+        with patch("aim.Run", factory):
+            start_eval_run_from_checkpoint(checkpoint=ckpt, task_set="mmlu")
+        assert factory.call_args.kwargs["experiment"] == "eval/mmlu"
