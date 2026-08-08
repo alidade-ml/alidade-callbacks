@@ -20,7 +20,7 @@ from __future__ import annotations
 import json
 import os
 import sys
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 
@@ -44,6 +44,11 @@ class EvalDriverConfig:
     checkpoint_path: str | None
     on_missing_parent: str
     driver_flags: dict[str, str]
+    # Env the astrolabe engine would have exported into an eval step
+    # (ASTROLABE_EXPERIMENT_NAME, AIM_RUN_TAGS). Passed through to the
+    # container verbatim rather than serialized: the helpers read the
+    # real env var names, so anything else would test a stand-in.
+    submit_env: dict[str, str] = field(default_factory=dict)
 
     @classmethod
     def from_env(cls) -> "EvalDriverConfig":
@@ -78,6 +83,7 @@ class EvalDriverConfig:
             ),
             on_missing_parent=os.environ.get("TESTBED_EVAL_ON_MISSING_PARENT", "warn"),
             driver_flags=json.loads(os.environ.get("TESTBED_EVAL_DRIVER_FLAGS", "{}")),
+            submit_env={},  # already in os.environ by the time this runs
         )
 
 
@@ -106,6 +112,7 @@ def config_to_env(config: EvalDriverConfig) -> dict[str, str]:
     if config.checkpoint_path is not None:
         env["TESTBED_EVAL_CHECKPOINT_PATH"] = config.checkpoint_path
         env["TESTBED_EVAL_HAS_CHECKPOINT_PATH"] = "1"
+    env.update(config.submit_env)
     return env
 
 

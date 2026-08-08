@@ -30,6 +30,7 @@ from typing import Any
 
 __all__ = [
     "assert_run_name",
+    "assert_run_experiment",
     "assert_run_tag",
     "assert_metric_landed",
     "assert_metric_count",
@@ -99,6 +100,24 @@ def assert_run_name(repo_path: Path, run_hash: str, expected_name: str) -> None:
     if actual != expected_name:
         raise AssertionError(
             f"run {run_hash!r}: expected name={expected_name!r}, got {actual!r}"
+        )
+
+
+def assert_run_experiment(
+    repo_path: Path, run_hash: str, expected_experiment: str
+) -> None:
+    """Assert which Aim experiment a run was filed under.
+
+    Filing is not a tag, so ``assert_run_tag`` cannot see it — the
+    experiment is a property Aim resolves at run-open time and the only
+    thing that decides which page a run appears on.
+    """
+    run = _get_run(repo_path, run_hash)
+    actual = run.experiment
+    if actual != expected_experiment:
+        raise AssertionError(
+            f"run {run_hash!r}: expected experiment={expected_experiment!r}, "
+            f"got {actual!r}"
         )
 
 

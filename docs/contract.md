@@ -6,6 +6,12 @@ What every framework callback in `astrolabe-callbacks` guarantees, and what it d
 
 These four behaviors hold for **every** framework callback (Composer, Lightning, HF Trainer, raw PyTorch). If a callback violates any of these, it's a bug — file an issue.
 
+Behaviors 1–3 also hold for the post-training eval helpers in
+[`docs/eval-results.md`](eval-results.md). An eval script running as a step of an
+astrolabe submit picks up the same identity the trainer does, so its results are
+attributable to the submit that paid for them. Behavior 4 does not apply — an eval
+run has no training lifecycle to report a status for.
+
 ### 1. Honors `ASTROLABE_EXPERIMENT_NAME`
 
 When the env var is set, it wins over any constructor argument. Astrolabe sets it on every orchestrated run; the callback picks it up automatically. Empty-string env values fall through to the constructor arg (so accidentally-empty shells don't break standalone use).

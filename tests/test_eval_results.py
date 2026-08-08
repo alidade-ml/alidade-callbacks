@@ -278,10 +278,9 @@ class TestTagContract:
         run.__setitem__.assert_any_call("astrolabe.task_set", "mmlu")
         run.__setitem__.assert_any_call("astrolabe.model_run_hash", "xyz")
 
-    def test_aim_run_filed_under_eval_task_set_experiment(self, tmp_path):
-        # Keeps eval runs out of the model experiment's Aim run list —
-        # a UI convenience for browsing the raw Aim repo. Discovery
-        # doesn't depend on it (uses tags).
+    def test_falls_back_to_eval_task_set_outside_a_submit(self, tmp_path):
+        # Ad-hoc use with no astrolabe env around it: there is no
+        # experiment to inherit, so the benchmark label is all we have.
         run = _make_run_mock()
         mock_run_factory = MagicMock(return_value=run)
         with patch("aim.Run", mock_run_factory):
@@ -649,9 +648,142 @@ class TestFromCheckpointHappyPath:
         run.__setitem__.assert_any_call("astrolabe.model_run_hash", ORIGIN)
         assert result.astrolabe_linked is True
 
-    def test_filed_under_the_eval_task_set_experiment(self, tmp_path):
+    def test_falls_back_to_eval_task_set_outside_a_submit(self, tmp_path):
         ckpt = _ckpt(tmp_path, aim_run_hash=ORIGIN)
         factory = MagicMock(return_value=_make_run_mock())
         with patch("aim.Run", factory):
             start_eval_run_from_checkpoint(checkpoint=ckpt, task_set="mmlu")
         assert factory.call_args.kwargs["experiment"] == "eval/mmlu"
+
+
+class TestSubmitIdentity:
+    """An eval script launched as an astrolabe step inherits the submit's
+    identity from the environment. Before this, that identity was in the
+    process and thrown away: evals could not be filtered by submitter or
+    repo, and the GPU time they burned billed to nothing.
+
+    Filing follows the same env, so a submit's evals sit in the submit's
+    experiment rather than in a per-benchmark bucket.
+    """
+
+    def test_files_under_the_submitting_experiment(self, monkeypatch):
+        monkeypatch.setenv("ASTROLABE_EXPERIMENT_NAME", "latent-bert")
+        factory = MagicMock(return_value=_make_run_mock())
+        with patch("aim.Run", factory):
+            start_eval_run(
+                model_run_hash="abc", task_set="glue", aim_url="aim://test"
+            )
+        assert factory.call_args.kwargs["experiment"] == "latent-bert"
+
+    def test_experiment_env_wins_over_the_tag_payload(self, monkeypatch):
+        """Both carry an experiment; they disagree only if something
+        upstream is inconsistent, and resolve_run_config already treats
+        the dedicated env var as authoritative. Matching it keeps one
+        answer to 'which experiment am I in' across the library."""
+        monkeypatch.setenv("ASTROLABE_EXPERIMENT_NAME", "authoritative")
+        monkeypatch.setenv("AIM_RUN_TAGS", "astrolabe.experiment=stale")
+        run = _make_run_mock()
+        factory = MagicMock(return_value=run)
+        with patch("aim.Run", factory):
+            start_eval_run(
+                model_run_hash="abc", task_set="glue", aim_url="aim://test"
+            )
+        assert factory.call_args.kwargs["experiment"] == "authoritative"
+        run.__setitem__.assert_any_call("astrolabe.experiment", "authoritative")
+
+    def test_blank_tag_values_are_not_written(self, monkeypatch):
+        """A tag present but empty is worse than absent — the dashboard
+        renders it as a real value, so an empty submitter reads as a
+        submitter named nothing rather than an unattributed run."""
+        monkeypatch.setenv(
+            "AIM_RUN_TAGS", "astrolabe.user=,astrolabe.submit_id=s-1"
+        )
+        run = _make_run_mock()
+        with patch("aim.Run", return_value=run):
+            start_eval_run(
+                model_run_hash="abc", task_set="glue", aim_url="aim://test"
+            )
+        written = [c.args[0] for c in run.__setitem__.call_args_list]
+        assert "astrolabe.user" not in written
+        assert "astrolabe.submit_id" in written
+
+    def test_malformed_tag_payload_does_not_break_the_eval(self, monkeypatch):
+        """parse_aim_run_tags is deliberately forgiving. An eval that has
+        already run should still record its scores, identity or not."""
+        monkeypatch.setenv("AIM_RUN_TAGS", "garbage-with-no-equals")
+        run = _make_run_mock()
+        factory = MagicMock(return_value=run)
+        with patch("aim.Run", factory):
+            start_eval_run(
+                model_run_hash="abc", task_set="glue", aim_url="aim://test"
+            )
+        assert factory.call_args.kwargs["experiment"] == "eval/glue"
+        run.__setitem__.assert_any_call("astrolabe.model_run_hash", "abc")
+
+    def test_identity_tags_land_on_the_run(self, monkeypatch):
+        monkeypatch.setenv(
+            "AIM_RUN_TAGS",
+            "astrolabe.submit_id=s-9,astrolabe.version=v2,"
+            "astrolabe.user=nathan,astrolabe.gpu_rate_cents_per_hour=250",
+        )
+        run = _make_run_mock()
+        with patch("aim.Run", return_value=run):
+            start_eval_run(
+                model_run_hash="abc", task_set="glue", aim_url="aim://test"
+            )
+        run.__setitem__.assert_any_call("astrolabe.submit_id", "s-9")
+        run.__setitem__.assert_any_call("astrolabe.version", "v2")
+        run.__setitem__.assert_any_call("astrolabe.user", "nathan")
+        run.__setitem__.assert_any_call(
+            "astrolabe.gpu_rate_cents_per_hour", "250"
+        )
+
+    def test_the_contract_tags_survive_a_colliding_identity(self, monkeypatch):
+        """The discovery tags are the only reason the dashboard can see an
+        eval run. An unexpected key in the ambient payload shadowing one
+        would make the run vanish, so identity is applied first and the
+        contract tags overwrite it."""
+        monkeypatch.setenv(
+            "AIM_RUN_TAGS",
+            "astrolabe.kind=metadata,astrolabe.task_set=wrong,"
+            "astrolabe.model_run_hash=hijacked",
+        )
+        run = _make_run_mock()
+        with patch("aim.Run", return_value=run):
+            start_eval_run(
+                model_run_hash="real-model", task_set="glue", aim_url="aim://test"
+            )
+        final = dict(c.args for c in run.__setitem__.call_args_list)
+        assert final["astrolabe.kind"] == "eval"
+        assert final["astrolabe.task_set"] == "glue"
+        assert final["astrolabe.model_run_hash"] == "real-model"
+
+    def test_an_unlinked_run_gets_the_same_filing_and_identity(
+        self, tmp_path, monkeypatch
+    ):
+        """A run stamped with its model later must be indistinguishable
+        from one that resolved on the first try."""
+        monkeypatch.setenv("ASTROLABE_EXPERIMENT_NAME", "latent-bert")
+        monkeypatch.setenv("AIM_RUN_TAGS", "astrolabe.submit_id=s-3")
+        ckpt = _ckpt(tmp_path)
+        run = _make_run_mock()
+        factory = MagicMock(return_value=run)
+        with patch("aim.Run", factory):
+            start_eval_run_from_checkpoint(checkpoint=ckpt, task_set="glue")
+        assert factory.call_args.kwargs["experiment"] == "latent-bert"
+        run.__setitem__.assert_any_call("astrolabe.submit_id", "s-3")
+
+    def test_log_eval_table_inherits_it(self, monkeypatch):
+        monkeypatch.setenv("ASTROLABE_EXPERIMENT_NAME", "latent-bert")
+        monkeypatch.setenv("AIM_RUN_TAGS", "astrolabe.user=nathan")
+        run = _make_run_mock()
+        factory = MagicMock(return_value=run)
+        with patch("aim.Run", factory):
+            log_eval_table(
+                model_run_hash="abc",
+                task_set="glue",
+                rows={"cola": ("matthews", 0.5)},
+                aim_url="aim://test",
+            )
+        assert factory.call_args.kwargs["experiment"] == "latent-bert"
+        run.__setitem__.assert_any_call("astrolabe.user", "nathan")

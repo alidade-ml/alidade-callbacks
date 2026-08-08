@@ -12,6 +12,9 @@
 
 ### Changed
 
+- **Eval runs inherit the submit they were produced by.** The eval helpers now read `ASTROLABE_EXPERIMENT_NAME` and `AIM_RUN_TAGS` — the same env the framework callbacks already read — and apply them to the eval run. Two effects: an eval is **filed under the submitting experiment** rather than under `eval/<task_set>`, so it lands on the page for the submit that produced it; and it carries the submit's identity (submitter, version, submit id, GPU rate), so evals are filterable and their compute attributable. Eval scripts are unchanged — nothing new is passed at the call site; the identity was already in the process and was being discarded. Outside a submit there is no experiment to inherit and filing falls back to `eval/<task_set>`, so ad-hoc use is unaffected. The three discovery tags (`kind`, `task_set`, `model_run_hash`) are applied last and always win over the ambient payload.
+
+  Filing under `eval/<task_set>` never held in the first place under local-aim transport: astrolabe's sync sidecar rewrites synced runs to the submit's experiment name, so the same eval landed in a different Aim experiment depending on transport. This makes both transports agree.
 - Failures in the local-aim-server startup degrade gracefully: log a warning, callback falls back to direct-connect (legacy v1.x behavior) against whatever `aim_url` points at. Failure of the schema-phase reopen is similarly non-fatal — the callback keeps the (now-closed) Run object and existing `track_safely` graceful-degradation handles subsequent writes.
 
 ### Migration

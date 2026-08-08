@@ -38,6 +38,8 @@ from typing import Any
 
 from loguru import logger
 
+from astrolabe_callbacks import contract
+
 from ._core import DEFAULT_AIM_URL
 
 __all__ = [
@@ -77,12 +79,70 @@ def _resolve_aim_url(aim_url: str | None) -> str:
     same way without extra configuration.
 
     Note this deliberately does NOT reuse ``resolve_run_config``: that
-    helper also reads ``ASTROLABE_EXPERIMENT_NAME`` and ``AIM_RUN_TAGS``,
-    which carry the *training* run's identity. An eval run must be filed
-    under ``eval/<task_set>`` with its own three tags, so only the URL
-    resolution is shared.
+    helper resolves a run *name* and applies constructor-supplied tags,
+    neither of which an eval run takes. The identity env vars it reads
+    are picked up by :func:`_ambient_identity` instead.
     """
     return os.environ.get("ASTROLABE_AIM_URL") or aim_url or DEFAULT_AIM_URL
+
+
+def _ambient_identity() -> dict[str, str]:
+    """The submit identity the engine exported into this process.
+
+    An eval script launched as an astrolabe step inherits the same
+    ``AIM_RUN_TAGS`` the training callback reads — submit, version,
+    submitter, and the GPU rate the cost views bill against. Reading it
+    here writes nothing new; the identity was already in the process and
+    was being discarded, leaving evals unattributable to the submit that
+    paid for them.
+
+    ``ASTROLABE_EXPERIMENT_NAME`` is authoritative over the tag payload
+    for the experiment, matching ``resolve_run_config``'s precedence.
+    """
+    tags = {
+        key: value
+        for key, value in contract.parse_aim_run_tags(
+            os.environ.get(contract.ENV_AIM_RUN_TAGS)
+        ).items()
+        if value
+    }
+    experiment = os.environ.get(contract.ENV_EXPERIMENT_NAME)
+    if experiment:
+        tags[contract.TAG_EXPERIMENT] = experiment
+    return tags
+
+
+def _open_eval_run(*, task_set: str, aim_url: str | None) -> Any:
+    """Open an Aim run carrying everything an eval has except its model.
+
+    Shared by the linked and unlinked paths so filing and identity stay
+    identical between them — an unlinked run someone stamps later has to
+    end up indistinguishable from one that resolved on the first try.
+
+    Filing follows the submitted config, not the benchmark: an
+    experiment is one hypothesis, and ``eval/<task_set>`` puts the
+    benchmark on that axis instead. It is also the only filing that
+    survives both transports — in local-aim mode the sync sidecar
+    rewrites synced runs to the submit's experiment name, so
+    ``eval/<task_set>`` already does not hold there. ``task_set`` stays a
+    tag, which is what groups the dashboard's tables. Outside a submit
+    there is no experiment to inherit, so the old name remains the
+    fallback.
+    """
+    from aim import Run
+
+    identity = _ambient_identity()
+    experiment = identity.get(contract.TAG_EXPERIMENT) or f"eval/{task_set}"
+
+    run = Run(experiment=experiment, repo=_resolve_aim_url(aim_url))
+    # Identity first, contract tags second: the discovery tags are the
+    # only reason the dashboard can see this run at all, so an unexpected
+    # key in the ambient payload must not be able to shadow one.
+    for key, value in identity.items():
+        run[key] = value
+    run["astrolabe.kind"] = "eval"
+    run["astrolabe.task_set"] = task_set
+    return run
 
 
 def _validate_identity(model_run_hash: str, task_set: str) -> None:
@@ -202,15 +262,7 @@ def start_eval_run(
     """
     _validate_identity(model_run_hash, task_set)
 
-    from aim import Run
-
-    # Filing eval runs under ``eval/<task_set>`` keeps them out of the
-    # model experiment's Aim run list (which the dashboard already
-    # interprets as training runs). Discovery uses the tags, not the
-    # Aim experiment name, so this is purely an Aim-UI convenience.
-    run = Run(experiment=f"eval/{task_set}", repo=_resolve_aim_url(aim_url))
-    run["astrolabe.kind"] = "eval"
-    run["astrolabe.task_set"] = task_set
+    run = _open_eval_run(task_set=task_set, aim_url=aim_url)
     run["astrolabe.model_run_hash"] = model_run_hash
     return run
 
@@ -329,7 +381,10 @@ def start_eval_run_from_checkpoint(
         "until the run is stamped with its parent.",
         task_set,
     )
-    run = _open_unlinked_eval_run(task_set=task_set, aim_url=aim_url)
+    # Not routed through start_eval_run, which requires a non-empty hash
+    # by design — a half-tagged run written through the normal path would
+    # be worse than an openly unlinked one.
+    run = _open_eval_run(task_set=task_set, aim_url=aim_url)
     run.astrolabe_linked = False
     return run
 
@@ -346,23 +401,6 @@ def _parent_run_hash(checkpoint: str | Path | dict[str, Any]) -> str | None:
 
     meta = read_checkpoint_meta(checkpoint)
     return meta.aim_run_hash if meta else None
-
-
-def _open_unlinked_eval_run(*, task_set: str, aim_url: str | None) -> Any:
-    """An eval run with no parent.
-
-    Not routed through :func:`start_eval_run`, which requires a
-    non-empty hash by design — a half-tagged run written through the
-    normal path would be worse than an openly unlinked one. ``kind`` and
-    ``task_set`` are still set so the run is recognizable as an eval
-    once someone stamps it.
-    """
-    from aim import Run
-
-    run = Run(experiment=f"eval/{task_set}", repo=_resolve_aim_url(aim_url))
-    run["astrolabe.kind"] = "eval"
-    run["astrolabe.task_set"] = task_set
-    return run
 
 
 def log_eval_table(
