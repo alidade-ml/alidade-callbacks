@@ -372,8 +372,29 @@ def _corrupt_hf_checkpoint(directory: Path) -> None:
 # ---------------------------------------------------------------------------
 
 
+def phase(label: str) -> None:
+    """Mark a stage boundary on stderr, flushed.
+
+    The driver runs inside ``docker compose exec`` under a 900s cap in
+    the harness. When it stalls, the harness reports only that the cap
+    expired — the captured output ends wherever the driver last wrote,
+    which is HuggingFace's own training log, so every stall looks
+    identical no matter which stage it happened in. These markers make
+    the last line before silence name the stage.
+
+    Flushed because a stalled process never drains its buffer, and an
+    unflushed marker is exactly the one you needed. stderr because
+    stdout carries the probe payload the scenarios parse.
+
+    See astrolabe plans/tickets/TESTBED-1.md.
+    """
+    print(f"[driver] {label}", file=sys.stderr, flush=True)
+
+
 def run_checkpoint_driver(config: CheckpointDriverConfig) -> dict[str, Any]:
     """Execute one invocation. Returns the probe dict."""
+    phase(f"start framework={config.framework} steps={config.steps} "
+          f"save_every={config.save_every} embed={config.embed_in_weights}")
     _seed_all()
     workdir = Path(config.workdir)
     workdir.mkdir(parents=True, exist_ok=True)
@@ -382,12 +403,14 @@ def run_checkpoint_driver(config: CheckpointDriverConfig) -> dict[str, Any]:
     if config.resume_from and config.driver_flags.get("TESTBED_CORRUPT_PARENT_META"):
         _corrupt_meta_block(Path(config.resume_from))
 
+    phase("training: enter")
     written = {
         "composer": _run_composer,
         "lightning": _run_lightning,
         "pytorch": _run_pytorch,
         "hf": _run_hf,
     }[config.framework](config, workdir)
+    phase(f"training: done, {len(written)} checkpoint(s) written")
 
     from astrolabe_callbacks.checkpoint import write_first_checkpoint_marker_once
 
@@ -395,7 +418,7 @@ def run_checkpoint_driver(config: CheckpointDriverConfig) -> dict[str, Any]:
         "framework": config.framework,
         "workdir": config.workdir,
         "run_hash": _resolve_run_hash(config),
-        "checkpoints": [_inspect(path, role) for path, role in written],
+        "checkpoints": _inspect_all(written),
         "marker": _marker_report(config, marker_existed_at_start),
     }
     if config.marker_path and config.driver_flags.get("TESTBED_PROBE_MARKER_LATCH"):
@@ -408,7 +431,22 @@ def run_checkpoint_driver(config: CheckpointDriverConfig) -> dict[str, Any]:
         probe["hf_load"] = _hf_load_probe(written)
     if config.driver_flags.get("TESTBED_HF_SHARD_SAVE"):
         probe["hf_shard"] = _hf_shard_probe(workdir / "hf" / "sharded")
+    phase("probe: done")
     return probe
+
+
+def _inspect_all(written: list[tuple[Path, str]]) -> list[dict[str, Any]]:
+    """Inspect each checkpoint, naming the file before reading it.
+
+    Reading a checkpoint back is one of the two stages a stall could be
+    hiding in, and it happens once per file — so the marker carries the
+    filename, not just the stage.
+    """
+    out = []
+    for i, (path, role) in enumerate(written, start=1):
+        phase(f"inspect {i}/{len(written)} {role} {path.name}")
+        out.append(_inspect(path, role))
+    return out
 
 
 def _derive_chain_probe(
@@ -904,14 +942,18 @@ def _run_hf(config: CheckpointDriverConfig, workdir: Path) -> list[tuple[Path, s
         train_dataset=ToyDataset(steps * 2 + 4),
         callbacks=callbacks,
     )
+    phase("hf: trainer.train enter")
     trainer.train(resume_from_checkpoint=config.resume_from)
+    phase("hf: trainer.train returned")
 
     written = _collect(save_dir, primary_suffixes=(".safetensors",), export_marker="derived.")
     if config.driver_flags.get("TESTBED_HF_SHARD_SAVE"):
+        phase("hf: sharded save_pretrained enter")
         sharded = save_dir / "sharded"
         # 1KB forces a real multi-shard write on a model this small — the
         # path where a stray buffer could be dropped from the index.
         trainer.model.save_pretrained(str(sharded), max_shard_size="1KB")
+        phase("hf: sharded save_pretrained returned")
     return written
 
 
