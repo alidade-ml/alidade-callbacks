@@ -46,7 +46,6 @@ __all__ = [
     "EvalInputError",
     "MissingParentError",
     "log_eval_table",
-    "register_external_model",
     "start_eval_run",
     "start_eval_run_from_checkpoint",
 ]
@@ -146,9 +145,26 @@ def _open_eval_run(*, task_set: str, aim_url: str | None) -> Any:
     return run
 
 
-def register_external_model(*, name: str, aim_url: str | None = None) -> str:
+# Entries minted in this process, keyed by (name, aim url). Scoring one
+# downloaded model on GLUE and MMLU from the same script should give it
+# one row, not two. Deliberately process-local: reusing an entry from an
+# earlier step or submit would mean asking Aim which run to reuse, and
+# that lookup is what this whole path exists to avoid — it cannot work
+# under local-aim transport, where the compute host sees only its own
+# submit's runs.
+_EXTERNAL_ENTRIES: dict[tuple[str, str], str] = {}
+
+
+def _register_external_model(*, name: str, aim_url: str | None = None) -> str:
     """Give a model astrolabe never trained a record in Aim, and return
     its run hash.
+
+    Internal on purpose. ``external_name=`` on the eval helper is the
+    only supported way in, because that path only runs where the submit
+    identity exists. Called directly outside a submit there is no
+    experiment to file under and the entry lands in Aim's ``default``
+    bucket — detached from any experiment, which is the one place a
+    model entry must never be.
 
     A downloaded checkpoint has no training run, so an eval scoring it
     has nothing to attribute to and the dashboard has no row to put in a
@@ -190,6 +206,11 @@ def register_external_model(*, name: str, aim_url: str | None = None) -> str:
     if not isinstance(name, str) or not name.strip():
         raise EvalInputError("name must be a non-empty string")
 
+    url = _resolve_aim_url(aim_url)
+    cached = _EXTERNAL_ENTRIES.get((name, url))
+    if cached:
+        return cached
+
     from aim import Run
 
     identity = _ambient_identity()
@@ -204,6 +225,7 @@ def register_external_model(*, name: str, aim_url: str | None = None) -> str:
             run.name = name
         except Exception as exc:  # older Aim treats name as read-only
             logger.debug("Failed to set Aim run name {}: {}", name, exc)
+        _EXTERNAL_ENTRIES[(name, url)] = run.hash
         return run.hash
     finally:
         run.close()
@@ -377,7 +399,7 @@ def start_eval_run_from_checkpoint(
         the parent and the artifact does not.
     external_name : str, optional
         Name for a model astrolabe never trained — ``"roberta-base"``.
-        Registers it (see :func:`register_external_model`) and attributes
+        Registers it and attributes
         the eval to that entry. Needed only when the checkpoint carries
         no provenance, so it never appears in code evaluating your own
         models. A checkpoint that does carry provenance wins over this
@@ -448,7 +470,7 @@ def start_eval_run_from_checkpoint(
             external_name,
         )
     if not resolved and external_name:
-        resolved = register_external_model(name=external_name, aim_url=aim_url)
+        resolved = _register_external_model(name=external_name, aim_url=aim_url)
 
     if resolved:
         run = start_eval_run(

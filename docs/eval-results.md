@@ -93,16 +93,20 @@ it appears in the runs panel and can sit in the same leaderboard as models you t
 > shared cache, possibly read-only, used by every project on the machine. Recording it
 > touches Aim only.
 
-Scoring one model on several benchmarks? Register once and reuse the hash — each call
-would otherwise create a separate entry:
+Scoring the same model on several benchmarks from one script? Pass the name each time.
+The model is recorded once and every eval attaches to that one entry:
 
 ```python
-from astrolabe_callbacks import register_external_model
-
-model = register_external_model(name="roberta-base")
-log_eval_table(model_run_hash=model, task_set="glue", rows=glue_rows)
-log_eval_table(model_run_hash=model, task_set="mmlu", rows=mmlu_rows)
+for task_set, rows in (("glue", glue_rows), ("mmlu", mmlu_rows)):
+    run = start_eval_run_from_checkpoint(
+        checkpoint=path, task_set=task_set, external_name="roberta-base",
+    )
+    ...
 ```
+
+Across separate steps of a submit it gets an entry per step, because each step is its own
+process and nothing is looked up. One row per benchmark run is the honest record of what
+happened; if you want them under a single row, score them from one script.
 
 External models appear in eval leaderboards but **not** in training charts — they have no
 training curve to draw.
@@ -230,7 +234,6 @@ from astrolabe_callbacks import (
     start_eval_run_from_checkpoint,  # start here
     log_eval_table,                  # one-shot, when you have the hash
     start_eval_run,                  # streams and custom metric names
-    register_external_model,         # one entry, several benchmarks
     EvalInputError,                  # malformed input
     MissingParentError,              # nothing to attribute to
 )

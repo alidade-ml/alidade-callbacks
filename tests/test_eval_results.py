@@ -35,6 +35,21 @@ from astrolabe_callbacks.eval_results import (
 # ---------- helpers ----------------------------------------------------
 
 
+@pytest.fixture(autouse=True)
+def _clear_external_entry_memo():
+    """Reset the process-local external-model memo between tests.
+
+    It is module state by design — one entry per model per process — so
+    without this a test that mints "roberta-base" silently satisfies the
+    next one from cache, and the next one stops testing what it says.
+    """
+    from astrolabe_callbacks import eval_results as er
+
+    er._EXTERNAL_ENTRIES.clear()
+    yield
+    er._EXTERNAL_ENTRIES.clear()
+
+
 def _make_run_mock(run_hash: str = "abc123") -> MagicMock:
     """Stand-in for ``aim.Run``. Tracks setitem + track + close calls."""
     run = MagicMock()
@@ -476,7 +491,7 @@ from astrolabe_callbacks.checkpoint import export_checkpoint  # noqa: E402
 from astrolabe_callbacks.checkpoint import CheckpointMeta  # noqa: E402
 from astrolabe_callbacks.eval_results import (  # noqa: E402
     MissingParentError,
-    register_external_model,
+    _register_external_model,
     start_eval_run_from_checkpoint,
 )
 
@@ -884,7 +899,7 @@ class TestExternalName:
         factory = MagicMock()
         with patch("aim.Run", factory):
             with pytest.raises(EvalInputError, match="name"):
-                register_external_model(name=bad)
+                _register_external_model(name=bad)
         factory.assert_not_called()
 
     def test_never_reads_from_aim(self, tmp_path):
@@ -893,7 +908,7 @@ class TestExternalName:
         would find nothing and mint a duplicate silently."""
         entry = _make_run_mock("entry-hash")
         with patch("aim.Run", return_value=entry), patch("aim.Repo") as repo:
-            register_external_model(name="roberta-base")
+            _register_external_model(name="roberta-base")
         repo.assert_not_called()
 
     def test_entry_carries_the_submit_identity(self, monkeypatch):
@@ -905,7 +920,7 @@ class TestExternalName:
         entry = _make_run_mock("entry-hash")
         factory = MagicMock(return_value=entry)
         with patch("aim.Run", factory):
-            register_external_model(name="roberta-base")
+            _register_external_model(name="roberta-base")
         assert factory.call_args.kwargs["experiment"] == "latent-bert"
         entry.__setitem__.assert_any_call("astrolabe.version", "v3")
 
@@ -914,11 +929,12 @@ class TestPublicExports:
     """Every eval helper a user is told to import must be importable from
     the package root.
 
-    `register_external_model` shipped in `eval_results.__all__` but was
-    never added to the package's re-export list, so the documented
-    `from astrolabe_callbacks import register_external_model` raised
-    ImportError. Nothing caught it: the module's own tests import from
+    Written after `register_external_model` shipped in
+    `eval_results.__all__` without a matching entry in the package's
+    re-export list, so a documented import raised ImportError. Nothing
+    caught it: the module's own tests import from
     `astrolabe_callbacks.eval_results` directly, which worked fine.
+    That helper is private now, but the class of bug is not.
     """
 
     @pytest.mark.parametrize(
@@ -927,7 +943,6 @@ class TestPublicExports:
             "log_eval_table",
             "start_eval_run",
             "start_eval_run_from_checkpoint",
-            "register_external_model",
             "EvalInputError",
             "MissingParentError",
         ],
@@ -940,3 +955,50 @@ class TestPublicExports:
             f"astrolabe_callbacks — the documented import fails"
         )
         assert name in astrolabe_callbacks.__all__
+
+
+class TestOneEntryPerModelPerProcess:
+    """Scoring one downloaded model on several benchmarks from the same
+    script gives it one row, not one per benchmark.
+
+    Deliberately process-local. Reusing an entry from an earlier step
+    would mean asking Aim which run to reuse, and that lookup cannot
+    work under local-aim transport — compute sees only its own submit's
+    runs, so it would find nothing and mint a duplicate anyway, silently.
+    """
+
+    def test_same_name_twice_mints_one_entry(self):
+        entry = _make_run_mock("entry-hash")
+        factory = MagicMock(return_value=entry)
+        with patch("aim.Run", factory):
+            first = _register_external_model(name="roberta-base", aim_url="aim://t")
+            second = _register_external_model(name="roberta-base", aim_url="aim://t")
+        assert first == second == "entry-hash"
+        assert factory.call_count == 1, "second call minted a duplicate entry"
+
+    def test_different_names_get_different_entries(self):
+        runs = [_make_run_mock("a"), _make_run_mock("b")]
+        with patch("aim.Run", side_effect=runs):
+            a = _register_external_model(name="roberta-base", aim_url="aim://t")
+            b = _register_external_model(name="t5-base", aim_url="aim://t")
+        assert (a, b) == ("a", "b")
+
+    def test_reuse_never_reads_from_aim(self):
+        entry = _make_run_mock("entry-hash")
+        with patch("aim.Run", return_value=entry), patch("aim.Repo") as repo:
+            _register_external_model(name="roberta-base", aim_url="aim://t")
+            _register_external_model(name="roberta-base", aim_url="aim://t")
+        repo.assert_not_called()
+
+    def test_two_task_sets_on_one_model_share_the_entry(self, tmp_path):
+        """The case this exists for, through the public surface."""
+        plain = export_checkpoint({}, tmp_path / "plain.pt", fmt="pt")
+        runs = [_make_run_mock("entry"), _make_run_mock("eval-1"), _make_run_mock("eval-2")]
+        with patch("aim.Run", side_effect=runs):
+            for task_set in ("glue", "mmlu"):
+                start_eval_run_from_checkpoint(
+                    checkpoint=plain, task_set=task_set,
+                    external_name="roberta-base", aim_url="aim://t",
+                )
+        for evalrun in (runs[1], runs[2]):
+            evalrun.__setitem__.assert_any_call("astrolabe.model_run_hash", "entry")
