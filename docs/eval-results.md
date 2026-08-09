@@ -26,6 +26,24 @@ An eval Aim run carries three identity tags so astrolabe's dashboard can discove
 | `astrolabe.task_set` | `"glue"`, `"mmlu"`, `"agent-rollouts-2026q2"`, … (section label) |
 | `astrolabe.model_run_hash` | the training Aim run's hash (the join key) |
 
+### Inside an astrolabe submit
+
+When your eval script runs as a step of an `astrolabe submit`, the helpers read the
+same environment the training callbacks read (`ASTROLABE_EXPERIMENT_NAME`,
+`AIM_RUN_TAGS`) and apply it to the eval run. **You don't pass anything** — scripts
+are identical inside and outside a submit.
+
+Two things follow:
+
+- The eval run is filed under **your experiment**, so it appears on the page for the
+  submit that produced it. Outside a submit there's no experiment to inherit, and the
+  run falls back to `eval/<task_set>`.
+- It carries the submit's identity — submitter, version, submit id, GPU rate — so
+  evals can be filtered and their compute attributed like any other run.
+
+The three tags in the table above always win over anything in the environment. They're
+the only reason the dashboard can find an eval run at all.
+
 Metrics track under the path convention:
 
 ```

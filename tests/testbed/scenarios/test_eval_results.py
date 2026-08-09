@@ -9,6 +9,7 @@ lifecycle events against a real aim server.
 """
 from __future__ import annotations
 
+from dataclasses import replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Callable
 
@@ -18,6 +19,7 @@ from tests.testbed.harness.assertions import (
     assert_metric_count,
     assert_metric_values,
     assert_run_closed,
+    assert_run_experiment,
     assert_run_tag,
     get_run_tags,
 )
@@ -412,3 +414,121 @@ class TestStartEvalRunFromCheckpoint:
         )
         assert result_unlinked.exit_code == 0
         assert result_unlinked.linked is False
+
+
+class TestSubmitIdentity:
+    """Eval runs produced inside an astrolabe submit inherit its identity.
+
+    The engine exports ``AIM_RUN_TAGS`` and ``ASTROLABE_EXPERIMENT_NAME``
+    into every step env; the training callback reads them and the eval
+    helpers used not to. These scenarios run the real helpers against a
+    real Aim server with that env present, because filing is a property
+    Aim resolves at run-open — a mocked ``Run`` cannot show which
+    experiment a run actually landed in.
+    """
+
+    SUBMIT_ENV = {
+        "ASTROLABE_EXPERIMENT_NAME": "latent-bert",
+        "AIM_RUN_TAGS": (
+            "astrolabe.submit_id=s-testbed-1,astrolabe.version=v3,"
+            "astrolabe.user=nathan,astrolabe.experiment=latent-bert"
+        ),
+    }
+
+    def test_eval_lands_in_the_submitting_experiment(
+        self,
+        testbed: "TestbedHandle",
+        aim_repo: Path,
+        run_eval_driver: RunEvalFixture,
+    ) -> None:
+        """The whole point: a submit's evals sit on the submit's page.
+
+        Filed under ``eval/<task_set>`` they land on a page named for the
+        benchmark, which no experiment view queries.
+        """
+        config = _table_config(
+            testbed,
+            model_run_hash=FAKE_PARENT_HASH,
+            task_set="glue",
+            rows={"cola": ("matthews", 0.82)},
+        )
+        result = run_eval_driver(
+            replace(config, submit_env=dict(self.SUBMIT_ENV))
+        )
+        assert result.exit_code == 0, result.stderr
+        assert result.eval_run_hash is not None
+        assert_run_experiment(aim_repo, result.eval_run_hash, "latent-bert")
+
+    def test_submit_tags_land_on_the_eval_run(
+        self,
+        testbed: "TestbedHandle",
+        aim_repo: Path,
+        run_eval_driver: RunEvalFixture,
+    ) -> None:
+        """Without these an eval is unattributable — no submitter to filter
+        on and no submit to bill its GPU time against."""
+        config = _table_config(
+            testbed,
+            model_run_hash=FAKE_PARENT_HASH,
+            task_set="glue",
+            rows={"cola": ("matthews", 0.82)},
+        )
+        result = run_eval_driver(
+            replace(config, submit_env=dict(self.SUBMIT_ENV))
+        )
+        assert result.exit_code == 0, result.stderr
+        assert result.eval_run_hash is not None
+        tags = get_run_tags(aim_repo, result.eval_run_hash)
+        assert tags["astrolabe.submit_id"] == "s-testbed-1"
+        assert tags["astrolabe.version"] == "v3"
+        assert tags["astrolabe.user"] == "nathan"
+        # The discovery tags must survive being written alongside them.
+        assert tags["astrolabe.kind"] == "eval"
+        assert tags["astrolabe.model_run_hash"] == FAKE_PARENT_HASH
+
+    def test_falls_back_to_the_benchmark_outside_a_submit(
+        self,
+        testbed: "TestbedHandle",
+        aim_repo: Path,
+        run_eval_driver: RunEvalFixture,
+    ) -> None:
+        """Ad-hoc use away from astrolabe still has to work — there is no
+        experiment to inherit, so the benchmark label is all there is."""
+        result = run_eval_driver(
+            _table_config(
+                testbed,
+                model_run_hash=FAKE_PARENT_HASH,
+                task_set="mmlu",
+                rows={"stem": ("accuracy", 0.61)},
+            )
+        )
+        assert result.exit_code == 0, result.stderr
+        assert result.eval_run_hash is not None
+        assert_run_experiment(aim_repo, result.eval_run_hash, "eval/mmlu")
+
+    def test_an_unlinked_eval_is_filed_the_same_way(
+        self,
+        testbed: "TestbedHandle",
+        aim_repo: Path,
+        run_eval_driver: RunEvalFixture,
+    ) -> None:
+        """A run stamped with its model after the fact has to be
+        indistinguishable from one that resolved immediately, or stamping
+        moves it between pages."""
+        config = _checkpoint_config(
+            testbed,
+            checkpoint_path="/tmp/unstamped.pt",
+            task_set="glue",
+            on_missing_parent="warn",
+            driver_flags={"TESTBED_CREATE_PT_CHECKPOINT_WITHOUT_META": "1"},
+        )
+        result = run_eval_driver(
+            replace(config, submit_env=dict(self.SUBMIT_ENV))
+        )
+        assert result.exit_code == 0, result.stderr
+        assert result.linked is False
+        assert result.eval_run_hash is not None
+        assert_run_experiment(aim_repo, result.eval_run_hash, "latent-bert")
+        assert_run_tag(
+            aim_repo, result.eval_run_hash, "astrolabe.submit_id", "s-testbed-1"
+        )
