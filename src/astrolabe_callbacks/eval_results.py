@@ -140,8 +140,8 @@ def _open_eval_run(*, task_set: str, aim_url: str | None) -> Any:
     # key in the ambient payload must not be able to shadow one.
     for key, value in identity.items():
         run[key] = value
-    run["astrolabe.kind"] = "eval"
-    run["astrolabe.task_set"] = task_set
+    run[contract.TAG_KIND] = contract.KIND_EVAL
+    run[contract.TAG_TASK_SET] = task_set
     return run
 
 
@@ -263,7 +263,7 @@ def start_eval_run(
     _validate_identity(model_run_hash, task_set)
 
     run = _open_eval_run(task_set=task_set, aim_url=aim_url)
-    run["astrolabe.model_run_hash"] = model_run_hash
+    run[contract.TAG_MODEL_RUN_HASH] = model_run_hash
     return run
 
 

@@ -42,7 +42,7 @@ from __future__ import annotations
 # vendored from; the engine refuses submits whose pinned callback was
 # vendored against a contract older than what this engine version
 # requires.
-CONTRACT_VERSION = "1.4.0"
+CONTRACT_VERSION = "1.5.0"
 
 # --- Env vars: ENGINE sets in the training process -------------------------
 #
@@ -112,6 +112,20 @@ TAG_GPU_RATE_CENTS_PER_HOUR = "astrolabe.gpu_rate_cents_per_hour"
 # "failure" / "cancelled"). Callbacks don't write this; it's listed
 # here so engine code that reads it goes through the constant.
 TAG_OUTCOME = "astrolabe.outcome"
+
+# Eval-run identity. Written by the callback library, read by the
+# dashboard; the engine touches neither. Declared here because this
+# file is the registry for the ``astrolabe.*`` namespace, not only for
+# the keys the engine itself handles — same reason NAMESPACE_EVAL is
+# here. See plans/dashboard-contract.md for the half of the contract
+# system that would enforce this on the dashboard side.
+TAG_KIND = "astrolabe.kind"
+TAG_TASK_SET = "astrolabe.task_set"
+TAG_MODEL_RUN_HASH = "astrolabe.model_run_hash"
+
+# Value for TAG_KIND on a post-training benchmark run. The dashboard's
+# eval discovery matches on this exact string.
+KIND_EVAL = "eval"
 
 # --- Metric namespaces -----------------------------------------------------
 #
