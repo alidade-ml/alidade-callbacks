@@ -908,3 +908,35 @@ class TestExternalName:
             register_external_model(name="roberta-base")
         assert factory.call_args.kwargs["experiment"] == "latent-bert"
         entry.__setitem__.assert_any_call("astrolabe.version", "v3")
+
+
+class TestPublicExports:
+    """Every eval helper a user is told to import must be importable from
+    the package root.
+
+    `register_external_model` shipped in `eval_results.__all__` but was
+    never added to the package's re-export list, so the documented
+    `from astrolabe_callbacks import register_external_model` raised
+    ImportError. Nothing caught it: the module's own tests import from
+    `astrolabe_callbacks.eval_results` directly, which worked fine.
+    """
+
+    @pytest.mark.parametrize(
+        "name",
+        [
+            "log_eval_table",
+            "start_eval_run",
+            "start_eval_run_from_checkpoint",
+            "register_external_model",
+            "EvalInputError",
+            "MissingParentError",
+        ],
+    )
+    def test_importable_from_package_root(self, name):
+        import astrolabe_callbacks
+
+        assert hasattr(astrolabe_callbacks, name), (
+            f"{name} is in eval_results.__all__ but not re-exported from "
+            f"astrolabe_callbacks — the documented import fails"
+        )
+        assert name in astrolabe_callbacks.__all__

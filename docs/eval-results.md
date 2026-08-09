@@ -1,199 +1,248 @@
-# Evaluation results — post-training benchmark logging
+# Eval
 
-`astrolabe-callbacks` logs two kinds of metric:
+Logging benchmark results — GLUE, MMLU, a held-out set you built — so they land on
+astrolabe's **Eval tab** attached to the model that earned them.
 
-- **During training** — the framework callbacks (`AstrolabeComposerLogger`, etc.) and the raw-loop `Run` stream `train/*` and `val/*` metrics as your model trains. These land on astrolabe's dashboard **Training tab**.
-- **After training** — `log_eval_table` / `start_eval_run` log benchmark-suite results (GLUE, MMLU, custom held-out sets) under the `eval/<task_set>/<metric>` namespace on a *separate* Aim run. These land on the dashboard **Eval tab**.
+For during-training metrics, see [training](training.md). The split matters:
 
-This doc covers the second kind. It's the same library either way — your training/eval repo depends on `astrolabe-callbacks` and nothing else.
+| you logged | lands on | dashboard |
+|---|---|---|
+| `train/*`, `val/*` | the training run | Training tab |
+| `eval/<task>/<metric>` | a **separate** eval run | Eval tab |
 
-## The two namespaces
+`val/` answers *is training converging?*. `eval/` answers *how good is the finished
+model?*. They shared a prefix once and were impossible to tell apart.
 
-| Pattern | What it represents | Lives on | Dashboard |
-|---|---|---|---|
-| `val/<metric>` | During-training validation (every N batches) | the training run | Training tab (time-series) |
-| `eval/<task_set>/<metric>` | Post-training benchmark suite | a **separate** eval run | Eval tab (table + chart) |
+---
 
-The split is deliberate: `val/*` answers "is training converging?" and lives on the training run's metric stream. `eval/<task_set>/<metric>` answers "how does the trained model do on this benchmark?" and lives on its own Aim run, tagged for discovery.
+## Scoring a model you trained
 
-## Contract
+The eval run has to say which model it scored. The easy way is to let the checkpoint
+answer:
 
-An eval Aim run carries three identity tags so astrolabe's dashboard can discover it from the model-run page:
+```python
+from astrolabe_callbacks import start_eval_run_from_checkpoint
 
-| Tag | Value |
-|---|---|
-| `astrolabe.kind` | `"eval"` (discriminator) |
-| `astrolabe.task_set` | `"glue"`, `"mmlu"`, `"agent-rollouts-2026q2"`, … (section label) |
-| `astrolabe.model_run_hash` | the training Aim run's hash (the join key) |
+run = start_eval_run_from_checkpoint(checkpoint="ckpt.pt", task_set="glue")
 
-### Inside an astrolabe submit
-
-When your eval script runs as a step of an `astrolabe submit`, the helpers read the
-same environment the training callbacks read (`ASTROLABE_EXPERIMENT_NAME`,
-`AIM_RUN_TAGS`) and apply it to the eval run. **You don't pass anything** — scripts
-are identical inside and outside a submit.
-
-Two things follow:
-
-- The eval run is filed under **your experiment**, so it appears on the page for the
-  submit that produced it. Outside a submit there's no experiment to inherit, and the
-  run falls back to `eval/<task_set>`.
-- It carries the submit's identity — submitter, version, submit id, GPU rate — so
-  evals can be filtered and their compute attributed like any other run.
-
-The three tags in the table above always win over anything in the environment. They're
-the only reason the dashboard can find an eval run at all.
-
-Metrics track under the path convention:
-
-```
-eval/<task>/<metric>
+for task, metric, score in results:
+    run.track(score, name=f"eval/{task}/{metric}", step=0)
+run.close()
 ```
 
-- segment 1: literal `eval` (routes to the Eval tab)
-- segment 2: the task name (becomes a row in the table — `cola`, `sst2`, `stem`, …)
-- segment 3: the metric label (becomes a column header — `matthews`, `accuracy`, …)
+No hash at the call site. The checkpoint carries the training run's identity — see
+[checkpoints](checkpoints.md) — and this reads it **offline**, without contacting Aim.
 
-You don't have to remember any of this. The helpers below set the tags + emit the paths for you.
+`checkpoint=` takes a path or an already-loaded state dict, so an eval script that has
+already loaded the weights does not pay for a second read.
 
-## Primary: `log_eval_table` (one-shot post-training)
+> **Do not look the model up by name.** Searching Aim for "the latest run in this
+> experiment" is a guess that silently picks the wrong run when several exist, and it
+> returns nothing at all under local-aim transport, where the compute host only sees its
+> own submit. If you cannot use the checkpoint, pass `model_run_hash=` explicitly.
 
-The common case: you ran your benchmark, you have a dict of scores, you want them on the dashboard.
+### If you already have the hash
 
 ```python
 from astrolabe_callbacks import log_eval_table
 
-log_eval_table(
-    model_run_hash="abc123...",    # the training Aim run's hash
-    task_set="glue",
-    rows={
-        "cola": ("matthews",          0.822),
-        "sst2": ("accuracy",          0.943),
-        "mnli": ("accuracy_matched",  0.864),
-        "avg":  ("mean",              0.876),
-    },
-)
-```
-
-That's the entire API for the 80% case. The helper opens an Aim run, sets the three identity tags, tracks each row under `eval/<task>/<metric>` at `step=0`, and closes the run. You get an Aim run hash back if you need it.
-
-### Connecting to Aim
-
-`log_eval_table` and `start_eval_run` accept an optional `aim_url`. It resolves the same way as every other entry point in this library:
-
-1. `ASTROLABE_AIM_URL` environment variable (set by astrolabe on GPU instances), else
-2. the `aim_url=` argument, else
-3. `aim://localhost:43800` (the default SSH reverse tunnel astrolabe opens).
-
-If your eval script runs on the same instance astrolabe provisioned for training, you can omit `aim_url` entirely — the env var is already set. Pass it explicitly only when running somewhere astrolabe didn't configure (e.g. `aim_url="aim://my-nuc:43800"`, or a filesystem path like `aim_url="/var/lib/astrolabe/aim"` for a script running directly on the NUC).
-
-### The `avg` column
-
-If you want an "average across tasks" column rendered on the dashboard table, **log it as a row**:
-
-```python
-rows={
-    "cola": ("matthews", 0.822),
-    "sst2": ("accuracy", 0.943),
-    "mnli": ("accuracy_matched", 0.864),
-    "avg":  ("mean", 0.876),   # ← rendered as the last column
-}
-```
-
-The dashboard renders any row keyed `"avg"` as the last column by convention. The library doesn't compute the aggregate itself — that's your call. Mean? Harmonic mean? GLUE-paper-canonical subset? Whatever makes sense for your benchmark.
-
-## Multi-seed: average before logging
-
-If your benchmark runs N seeds and you want to report a single number per task, **compute the aggregate in your script before calling `log_eval_table`**:
-
-```python
-import statistics
-from astrolabe_callbacks import log_eval_table
-
-# Run N seeds, collect per-seed scores
-scores_per_task = {"cola": [], "sst2": [], "mnli": []}
-for seed in (0, 1, 2):
-    seed_scores = run_glue_eval(model, seed=seed)
-    for task, score in seed_scores.items():
-        scores_per_task[task].append(score)
-
-# Average before logging
 log_eval_table(
     model_run_hash="abc123...",
     task_set="glue",
     rows={
-        "cola": ("matthews",         statistics.mean(scores_per_task["cola"])),
-        "sst2": ("accuracy",         statistics.mean(scores_per_task["sst2"])),
-        "mnli": ("accuracy_matched", statistics.mean(scores_per_task["mnli"])),
+        "cola": ("matthews",         0.822),
+        "sst2": ("accuracy",         0.943),
+        "mnli": ("accuracy_matched", 0.864),
+        "avg":  ("mean",             0.876),
     },
 )
 ```
 
-This boundary is deliberate. The library captures *one number per task per eval run*; the researcher decides what that number means. If you want to expose per-seed scores instead of averaged ones:
+One call: opens the run, tags it, writes every row, closes. `rows` maps a task to a
+`(metric_label, score)` pair.
 
-- **One eval run per seed** — call `log_eval_table` N times with distinct `task_set` labels like `glue-seed-0`, `glue-seed-1`. The dashboard surfaces each as its own section.
-- **Distinct metric names per seed** — call `log_eval_table` once with rows like `("matthews_seed_0", 0.822)`, `("matthews_seed_1", 0.825)`. Each becomes its own column in the same task's row.
+> **`log_eval_table` connects only after every score is in hand.** It validates the dict,
+> *then* opens the Aim run. If the connection is down at that moment, an hour of
+> benchmarking is gone. `start_eval_run_from_checkpoint` opens first and writes as you go,
+> so a connection problem surfaces before you spend anything and partial results survive.
+> Prefer it for anything slow.
 
-## Advanced: `start_eval_run` (streams + custom logging)
+---
 
-For mid-training rolling evals — running CoLA every 10K training steps to track convergence — you need finer control over the Aim run's lifecycle. Use the lower-level helper:
+## Models astrolabe never trained
+
+Benchmarking a downloaded checkpoint — `roberta-base`, a collaborator's file. Astrolabe
+has no record of it, so there is nothing for results to attach to. Name it and the library
+creates that record:
+
+```python
+run = start_eval_run_from_checkpoint(
+    checkpoint="~/.cache/huggingface/.../model.safetensors",
+    task_set="glue",
+    external_name="roberta-base",
+)
+```
+
+The name becomes the row label everywhere the model appears. It is required **only** when
+the file carries no provenance, so it never shows up in code evaluating your own models.
+
+The model gets an entry in Aim under the experiment you are submitting from, which means
+it appears in the runs panel and can sit in the same leaderboard as models you trained.
+
+> **Nothing is written to the checkpoint file.** A downloaded model usually lives in a
+> shared cache, possibly read-only, used by every project on the machine. Recording it
+> touches Aim only.
+
+Scoring one model on several benchmarks? Register once and reuse the hash — each call
+would otherwise create a separate entry:
+
+```python
+from astrolabe_callbacks import register_external_model
+
+model = register_external_model(name="roberta-base")
+log_eval_table(model_run_hash=model, task_set="glue", rows=glue_rows)
+log_eval_table(model_run_hash=model, task_set="mmlu", rows=mmlu_rows)
+```
+
+External models appear in eval leaderboards but **not** in training charts — they have no
+training curve to draw.
+
+---
+
+## Rolling evals during training
+
+Scoring every N steps, to watch a benchmark move. Use `step=` and the dashboard renders a
+**chart** instead of a table:
 
 ```python
 from astrolabe_callbacks import start_eval_run
 
-eval_run = start_eval_run(
-    model_run_hash="abc123...",
-    task_set="cola-trace",   # a different task_set than the one-shot 'glue' eval
-)
-
-# During training, periodically:
-for checkpoint_step in (10_000, 20_000, 30_000, 40_000, 50_000):
-    score = compute_cola_score(model_at(checkpoint_step))
-    eval_run.track(score, name="eval/cola/matthews", step=checkpoint_step)
-
-# When the eval session is complete:
-eval_run.close()
+run = start_eval_run(model_run_hash="abc123...", task_set="cola-trace")
+for checkpoint_step in (10_000, 20_000, 30_000):
+    run.track(score_at(checkpoint_step), name="eval/cola/matthews", step=checkpoint_step)
+run.close()
 ```
 
-The dashboard's Eval tab dispatches by data shape:
+**The dispatch is on `step`:**
 
-- **All metrics at `step=0`** → renders as a **table** (leaderboard view, one row per run).
-- **Any metric with `step > 0`** → renders as a **trace** (chart with one line per run, x=step).
+- every row at `step=0` → **table** (a leaderboard, one row per model)
+- any row with `step > 0` → **trace** (a line chart, one line per model)
 
-So `log_eval_table` always produces table blocks; `start_eval_run` with multi-step tracking produces trace blocks. If you want both views of the same task set (a final-step table + a convergence trace), emit them as two separate eval Aim runs with different `task_set` labels.
+Want both views of the same benchmark? Emit two eval runs with different `task_set`
+labels — a final-step table and a convergence trace.
 
-## What the dashboard does with this
+---
 
-On the experiment-detail page, astrolabe's **Eval tab** discovers all eval Aim runs that point at any run currently in scope (the experiment's selected version + any `--include` comparison runs). For each `(task_set, model_run)` pair, it renders one section:
+## The metric path
 
-- **Header**: `task_set` label, eval's `creation_time`, a summary value.
-- **Body**: either a leaderboard table (one row per run, one column per task) or a trace chart (one line per run), dispatched by data shape.
+Exactly three segments:
 
-If multiple eval runs exist for the same `(model_run, task_set)` pair (re-evaluating later with updated eval code, for instance), the dashboard shows the **newest by `creation_time`**. Older eval runs stay in Aim for forensics — not hidden, just not the default surface. This is the "re-eval = new session" semantic.
+```
+eval / <task> / <metric>
+        cola      matthews
+```
+
+- segment 2 becomes a **row** in the table
+- segment 3 becomes a **column**
+
+Slashes in either field are rejected at the call site, because a stray one silently
+scrambles which segment is which.
+
+### The `avg` column
+
+Log it as a row. The dashboard renders a row keyed `"avg"` as the last column.
+
+```python
+rows = {"cola": ("matthews", 0.822), "avg": ("mean", 0.876)}
+```
+
+**The library never computes it.** Mean, harmonic mean, the paper-canonical subset — that
+is a research decision, and guessing it would put a number on your dashboard that you did
+not choose. Same for multi-seed: average in your script, then log one number per task. Or
+log each seed as its own `task_set` and compare them side by side.
+
+---
+
+## When nothing resolves
+
+If the checkpoint has no provenance and you passed neither `model_run_hash=` nor
+`external_name=`, the call **raises `MissingParentError`** before any scoring happens.
+
+That is deliberate. The alternative — writing an eval run with no model attached — puts
+results in Aim that the dashboard can never surface. The benchmark ran, the numbers
+exist, and nobody can find them. Failing at the start costs you nothing; failing silently
+at the end costs the whole run.
+
+```python
+run = start_eval_run_from_checkpoint(
+    checkpoint=ckpt, task_set="glue", on_missing_parent="warn",
+)
+if not run.astrolabe_linked:
+    ...   # returns an unlinked run; stamp it later
+```
+
+Use `"warn"` only if you intend to stamp the run afterwards.
+
+> **Changed in v2.0.0-rc4**: the default was `"warn"`. If you relied on unlinked eval
+> runs, pass `on_missing_parent="warn"` explicitly.
+
+---
+
+## Connecting to Aim
+
+Every helper takes an optional `aim_url`, resolved the same way as everywhere else in the
+library:
+
+1. `ASTROLABE_AIM_URL` env — set by astrolabe on provisioned instances
+2. the `aim_url=` argument
+3. `aim://localhost:43800`, the tunnel astrolabe opens
+
+Running as a step of an astrolabe submit, omit it. Running elsewhere, pass it — a URL or
+a filesystem path both work.
+
+### What you inherit inside a submit
+
+An eval script launched as a submit step picks up that submit's identity automatically —
+submitter, version, submit id, GPU rate — and the eval is filed under the submitting
+experiment. Nothing to pass; scripts are identical inside and outside a submit.
+
+Outside one, the run falls back to an experiment named `eval/<task_set>`.
+
+---
 
 ## Gotchas
 
-- **No slashes in task names or metric labels.** The path convention is exactly three segments: `eval/<task>/<metric>`. A slash in either field scrambles the dashboard's column parsing. `log_eval_table` rejects this at the call site with `EvalInputError`.
-- **`step=0` is load-bearing.** It's how the dashboard knows the eval is a one-shot, not a trace. If you call `track()` yourself via `start_eval_run`, use `step=0` for one-shot results.
-- **Scores must be numeric.** `bool`, `None`, and strings are rejected. (Yes, `bool`-as-score is a Python footgun — `True` would silently log as `1.0` — so the helper rejects it explicitly.)
-- **The model run hash is the training Aim run's hash, not its name.** If you can't get the hash directly, query Aim for the experiment's latest run.
-- **Empty `rows` is rejected.** A blank eval section adds noise; if you have nothing to log, don't call the helper.
-- **Forgetting to close the run** (`start_eval_run` only) leaves `end_time=0`, making the dashboard treat the eval as in-flight. `log_eval_table` handles close for you automatically — even when an exception is raised during the track loop.
+- **Scores must be numeric.** `bool` is rejected explicitly — `True` would otherwise log
+  as `1.0`.
+- **Empty `rows` is rejected.** Nothing to log means nothing to call.
+- **Close what you open.** `start_eval_run` hands you the run; forgetting `.close()`
+  leaves `end_time` at zero and the dashboard treats it as still running.
+  `log_eval_table` closes for you, including when tracking raises.
+- **Re-running an eval** makes a new run. The dashboard shows the newest per
+  `(model, task_set)`; older ones stay in Aim for forensics.
 
-## Where the helpers live
+---
+
+## The API
 
 ```python
 from astrolabe_callbacks import (
-    log_eval_table,        # primary, one-shot
-    start_eval_run,        # escape hatch, streams + custom
-    EvalInputError,        # raised on malformed input
+    start_eval_run_from_checkpoint,  # start here
+    log_eval_table,                  # one-shot, when you have the hash
+    start_eval_run,                  # streams and custom metric names
+    register_external_model,         # one entry, several benchmarks
+    EvalInputError,                  # malformed input
+    MissingParentError,              # nothing to attribute to
 )
 ```
 
-These need only the base install (`pip install astrolabe-callbacks`) — no framework extra. Your eval script doesn't need a training-framework callback; it just needs to reach the Aim server (the `aim_url` convention above).
+Base install only — `pip install astrolabe-callbacks`. No framework extra; an eval script
+needs to reach Aim, nothing more.
+
+---
 
 ## See also
 
-- [`docs/contract.md`](contract.md) — the train/val metric contract for the framework callbacks.
-- The framework docs under [`docs/frameworks/`](frameworks/) — during-training logging per framework.
-- astrolabe's dashboard **Eval tab** — the consumer surface this feeds.
+- [Checkpoints](checkpoints.md) — the provenance this reads
+- [Training](training.md) — `train/` and `val/`
+- [Contract](contract.md) — what every callback guarantees

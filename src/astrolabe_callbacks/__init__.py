@@ -53,6 +53,7 @@ from astrolabe_callbacks.eval_results import (
     EvalInputError,
     MissingParentError,
     log_eval_table,
+    register_external_model,
     start_eval_run,
     start_eval_run_from_checkpoint,
 )
@@ -76,6 +77,7 @@ __all__ = [
     "AstrolabeRun",
     "Run",
     "log_eval_table",
+    "register_external_model",
     "start_eval_run",
     "start_eval_run_from_checkpoint",
     "EvalInputError",
