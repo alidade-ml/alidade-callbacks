@@ -46,6 +46,7 @@ __all__ = [
     "EvalInputError",
     "MissingParentError",
     "log_eval_table",
+    "register_external_model",
     "start_eval_run",
     "start_eval_run_from_checkpoint",
 ]
@@ -140,9 +141,72 @@ def _open_eval_run(*, task_set: str, aim_url: str | None) -> Any:
     # key in the ambient payload must not be able to shadow one.
     for key, value in identity.items():
         run[key] = value
-    run["astrolabe.kind"] = "eval"
-    run["astrolabe.task_set"] = task_set
+    run[contract.TAG_KIND] = contract.KIND_EVAL
+    run[contract.TAG_TASK_SET] = task_set
     return run
+
+
+def register_external_model(*, name: str, aim_url: str | None = None) -> str:
+    """Give a model astrolabe never trained a record in Aim, and return
+    its run hash.
+
+    A downloaded checkpoint has no training run, so an eval scoring it
+    has nothing to attribute to and the dashboard has no row to put in a
+    leaderboard. This creates that record. It carries no metrics — it
+    exists to be pointed at.
+
+    Filed under the submitting experiment, like every other run this
+    submit produces, and carrying the same ambient identity. Registering
+    the same model from a later submit makes a second entry; that is the
+    accepted cost of never reading from Aim (see below), and each
+    experiment page stays self-contained.
+
+    **Deliberately does not look for an existing entry.** Searching Aim
+    by name is the guess-by-resemblance pattern the checkpoint helpers
+    exist to replace, and it cannot work at all under local-aim
+    transport, where the compute host writes to a local repo holding
+    only this submit's runs — the search would find nothing and mint a
+    duplicate every time, silently. Call this once per script and reuse
+    the hash for every task set.
+
+    Parameters
+    ----------
+    name : str
+        What to call the model — ``"roberta-base"``. Becomes the Aim run
+        name and the label on every leaderboard row.
+    aim_url : str, optional
+        Aim tracking URL. ``ASTROLABE_AIM_URL`` wins over this argument.
+
+    Returns
+    -------
+    str
+        The new run's hash. Pass it as ``model_run_hash``.
+
+    Raises
+    ------
+    EvalInputError
+        ``name`` is empty or not a string.
+    """
+    if not isinstance(name, str) or not name.strip():
+        raise EvalInputError("name must be a non-empty string")
+
+    from aim import Run
+
+    identity = _ambient_identity()
+    experiment = identity.get(contract.TAG_EXPERIMENT)
+
+    run = Run(experiment=experiment, repo=_resolve_aim_url(aim_url))
+    try:
+        for key, value in identity.items():
+            run[key] = value
+        run[contract.TAG_KIND] = contract.KIND_EXTERNAL_CHECKPOINT
+        try:
+            run.name = name
+        except Exception as exc:  # older Aim treats name as read-only
+            logger.debug("Failed to set Aim run name {}: {}", name, exc)
+        return run.hash
+    finally:
+        run.close()
 
 
 def _validate_identity(model_run_hash: str, task_set: str) -> None:
@@ -263,7 +327,7 @@ def start_eval_run(
     _validate_identity(model_run_hash, task_set)
 
     run = _open_eval_run(task_set=task_set, aim_url=aim_url)
-    run["astrolabe.model_run_hash"] = model_run_hash
+    run[contract.TAG_MODEL_RUN_HASH] = model_run_hash
     return run
 
 
@@ -273,7 +337,8 @@ def start_eval_run_from_checkpoint(
     task_set: str,
     aim_url: str | None = None,
     model_run_hash: str | None = None,
-    on_missing_parent: str = "warn",
+    external_name: str | None = None,
+    on_missing_parent: str = "raise",
 ) -> Any:
     """Open an eval run already linked to the training that produced a
     checkpoint.
@@ -283,12 +348,13 @@ def start_eval_run_from_checkpoint(
     tag key, and no knowledge of astrolabe internals at the call site.
 
     Resolution order: an explicit ``model_run_hash`` wins, then the
-    checkpoint's embedded ``aim_run_hash``, then ``on_missing_parent``
-    decides. Resolution is **offline** — the checkpoint is read, Aim is
-    never queried. A file that carries a submit but no run is treated as
-    unresolved rather than triggering a lookup, because picking among
-    several runs under one submit would be a guess, and guessing by
-    resemblance is the mechanism this helper exists to replace.
+    checkpoint's embedded ``aim_run_hash``, then ``external_name`` (which
+    registers the model), then ``on_missing_parent`` decides. Resolution
+    is **offline** — the checkpoint is read, Aim is never queried. A file
+    that carries a submit but no run is treated as unresolved rather than
+    triggering a lookup, because picking among several runs under one
+    submit would be a guess, and guessing by resemblance is the mechanism
+    this helper exists to replace.
 
     A derived checkpoint (surgery, quantization, extraction) carries the
     run that trained the model it came from, so evaluating one attributes
@@ -309,12 +375,21 @@ def start_eval_run_from_checkpoint(
         Explicit parent, overriding whatever the file says. For
         checkpoints written before provenance existed, or when you know
         the parent and the artifact does not.
-    on_missing_parent : {"warn", "raise"}, default "warn"
-        What to do when no parent resolves. ``"warn"`` logs and returns
-        an unlinked run — it lands in Aim but stays invisible to the
-        dashboard's Eval tab until stamped after the fact. ``"raise"``
-        raises :class:`MissingParentError`, for CI that should fail
-        loudly rather than accumulate orphans.
+    external_name : str, optional
+        Name for a model astrolabe never trained — ``"roberta-base"``.
+        Registers it (see :func:`register_external_model`) and attributes
+        the eval to that entry. Needed only when the checkpoint carries
+        no provenance, so it never appears in code evaluating your own
+        models. A checkpoint that does carry provenance wins over this
+        argument.
+    on_missing_parent : {"raise", "warn"}, default "raise"
+        What to do when nothing resolves. ``"raise"`` raises
+        :class:`MissingParentError`. Default because it fires at the
+        *start* of an eval, before any scoring: refusing to begin costs
+        nothing, whereas ``"warn"`` returns a run with no
+        ``model_run_hash``, which lands in Aim and stays invisible to the
+        dashboard forever — an hour of GPU time producing numbers nobody
+        can find. ``"warn"`` remains for callers that stamp afterwards.
 
     Returns
     -------
@@ -361,6 +436,20 @@ def start_eval_run_from_checkpoint(
         )
 
     resolved = model_run_hash or _parent_run_hash(checkpoint)
+    if resolved and external_name:
+        # A sweep over a mix of your own and downloaded models will pass
+        # external_name unconditionally; refusing the overlap would break
+        # the obvious way to write that loop. The file knows better than
+        # the argument, so the file wins — but say so, or the name looks
+        # like it took effect.
+        logger.info(
+            "ignoring external_name={!r} — the checkpoint carries its own "
+            "provenance, which wins",
+            external_name,
+        )
+    if not resolved and external_name:
+        resolved = register_external_model(name=external_name, aim_url=aim_url)
+
     if resolved:
         run = start_eval_run(
             model_run_hash=resolved, task_set=task_set, aim_url=aim_url
@@ -370,9 +459,11 @@ def start_eval_run_from_checkpoint(
 
     if on_missing_parent == "raise":
         raise MissingParentError(
-            "no training run could be resolved for this checkpoint: it carries "
-            "no astrolabe provenance and no model_run_hash was given. Stamp the "
-            "checkpoint, or pass model_run_hash= explicitly."
+            "nothing to attribute this eval to: the checkpoint carries no "
+            "astrolabe provenance, and neither model_run_hash= nor "
+            "external_name= was given. If astrolabe trained this model, stamp "
+            "the checkpoint or pass model_run_hash=. If you downloaded it, "
+            'pass external_name= to name it — e.g. external_name="roberta-base".'
         )
 
     logger.warning(
