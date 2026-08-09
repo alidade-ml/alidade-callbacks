@@ -1,9 +1,26 @@
 # Changelog
 
+## v2.0.0-rc4
+
+Everything below `## v2.0.0` applies. Relative to **rc3**, this adds the whole
+checkpoint-provenance surface (which had never shipped in any tag) and the eval
+linkage built on top of it: checkpoint metadata + framework checkpointers,
+derived-checkpoint transforms, `start_eval_run_from_checkpoint`, and eval runs
+inheriting the submit that produced them.
+
+Still an rc: `on_missing_parent` defaults to `"warn"`, which writes an eval run
+with no `model_run_hash` — present in Aim, invisible to the dashboard. That
+default is expected to become `"raise"` before the final, so do not build on the
+warn behaviour.
+
 ## v2.0.0 — unreleased
 
 ### Added
 
+- **Checkpoint provenance.** A checkpoint can now say which run trained it, so a later eval attributes to that run instead of guessing by name. `CheckpointMeta` carries `aim_run_hash`, `submit_id`, `experiment`, `version`, `created_at`, and the derivation fields; `export_checkpoint` / `save_checkpoint` write it, `read_checkpoint_meta` reads it back. Formats without a native slot (`.pt` via raw `torch.save`, the safetensors header) embed it under `_astrolabe_meta`; a tensor-buffer form (`embed_meta_as_buffer` / `read_meta_from_buffer` / `strip_meta_buffer`) survives frameworks that re-serialize state dicts.
+- **Framework checkpointers**: `AstrolabeComposerCheckpointer`, `AstrolabeLightningCheckpointer`, `AstrolabeHFCheckpointer`. Attach one alongside the logger and every checkpoint the framework writes carries the live run's identity — no call at the save site.
+- **Checkpoint transforms keep their origin.** `save_derived_checkpoint` writes a checkpoint derived from another (surgery, quantization, extraction) carrying the run that trained the *original*, plus a hop count. Evaluating a derived artifact attributes to the training that produced it rather than to nothing. `stamp_checkpoint` back-fills provenance onto a file written before any of this existed, rewriting the header while copying the tensor block as raw bytes.
+- **`start_eval_run_from_checkpoint`.** Name the file you are about to evaluate; the training run comes from the file's own provenance. Resolution is offline — the checkpoint is read, Aim is never queried. Raises `MissingParentError` under `on_missing_parent="raise"` for CI that should fail rather than accumulate orphans.
 - **First-metric marker.** When the engine sets `ASTROLABE_FIRST_METRIC_MARKER` in the training environment (astrolabe engine ≥ contract 1.3.0, healing plans using `until: first_metric`), the callback touches that file on the first `track_safely` call. The engine SSH-probes the marker at step-failure time to close the healing window. Best-effort: any failure to touch the marker is silently swallowed — the training run must never fail because a marker couldn't be written. Idempotent: subsequent `track_safely` calls skip the touch. Callers not on an astrolabe engine (no env var) see no behavior change.
 - **Local-aim transport mode** (opt-in via the NUC's engine, not the training repo). When the engine sets `ASTROLABE_AIM_REPO_PATH=/path/to/local-repo` in the training environment, the callback spawns a local `aim server` subprocess on the compute host writing to that path. Training writes stay on localhost (~1900 writes/sec sustained vs. ~40/sec through the legacy SSH tunnel). The NUC-side `astrolabe-sync` sidecar pulls per-run RocksDB chunks every ~3s. Dashboard lag drops from minutes-to-hours under heavy emission to ~6-8s. See [astrolabe's `docs/aim-live-sync.md`](https://github.com/naston/astrolabe/blob/main/docs/aim-live-sync.md). Tunnel mode (no env var) remains the default; nothing changes for callers that don't opt in.
 - **Schema-phase finalize cycle.** At framework boundary hooks (Composer `batch_end`/`eval_end`, Lightning `on_train_batch_end`/`on_validation_end`, HuggingFace `on_log`/`on_evaluate`, raw PyTorch `log_train`/`log_eval`/`log`), the callback now observes metric names and — when new names appear since the last finalize — drains the buffer, closes the Aim Run, and reopens with `force_resume=True`. The close forces RocksDB memtable contents to flush to stable SST files, which is what makes new metric names visible to read-only readers like the sync sidecar's `RepoIndexManager.index()`. Typical Composer run: 1-2 finalize cycles. Optimizer handoffs (Muon→AdamW) trigger one additional cycle when the new optimizer's metrics first appear. Hard cap of 10 cycles per run prevents pathological churn. Each finalize emits a `schema_finalized` event with the new metric names (capped to 10) for post-mortem observability via the disk-stats jsonl.
