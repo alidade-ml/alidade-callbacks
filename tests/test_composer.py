@@ -241,6 +241,22 @@ class TestInit:
         cb.init(state=FakeState(), logger_obj=None)
         assert fake_aim_run[-1].name == "bert-tiny"
 
+    def test_explicit_run_name_wins_over_composer(self, fake_aim_run):
+        """Reading Composer's name alone assumes everyone configures runs
+        the way Composer does. A user driving Composer from their own
+        config had no way to set it."""
+        class FakeState:
+            run_name = "composer-default-name"
+
+        cb = AstrolabeComposerLogger(run_name="LatentBERT")
+        cb.init(state=FakeState(), logger_obj=None)
+        assert fake_aim_run[-1].name == "LatentBERT"
+
+    def test_explicit_run_name_used_when_composer_has_none(self, fake_aim_run):
+        cb = AstrolabeComposerLogger(run_name="LatentBERT")
+        cb.init(state=None, logger_obj=None)
+        assert fake_aim_run[-1].name == "LatentBERT"
+
 
 # ----------------------------------------------------------------------
 # log_metrics — pass-through with name normalization

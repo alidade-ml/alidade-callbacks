@@ -124,6 +124,14 @@ class AstrolabeComposerLogger(LoggerDestination):
     tags : dict[str, str] | None
         Tags applied to the Aim run on init. Overridden by
         ``AIM_RUN_TAGS`` env when set.
+    run_name : str | None
+        Name for this Aim run — what the dashboard labels the row. Wins
+        over Composer's ``state.run_name``. Only needed when you are not
+        already naming runs through the Trainer: reading Composer's name
+        alone assumes every user configures runs the way Composer does,
+        which leaves anyone driving Composer from their own config with
+        no way to set it. The other three callbacks have accepted this
+        argument since they shipped.
     """
 
     def __init__(
@@ -131,12 +139,14 @@ class AstrolabeComposerLogger(LoggerDestination):
         aim_url: str | None = None,
         experiment_name: str | None = None,
         tags: dict[str, str] | None = None,
+        run_name: str | None = None,
     ):
         self._cfg = _core.resolve_run_config(
             experiment_name=experiment_name,
             aim_url=aim_url,
             tags=tags,
         )
+        self._explicit_run_name = run_name
         self._run: Any = None
         self._wall_time = _core.WallTimeTracker()
         self._rank_zero = is_rank_zero()
@@ -261,7 +271,7 @@ class AstrolabeComposerLogger(LoggerDestination):
         if self._run is not None:
             return  # double-open guard
 
-        run_name = getattr(state, "run_name", None)
+        run_name = self._explicit_run_name or getattr(state, "run_name", None)
         self._run = _core.open_aim_run(self._cfg, run_name=run_name)
 
     def fit_start(self, state: Any, logger_obj: Any) -> None:
@@ -285,7 +295,7 @@ class AstrolabeComposerLogger(LoggerDestination):
         if not self._rank_zero:
             return
         if self._run is None:
-            run_name = getattr(state, "run_name", None)
+            run_name = self._explicit_run_name or getattr(state, "run_name", None)
             self._run = _core.open_aim_run(self._cfg, run_name=run_name)
             _core._append_stats_line(
                 kind="run_reopened",
