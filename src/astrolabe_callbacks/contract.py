@@ -42,7 +42,7 @@ from __future__ import annotations
 # vendored from; the engine refuses submits whose pinned callback was
 # vendored against a contract older than what this engine version
 # requires.
-CONTRACT_VERSION = "1.5.0"
+CONTRACT_VERSION = "1.6.0"
 
 # --- Env vars: ENGINE sets in the training process -------------------------
 #
@@ -126,6 +126,14 @@ TAG_MODEL_RUN_HASH = "astrolabe.model_run_hash"
 # Value for TAG_KIND on a post-training benchmark run. The dashboard's
 # eval discovery matches on this exact string.
 KIND_EVAL = "eval"
+
+# Value for TAG_KIND on a model astrolabe did not train — a downloaded
+# checkpoint an eval scored. The run carries no metrics; it exists so
+# the eval has a model to attribute to and the dashboard has a row to
+# put in a leaderboard. The dashboard keys its "is this a training run"
+# test on TAG_KIND being absent or "training", so any value here keeps
+# the entry off the training charts.
+KIND_EXTERNAL_CHECKPOINT = "external_checkpoint"
 
 # --- Metric namespaces -----------------------------------------------------
 #

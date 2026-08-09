@@ -476,6 +476,7 @@ from astrolabe_callbacks.checkpoint import export_checkpoint  # noqa: E402
 from astrolabe_callbacks.checkpoint import CheckpointMeta  # noqa: E402
 from astrolabe_callbacks.eval_results import (  # noqa: E402
     MissingParentError,
+    register_external_model,
     start_eval_run_from_checkpoint,
 )
 
@@ -552,7 +553,7 @@ class TestUnresolvedParent:
         run = _make_run_mock()
         with patch("aim.Run", return_value=run):
             result = start_eval_run_from_checkpoint(
-                checkpoint=plain, task_set="glue"
+                checkpoint=plain, task_set="glue", on_missing_parent="warn"
             )
         assert result.astrolabe_linked is False
 
@@ -562,7 +563,9 @@ class TestUnresolvedParent:
         plain = export_checkpoint({}, tmp_path / "plain.pt", fmt="pt")
         run = _make_run_mock()
         with patch("aim.Run", return_value=run):
-            start_eval_run_from_checkpoint(checkpoint=plain, task_set="glue")
+            start_eval_run_from_checkpoint(
+                checkpoint=plain, task_set="glue", on_missing_parent="warn"
+            )
         tags = [c.args[0] for c in run.__setitem__.call_args_list]
         assert "astrolabe.model_run_hash" not in tags
 
@@ -571,7 +574,9 @@ class TestUnresolvedParent:
         plain = export_checkpoint({}, tmp_path / "plain.pt", fmt="pt")
         run = _make_run_mock()
         with patch("aim.Run", return_value=run):
-            start_eval_run_from_checkpoint(checkpoint=plain, task_set="glue")
+            start_eval_run_from_checkpoint(
+                checkpoint=plain, task_set="glue", on_missing_parent="warn"
+            )
         run.__setitem__.assert_any_call("astrolabe.kind", "eval")
         run.__setitem__.assert_any_call("astrolabe.task_set", "glue")
 
@@ -583,7 +588,9 @@ class TestUnresolvedParent:
         ckpt = _ckpt(tmp_path, submit_id="sub-123", experiment="exp", version="v1")
         run = _make_run_mock()
         with patch("aim.Run", return_value=run):
-            result = start_eval_run_from_checkpoint(checkpoint=ckpt, task_set="glue")
+            result = start_eval_run_from_checkpoint(
+                checkpoint=ckpt, task_set="glue", on_missing_parent="warn"
+            )
         assert result.astrolabe_linked is False
 
 
@@ -769,7 +776,9 @@ class TestSubmitIdentity:
         run = _make_run_mock()
         factory = MagicMock(return_value=run)
         with patch("aim.Run", factory):
-            start_eval_run_from_checkpoint(checkpoint=ckpt, task_set="glue")
+            start_eval_run_from_checkpoint(
+                checkpoint=ckpt, task_set="glue", on_missing_parent="warn"
+            )
         assert factory.call_args.kwargs["experiment"] == "latent-bert"
         run.__setitem__.assert_any_call("astrolabe.submit_id", "s-3")
 
@@ -787,3 +796,115 @@ class TestSubmitIdentity:
             )
         assert factory.call_args.kwargs["experiment"] == "latent-bert"
         run.__setitem__.assert_any_call("astrolabe.user", "nathan")
+
+
+class TestRaisesByDefault:
+    """The worst outcome in this area used to be the default: warn wrote
+    an eval run with no model_run_hash, which lands in Aim and is
+    invisible to the dashboard forever. An hour of GPU time producing
+    numbers nobody can find."""
+
+    def test_default_raises_rather_than_writing_an_orphan(self, tmp_path):
+        plain = export_checkpoint({}, tmp_path / "plain.pt", fmt="pt")
+        factory = MagicMock()
+        with patch("aim.Run", factory):
+            with pytest.raises(MissingParentError):
+                start_eval_run_from_checkpoint(checkpoint=plain, task_set="glue")
+        factory.assert_not_called()
+
+    def test_the_error_names_both_ways_out(self, tmp_path):
+        """It fires before any scoring, so the message is the whole
+        remedy — it has to cover the trained case and the downloaded
+        case, not just one."""
+        plain = export_checkpoint({}, tmp_path / "plain.pt", fmt="pt")
+        with patch("aim.Run", MagicMock()):
+            with pytest.raises(MissingParentError) as exc:
+                start_eval_run_from_checkpoint(checkpoint=plain, task_set="glue")
+        assert "model_run_hash" in str(exc.value)
+        assert "external_name" in str(exc.value)
+
+
+class TestExternalName:
+    """Scoring a model astrolabe never trained."""
+
+    def test_registers_the_model_and_links_the_eval_to_it(self, tmp_path):
+        plain = export_checkpoint({}, tmp_path / "plain.pt", fmt="pt")
+        entry, evalrun = _make_run_mock("entry-hash"), _make_run_mock("eval-hash")
+        with patch("aim.Run", side_effect=[entry, evalrun]):
+            result = start_eval_run_from_checkpoint(
+                checkpoint=plain, task_set="glue", external_name="roberta-base"
+            )
+        entry.__setitem__.assert_any_call(
+            "astrolabe.kind", "external_checkpoint"
+        )
+        assert entry.name == "roberta-base"
+        evalrun.__setitem__.assert_any_call(
+            "astrolabe.model_run_hash", "entry-hash"
+        )
+        assert result.astrolabe_linked is True
+
+    def test_the_entry_is_closed_so_it_does_not_read_as_in_flight(self, tmp_path):
+        plain = export_checkpoint({}, tmp_path / "plain.pt", fmt="pt")
+        entry, evalrun = _make_run_mock("entry-hash"), _make_run_mock("eval-hash")
+        with patch("aim.Run", side_effect=[entry, evalrun]):
+            start_eval_run_from_checkpoint(
+                checkpoint=plain, task_set="glue", external_name="roberta-base"
+            )
+        entry.close.assert_called_once()
+
+    def test_provenance_wins_over_the_name(self, tmp_path):
+        """A sweep over mixed models passes external_name every time;
+        refusing the overlap would break the obvious loop. The file knows
+        better than the argument."""
+        ckpt = _ckpt(tmp_path, aim_run_hash=ORIGIN)
+        run = _make_run_mock()
+        factory = MagicMock(return_value=run)
+        with patch("aim.Run", factory):
+            start_eval_run_from_checkpoint(
+                checkpoint=ckpt, task_set="glue", external_name="roberta-base"
+            )
+        run.__setitem__.assert_any_call("astrolabe.model_run_hash", ORIGIN)
+        # One run: the eval. No entry was registered.
+        assert factory.call_count == 1
+
+    def test_explicit_hash_wins_over_the_name(self, tmp_path):
+        plain = export_checkpoint({}, tmp_path / "plain.pt", fmt="pt")
+        run = _make_run_mock()
+        factory = MagicMock(return_value=run)
+        with patch("aim.Run", factory):
+            start_eval_run_from_checkpoint(
+                checkpoint=plain, task_set="glue",
+                model_run_hash="explicit", external_name="roberta-base",
+            )
+        run.__setitem__.assert_any_call("astrolabe.model_run_hash", "explicit")
+        assert factory.call_count == 1
+
+    @pytest.mark.parametrize("bad", ["", "   ", None, 7])
+    def test_register_rejects_an_unusable_name(self, bad):
+        factory = MagicMock()
+        with patch("aim.Run", factory):
+            with pytest.raises(EvalInputError, match="name"):
+                register_external_model(name=bad)
+        factory.assert_not_called()
+
+    def test_never_reads_from_aim(self, tmp_path):
+        """The lookup this replaces could not work under local-aim
+        transport, where compute sees only its own submit's runs — it
+        would find nothing and mint a duplicate silently."""
+        entry = _make_run_mock("entry-hash")
+        with patch("aim.Run", return_value=entry), patch("aim.Repo") as repo:
+            register_external_model(name="roberta-base")
+        repo.assert_not_called()
+
+    def test_entry_carries_the_submit_identity(self, monkeypatch):
+        """It files under the submitting experiment, so it is one of that
+        experiment's own rows — a row with no version would sit outside
+        every version group and vanish from the page."""
+        monkeypatch.setenv("ASTROLABE_EXPERIMENT_NAME", "latent-bert")
+        monkeypatch.setenv("AIM_RUN_TAGS", "astrolabe.version=v3")
+        entry = _make_run_mock("entry-hash")
+        factory = MagicMock(return_value=entry)
+        with patch("aim.Run", factory):
+            register_external_model(name="roberta-base")
+        assert factory.call_args.kwargs["experiment"] == "latent-bert"
+        entry.__setitem__.assert_any_call("astrolabe.version", "v3")
