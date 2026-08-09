@@ -145,92 +145,6 @@ def _open_eval_run(*, task_set: str, aim_url: str | None) -> Any:
     return run
 
 
-# Entries minted in this process, keyed by (name, aim url). Scoring one
-# downloaded model on GLUE and MMLU from the same script should give it
-# one row, not two. Deliberately process-local: reusing an entry from an
-# earlier step or submit would mean asking Aim which run to reuse, and
-# that lookup is what this whole path exists to avoid — it cannot work
-# under local-aim transport, where the compute host sees only its own
-# submit's runs.
-_EXTERNAL_ENTRIES: dict[tuple[str, str], str] = {}
-
-
-def _register_external_model(*, name: str, aim_url: str | None = None) -> str:
-    """Give a model astrolabe never trained a record in Aim, and return
-    its run hash.
-
-    Internal on purpose. ``external_name=`` on the eval helper is the
-    only supported way in, because that path only runs where the submit
-    identity exists. Called directly outside a submit there is no
-    experiment to file under and the entry lands in Aim's ``default``
-    bucket — detached from any experiment, which is the one place a
-    model entry must never be.
-
-    A downloaded checkpoint has no training run, so an eval scoring it
-    has nothing to attribute to and the dashboard has no row to put in a
-    leaderboard. This creates that record. It carries no metrics — it
-    exists to be pointed at.
-
-    Filed under the submitting experiment, like every other run this
-    submit produces, and carrying the same ambient identity. Registering
-    the same model from a later submit makes a second entry; that is the
-    accepted cost of never reading from Aim (see below), and each
-    experiment page stays self-contained.
-
-    **Deliberately does not look for an existing entry.** Searching Aim
-    by name is the guess-by-resemblance pattern the checkpoint helpers
-    exist to replace, and it cannot work at all under local-aim
-    transport, where the compute host writes to a local repo holding
-    only this submit's runs — the search would find nothing and mint a
-    duplicate every time, silently. Call this once per script and reuse
-    the hash for every task set.
-
-    Parameters
-    ----------
-    name : str
-        What to call the model — ``"roberta-base"``. Becomes the Aim run
-        name and the label on every leaderboard row.
-    aim_url : str, optional
-        Aim tracking URL. ``ASTROLABE_AIM_URL`` wins over this argument.
-
-    Returns
-    -------
-    str
-        The new run's hash. Pass it as ``model_run_hash``.
-
-    Raises
-    ------
-    EvalInputError
-        ``name`` is empty or not a string.
-    """
-    if not isinstance(name, str) or not name.strip():
-        raise EvalInputError("name must be a non-empty string")
-
-    url = _resolve_aim_url(aim_url)
-    cached = _EXTERNAL_ENTRIES.get((name, url))
-    if cached:
-        return cached
-
-    from aim import Run
-
-    identity = _ambient_identity()
-    experiment = identity.get(contract.TAG_EXPERIMENT)
-
-    run = Run(experiment=experiment, repo=_resolve_aim_url(aim_url))
-    try:
-        for key, value in identity.items():
-            run[key] = value
-        run[contract.TAG_KIND] = contract.KIND_EXTERNAL_CHECKPOINT
-        try:
-            run.name = name
-        except Exception as exc:  # older Aim treats name as read-only
-            logger.debug("Failed to set Aim run name {}: {}", name, exc)
-        _EXTERNAL_ENTRIES[(name, url)] = run.hash
-        return run.hash
-    finally:
-        run.close()
-
-
 def _validate_identity(model_run_hash: str, task_set: str) -> None:
     if not isinstance(model_run_hash, str) or not model_run_hash:
         raise EvalInputError("model_run_hash must be a non-empty string")
@@ -456,6 +370,15 @@ def start_eval_run_from_checkpoint(
             "model_run_hash, when given, must be a non-empty string; pass None "
             "to resolve from the checkpoint"
         )
+    if external_name is not None and (
+        not isinstance(external_name, str) or not external_name.strip()
+    ):
+        # Checked here rather than at use: an empty string is falsy, so it
+        # would otherwise fall through to "nothing was given" and report a
+        # missing parent at a call site that plainly supplied a name.
+        raise EvalInputError(
+            "external_name, when given, must be a non-empty string"
+        )
 
     resolved = model_run_hash or _parent_run_hash(checkpoint)
     if resolved and external_name:
@@ -470,7 +393,7 @@ def start_eval_run_from_checkpoint(
             external_name,
         )
     if not resolved and external_name:
-        resolved = _register_external_model(name=external_name, aim_url=aim_url)
+        resolved = _mint_model_entry(external_name, aim_url)
 
     if resolved:
         run = start_eval_run(
@@ -500,6 +423,45 @@ def start_eval_run_from_checkpoint(
     run = _open_eval_run(task_set=task_set, aim_url=aim_url)
     run.astrolabe_linked = False
     return run
+
+
+def _mint_model_entry(name: str, aim_url: str | None) -> str:
+    """Record a model astrolabe never trained, and return its run hash.
+
+    Only reachable through ``external_name=``. A downloaded checkpoint
+    has no training run, so an eval scoring it has nothing to attribute
+    to and the dashboard has no row to put in a leaderboard; this is the
+    row. It carries no metrics — it exists to be pointed at.
+
+    Filed under the submitting experiment, carrying the same identity as
+    every other run of that submit. There is no way to reach this
+    outside a submit, which matters: with no experiment to inherit, the
+    entry would land in Aim's ``default`` bucket, attached to nothing.
+
+    Never reads from Aim. Passing the same name again — another step,
+    another submit — makes another entry. Reusing one would mean asking
+    Aim which run to reuse, and that lookup cannot work under local-aim
+    transport, where the compute host sees only its own submit's runs:
+    it would find nothing and mint a duplicate anyway, silently.
+    """
+    from aim import Run
+
+    identity = _ambient_identity()
+    run = Run(
+        experiment=identity.get(contract.TAG_EXPERIMENT),
+        repo=_resolve_aim_url(aim_url),
+    )
+    try:
+        for key, value in identity.items():
+            run[key] = value
+        run[contract.TAG_KIND] = contract.KIND_EXTERNAL_CHECKPOINT
+        try:
+            run.name = name
+        except Exception as exc:  # older Aim treats name as read-only
+            logger.debug("Failed to set Aim run name {}: {}", name, exc)
+        return run.hash
+    finally:
+        run.close()
 
 
 def _parent_run_hash(checkpoint: str | Path | dict[str, Any]) -> str | None:
