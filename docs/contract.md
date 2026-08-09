@@ -59,7 +59,7 @@ User-chosen names are **never** rewritten. If you call `self.log("my_thing/foo",
 
 ### Validation namespace — `val/` (v1.0.0+)
 
-As of v1.0.0 during-training validation metrics emit under `val/<name>`. Pre-v1.0.0 they emitted under `eval/<name>`; the flip aligns with astrolabe v1.7's eval-runs schema, which reserves `eval/<task>/<metric>` for **post-training benchmark suites** tracked on dedicated eval Aim runs (see [the eval guide](eval-results.md)). The `val/` vs `eval/` split puts during-training validation on the dashboard's Training tab and benchmark results on the Eval tab — sharing one prefix made them visually indistinguishable.
+As of v1.0.0 during-training validation metrics emit under `val/<name>`. Pre-v1.0.0 they emitted under `eval/<name>`; the flip aligns with astrolabe's eval-runs schema, which reserves `eval/<task>/<metric>` for **post-training benchmark suites** tracked on dedicated eval Aim runs (see [the eval guide](eval-results.md)). The `val/` vs `eval/` split puts during-training validation on the dashboard's Training tab and benchmark results on the Eval tab — sharing one prefix made them visually indistinguishable.
 
 The single source of truth is `_core.EVAL_METRIC_PREFIX`; flipping it cascades through every framework callback. Legacy production runs in Aim keep their `eval/*` metric names — those still chart correctly on the Training tab; they just sit under a deprecated prefix.
 
