@@ -2,6 +2,13 @@
 
 Framework-agnostic Aim logging for ML training. One install, four frameworks: **MosaicML Composer, PyTorch Lightning, HuggingFace Trainer, raw PyTorch.** Designed to pair with [astrolabe](https://github.com/naston/astrolabe) but works standalone.
 
+### 📖 Start here: [Getting your data into astrolabe](docs/README.md)
+
+Three guides — [training](docs/training.md), [checkpoints](docs/checkpoints.md),
+[eval](docs/eval-results.md) — covering metrics while you train, provenance that survives
+to eval time, and benchmark results that attach to the model that earned them. The rest
+of this page is the quick reference.
+
 > **Pass-through philosophy.** This library streams *every* metric you log to Aim — under the names you chose, with the structure you chose. The only metric we synthesize is `wall_time`. There are no hidden defaults, no metric whitelists, no surprise prefixes. Whatever you `self.log()` (Lightning) or `logger.log_metrics()` (Composer) or pass to `run.log_train()` (raw PyTorch) lands in Aim under that name.
 
 ## Install
@@ -159,7 +166,7 @@ We **only** synthesize `wall_time` (training-only elapsed time, excluding setup 
 | HF Trainer | `loss` → `train/loss`, `learning_rate` → `train/lr`, `grad_norm`/`epoch` → `train/<x>`, `eval_<x>` → `val/<x>` | everything else |
 | Raw PyTorch | `log_train(**m)` → `train/<m>`, `log_eval(**m)` → `val/<m>`, `log(name, ...)` → `<name>` | (you control namespacing) |
 
-> **v1.0.0**: during-training validation metrics emit under `val/` (was `eval/` in v0.x). The `eval/` namespace is now reserved for **post-training benchmark suites** logged via `astrolabe.eval_results.log_eval_table(...)` on dedicated eval Aim runs. See [astrolabe's `docs/eval.md`](https://github.com/naston/astrolabe/blob/main/docs/eval.md) for the post-training side.
+> **v1.0.0**: during-training validation metrics emit under `val/` (was `eval/` in v0.x). The `eval/` namespace is now reserved for **post-training benchmark suites** logged via `astrolabe_callbacks.log_eval_table(...)` on dedicated eval Aim runs. See [the eval guide](docs/eval-results.md) for the post-training side.
 
 Renames are cosmetic, applied to framework-emitted names you didn't choose. **User-named metrics are never rewritten.** If you log a metric called `MaskedLanguagePerplexity`, it lands in Aim as `MaskedLanguagePerplexity`, not buried under any prefix.
 

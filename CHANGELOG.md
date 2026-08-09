@@ -1,5 +1,47 @@
 # Changelog
 
+## v2.0.0-rc4
+
+Relative to **rc3**, this carries the whole checkpoint-provenance surface — which had
+never shipped in any tag — and the eval linkage built on top of it.
+
+### Added
+
+- **Checkpoint provenance.** A checkpoint records which run trained it, so a later eval
+  attributes to that run instead of guessing by name. `CheckpointMeta` +
+  `export_checkpoint` / `read_checkpoint_meta`, three framework checkpointers
+  (`AstrolabeComposerCheckpointer`, `AstrolabeLightningCheckpointer`,
+  `AstrolabeHFCheckpointer`), `save_checkpoint` for raw PyTorch, `save_derived_checkpoint`
+  for transforms, and `stamp_checkpoint` to back-fill. See
+  [docs/checkpoints.md](docs/checkpoints.md).
+- **`start_eval_run_from_checkpoint`.** Name the file you are evaluating; the training run
+  comes from the file's own provenance, read offline.
+- **Scoring models astrolabe never trained.** `external_name=` on the eval helper, plus
+  `register_external_model`. The model gets an entry in Aim under the submitting
+  experiment, so it can sit in a leaderboard beside models you trained. Never writes to
+  the checkpoint file.
+- **`run_name` on `AstrolabeComposerLogger`**, matching the other three callbacks.
+  Composer's own `state.run_name` was previously the only source.
+
+### Changed
+
+- **`on_missing_parent` now defaults to `"raise"`.** The old default wrote an eval run
+  with no `model_run_hash` — present in Aim, invisible to the dashboard forever. It fires
+  before any scoring, so refusing to start costs nothing. Pass
+  `on_missing_parent="warn"` to keep the old behaviour.
+- **Eval runs are filed under the submitting experiment** and inherit its identity
+  (submitter, version, submit id, GPU rate), rather than under `eval/<task_set>`. Scripts
+  are unchanged. Outside a submit, the old name remains the fallback.
+- **Docs restructured** around what you are trying to do — training, checkpoints, eval —
+  with an overview at [docs/README.md](docs/README.md). The previous eval doc advised
+  looking up a model hash by querying Aim for an experiment's latest run; that is a guess
+  when several runs exist and returns nothing under local-aim transport, and it is gone.
+
+### Fixed
+
+- `register_external_model` was in `eval_results.__all__` but never re-exported from the
+  package, so the documented import raised `ImportError`.
+
 ## v2.0.0 — unreleased
 
 ### Added
