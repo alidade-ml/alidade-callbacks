@@ -29,6 +29,7 @@ from astrolabe_callbacks import AstrolabeComposerLogger
 logger_callback = AstrolabeComposerLogger(
     aim_url="aim://my-aim-server.example.com:43800",
     experiment_name="bert-pretrain",
+    run_name="bert-base-seed0",
     tags={
         "thesis": "scale-laws",
         "model_size": "base",

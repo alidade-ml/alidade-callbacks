@@ -476,7 +476,6 @@ from astrolabe_callbacks.checkpoint import export_checkpoint  # noqa: E402
 from astrolabe_callbacks.checkpoint import CheckpointMeta  # noqa: E402
 from astrolabe_callbacks.eval_results import (  # noqa: E402
     MissingParentError,
-    register_external_model,
     start_eval_run_from_checkpoint,
 )
 
@@ -879,32 +878,73 @@ class TestExternalName:
         run.__setitem__.assert_any_call("astrolabe.model_run_hash", "explicit")
         assert factory.call_count == 1
 
-    @pytest.mark.parametrize("bad", ["", "   ", None, 7])
-    def test_register_rejects_an_unusable_name(self, bad):
+    @pytest.mark.parametrize("bad", ["", "   ", 7])
+    def test_rejects_an_unusable_name(self, tmp_path, bad):
+        plain = export_checkpoint({}, tmp_path / "plain.pt", fmt="pt")
         factory = MagicMock()
         with patch("aim.Run", factory):
-            with pytest.raises(EvalInputError, match="name"):
-                register_external_model(name=bad)
+            with pytest.raises(EvalInputError, match="external_name"):
+                start_eval_run_from_checkpoint(
+                    checkpoint=plain, task_set="glue", external_name=bad
+                )
         factory.assert_not_called()
 
     def test_never_reads_from_aim(self, tmp_path):
         """The lookup this replaces could not work under local-aim
         transport, where compute sees only its own submit's runs — it
         would find nothing and mint a duplicate silently."""
-        entry = _make_run_mock("entry-hash")
-        with patch("aim.Run", return_value=entry), patch("aim.Repo") as repo:
-            register_external_model(name="roberta-base")
+        plain = export_checkpoint({}, tmp_path / "plain.pt", fmt="pt")
+        runs = [_make_run_mock("entry"), _make_run_mock("eval")]
+        with patch("aim.Run", side_effect=runs), patch("aim.Repo") as repo:
+            start_eval_run_from_checkpoint(
+                checkpoint=plain, task_set="glue", external_name="roberta-base"
+            )
         repo.assert_not_called()
 
-    def test_entry_carries_the_submit_identity(self, monkeypatch):
+    def test_entry_carries_the_submit_identity(self, tmp_path, monkeypatch):
         """It files under the submitting experiment, so it is one of that
         experiment's own rows — a row with no version would sit outside
         every version group and vanish from the page."""
         monkeypatch.setenv("ASTROLABE_EXPERIMENT_NAME", "latent-bert")
         monkeypatch.setenv("AIM_RUN_TAGS", "astrolabe.version=v3")
-        entry = _make_run_mock("entry-hash")
-        factory = MagicMock(return_value=entry)
+        plain = export_checkpoint({}, tmp_path / "plain.pt", fmt="pt")
+        entry = _make_run_mock("entry")
+        factory = MagicMock(side_effect=[entry, _make_run_mock("eval")])
         with patch("aim.Run", factory):
-            register_external_model(name="roberta-base")
-        assert factory.call_args.kwargs["experiment"] == "latent-bert"
+            start_eval_run_from_checkpoint(
+                checkpoint=plain, task_set="glue", external_name="roberta-base"
+            )
+        assert factory.call_args_list[0].kwargs["experiment"] == "latent-bert"
         entry.__setitem__.assert_any_call("astrolabe.version", "v3")
+
+
+class TestPublicExports:
+    """Every eval helper a user is told to import must be importable from
+    the package root.
+
+    Written after a helper shipped in `eval_results.__all__` without a
+    matching entry in the package's re-export list, so a documented
+    import raised ImportError. Nothing caught it: this module's own
+    tests import from `astrolabe_callbacks.eval_results` directly, which
+    worked fine. That helper is gone; the class of bug is not.
+    """
+
+    @pytest.mark.parametrize(
+        "name",
+        [
+            "log_eval_table",
+            "start_eval_run",
+            "start_eval_run_from_checkpoint",
+            "EvalInputError",
+            "MissingParentError",
+        ],
+    )
+    def test_importable_from_package_root(self, name):
+        import astrolabe_callbacks
+
+        assert hasattr(astrolabe_callbacks, name), (
+            f"{name} is in eval_results.__all__ but not re-exported from "
+            f"astrolabe_callbacks — the documented import fails"
+        )
+        assert name in astrolabe_callbacks.__all__
+
