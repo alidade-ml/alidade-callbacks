@@ -63,6 +63,21 @@ def test_contract_module_exposes_expected_constants():
     assert hasattr(contract, "parse_aim_run_tags")
 
 
+def test_contract_module_exposes_the_sample_tags():
+    """The sample pathway's two names, checked separately from the list above.
+
+    This is what makes a re-vendor PR self-verifying: without it, bumping
+    ``vendored_from`` and rerunning the script asserts nothing about whether
+    the new constants actually came across — only that *a* file arrived and
+    its hash was recorded.
+
+    (The list above omits ``TAG_TASK_SET`` / ``KIND_EVAL`` even though
+    ``eval_results.py`` depends on both. Pre-existing gap, not widened here.)
+    """
+    assert contract.TAG_SAMPLE_SET == "astrolabe.sample_set"
+    assert contract.KIND_SAMPLE == "sample"
+
+
 def test_no_raw_contract_literals_outside_contract():
     """Callback code (excluding the vendored contract.py) must not
     inline contract literals — every reference goes through
