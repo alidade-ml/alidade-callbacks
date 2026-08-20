@@ -20,9 +20,20 @@ When the env var is set, it wins over any constructor argument. Astrolabe sets i
 
 Format: `key1=val1,key2=val2,...`. Whitespace tolerated. Each key/value becomes a tag on the Aim run. Astrolabe writes `astrolabe.experiment`, `astrolabe.version`, `astrolabe.submit_id`, `astrolabe.user` here on every orchestrated run. Standalone users can write whatever they want.
 
-### 3. Connects to `ASTROLABE_AIM_URL`
+### 3. Connects where the engine says, in one fixed order
 
-Defaults to `aim://localhost:43800` (the standard astrolabe SSH-tunneled URL). Override via env or constructor arg.
+1. `ASTROLABE_AIM_REPO_PATH` — a filesystem path, set in local-aim mode
+2. `ASTROLABE_AIM_URL` — set by astrolabe on provisioned instances
+3. the `aim_url=` constructor argument
+4. `aim://localhost:43800`, the tunnel astrolabe opens
+
+The repo path comes first because it is the engine stating which transport it chose.
+In local-aim mode it exports that path and opens **no** tunnel, so anything reaching
+for the `aim://` default finds nothing listening.
+
+Every writer in the library resolves this way: the training callbacks, `log_eval_table`
+and `start_eval_run*`, and `log_samples`. `aim.Run` takes a filesystem path as readily
+as a URL, so the path is a destination, not a special case.
 
 ### 4. Closes the run cleanly at end of training
 
