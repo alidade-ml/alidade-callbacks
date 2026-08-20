@@ -12,6 +12,7 @@ a real repo.
 
 from __future__ import annotations
 
+from dataclasses import replace
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -20,6 +21,7 @@ import pytest
 from astrolabe_callbacks import contract
 from tests.testbed.harness.assertions import (
     assert_run_closed,
+    assert_run_experiment,
     get_run_tags,
     get_texts,
 )
@@ -131,3 +133,146 @@ class TestNothingIsWrittenWithoutAParent:
         )
         assert result.exit_code == 43, result.stderr
         assert result.sample_run_hash is None
+
+
+class TestSubmitIdentity:
+    """A sample run produced inside a submit inherits that submit's identity.
+
+    The engine exports ``AIM_RUN_TAGS`` and ``ASTROLABE_EXPERIMENT_NAME`` into
+    every step env. ``log_samples`` reads them — and slice 02 shipped that with
+    a comment explaining why it matters and no test that it happens.
+
+    It cannot be a unit test. Filing is a property Aim resolves at run-open, so
+    a mocked ``Run`` cannot show which experiment a run actually landed in.
+    Eval learned this as a whole merged milestone; this is the same lesson,
+    borrowed rather than re-paid.
+    """
+
+    SUBMIT_ENV = {
+        "ASTROLABE_EXPERIMENT_NAME": "latent-bert",
+        "AIM_RUN_TAGS": (
+            "astrolabe.submit_id=s-testbed-1,astrolabe.version=v3,"
+            "astrolabe.user=nathan,astrolabe.experiment=latent-bert"
+        ),
+    }
+
+    def test_samples_land_in_the_submitting_experiment(
+        self, testbed: "TestbedHandle", aim_repo: Path, run_sample_driver
+    ) -> None:
+        """The whole point: a submit's samples sit on the submit's page.
+
+        Filed under ``sample/<set>`` they land on a page named for the batch,
+        which no experiment view queries.
+        """
+        result = run_sample_driver(
+            replace(
+                _config(testbed, samples=[["in", "out"]]),
+                submit_env=dict(self.SUBMIT_ENV),
+            )
+        )
+        assert result.exit_code == 0, result.stderr
+        assert_run_experiment(aim_repo, result.sample_run_hash, "latent-bert")
+
+    def test_the_submits_tags_land_on_the_run(
+        self, testbed: "TestbedHandle", aim_repo: Path, run_sample_driver
+    ) -> None:
+        """Without these a sample is unattributable — no submitter to filter
+        on, and no submit to bill the GPU time against."""
+        result = run_sample_driver(
+            replace(
+                _config(testbed, samples=[["in", "out"]]),
+                submit_env=dict(self.SUBMIT_ENV),
+            )
+        )
+        assert result.exit_code == 0, result.stderr
+        tags = get_run_tags(aim_repo, result.sample_run_hash)
+        assert tags.get("astrolabe.submit_id") == "s-testbed-1"
+        assert tags.get("astrolabe.version") == "v3"
+        assert tags.get("astrolabe.user") == "nathan"
+
+    def test_identity_does_not_shadow_the_discovery_tags(
+        self, testbed: "TestbedHandle", aim_repo: Path, run_sample_driver
+    ) -> None:
+        """Ambient identity is applied first, contract tags second.
+
+        An unexpected key in the env payload must not be able to overwrite the
+        tags the dashboard finds this run by — those are the only reason it is
+        visible at all.
+        """
+        hostile = dict(self.SUBMIT_ENV)
+        hostile["AIM_RUN_TAGS"] += ",astrolabe.kind=training"
+        result = run_sample_driver(
+            replace(
+                _config(testbed, samples=[["in", "out"]]), submit_env=hostile
+            )
+        )
+        assert result.exit_code == 0, result.stderr
+        tags = get_run_tags(aim_repo, result.sample_run_hash)
+        assert tags.get(contract.TAG_KIND) == contract.KIND_SAMPLE
+
+    def test_outside_a_submit_it_falls_back_to_the_batch_name(
+        self, testbed: "TestbedHandle", aim_repo: Path, run_sample_driver
+    ) -> None:
+        """Ad-hoc sampling has no experiment to inherit. The fallback is
+        correct behaviour, not an accident, and must not become a crash."""
+        result = run_sample_driver(
+            _config(testbed, samples=[["in", "out"]], sample_set="adhoc")
+        )
+        assert result.exit_code == 0, result.stderr
+        assert_run_experiment(aim_repo, result.sample_run_hash, "sample/adhoc")
+
+
+class TestCheckpointResolutionAgainstRealFiles:
+    """``checkpoint=`` is the headline ergonomic — no hash at the call site.
+
+    Slice 02 asserted it with ``_parent_run_hash`` patched, which proves the
+    wiring and nothing about whether a real file's provenance can be read.
+    """
+
+    PT_HASH = "a" * 24
+    ST_HASH = "b" * 24
+
+    def test_a_real_pt_checkpoint_resolves(
+        self, testbed: "TestbedHandle", aim_repo: Path, run_sample_driver
+    ) -> None:
+        result = run_sample_driver(
+            replace(
+                _config(testbed, samples=[["in", "out"]], model_run_hash=None),
+                checkpoint_path="/tmp/sample-parity/model.pt",
+                create_pt_with_hash=self.PT_HASH,
+            )
+        )
+        assert result.exit_code == 0, result.stderr
+        tags = get_run_tags(aim_repo, result.sample_run_hash)
+        assert tags.get(contract.TAG_MODEL_RUN_HASH) == self.PT_HASH
+
+    def test_a_real_safetensors_checkpoint_resolves(
+        self, testbed: "TestbedHandle", aim_repo: Path, run_sample_driver
+    ) -> None:
+        result = run_sample_driver(
+            replace(
+                _config(testbed, samples=[["in", "out"]], model_run_hash=None),
+                checkpoint_path="/tmp/sample-parity/model.safetensors",
+                create_safetensors_with_hash=self.ST_HASH,
+            )
+        )
+        assert result.exit_code == 0, result.stderr
+        tags = get_run_tags(aim_repo, result.sample_run_hash)
+        assert tags.get(contract.TAG_MODEL_RUN_HASH) == self.ST_HASH
+
+    def test_an_explicit_hash_wins_over_the_file(
+        self, testbed: "TestbedHandle", aim_repo: Path, run_sample_driver
+    ) -> None:
+        """Resolution order, proved where the two sources actually disagree."""
+        result = run_sample_driver(
+            replace(
+                _config(
+                    testbed, samples=[["in", "out"]], model_run_hash="c" * 24
+                ),
+                checkpoint_path="/tmp/sample-parity/conflict.pt",
+                create_pt_with_hash=self.PT_HASH,
+            )
+        )
+        assert result.exit_code == 0, result.stderr
+        tags = get_run_tags(aim_repo, result.sample_run_hash)
+        assert tags.get(contract.TAG_MODEL_RUN_HASH) == "c" * 24
