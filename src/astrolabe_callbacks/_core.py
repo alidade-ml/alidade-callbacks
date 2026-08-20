@@ -114,7 +114,10 @@ EVAL_METRIC_PREFIX = "val"
 # Default Aim tracking URL. Astrolabe sets up an SSH reverse tunnel
 # from the GPU instance back to the NUC's Aim server on port 43800.
 # Standalone users override via ``ASTROLABE_AIM_URL`` env or constructor.
-DEFAULT_AIM_URL = "aim://localhost:43800"
+# Re-exported from the contract rather than restated. The value is a
+# contract literal; a second copy here is exactly the drift the
+# contract file exists to prevent.
+DEFAULT_AIM_URL = contract.DEFAULT_AIM_URL
 
 _STRICT_ENV = "ASTROLABE_CALLBACK_STRICT"
 
