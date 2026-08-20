@@ -35,6 +35,10 @@ class SampleDriverConfig:
     model_run_hash: str | None = None
     checkpoint_path: str | None = None
     external_name: str | None = None
+    # Ask the driver to write a checkpoint before logging. Values are the
+    # aim_run_hash to embed; the driver creates the file in the container.
+    create_pt_with_hash: str | None = None
+    create_safetensors_with_hash: str | None = None
     # Env the engine would have exported into a sample step. Passed verbatim:
     # the helpers read the real env var names, so anything else tests a
     # stand-in.
@@ -56,6 +60,10 @@ class SampleDriverConfig:
             model_run_hash=os.environ.get("TESTBED_SAMPLE_MODEL_RUN_HASH") or None,
             checkpoint_path=os.environ.get("TESTBED_SAMPLE_CHECKPOINT_PATH") or None,
             external_name=os.environ.get("TESTBED_SAMPLE_EXTERNAL_NAME") or None,
+            create_pt_with_hash=os.environ.get("TESTBED_SAMPLE_CREATE_PT") or None,
+            create_safetensors_with_hash=(
+                os.environ.get("TESTBED_SAMPLE_CREATE_ST") or None
+            ),
         )
 
 
@@ -72,12 +80,52 @@ def sample_config_to_env(config: SampleDriverConfig) -> dict[str, str]:
         env["TESTBED_SAMPLE_CHECKPOINT_PATH"] = config.checkpoint_path
     if config.external_name:
         env["TESTBED_SAMPLE_EXTERNAL_NAME"] = config.external_name
+    if config.create_pt_with_hash:
+        env["TESTBED_SAMPLE_CREATE_PT"] = config.create_pt_with_hash
+    if config.create_safetensors_with_hash:
+        env["TESTBED_SAMPLE_CREATE_ST"] = config.create_safetensors_with_hash
     env.update(config.submit_env)
     return env
 
 
+def _prepare_checkpoint(config: SampleDriverConfig) -> None:
+    """Write the checkpoint the helper will read, if the scenario asked for one.
+
+    Created here rather than shipped as a fixture: the point of the exercise is
+    the real embed-then-read round trip, so the file has to be produced by the
+    same library version that reads it.
+    """
+    if config.checkpoint_path is None:
+        return
+    if not (config.create_pt_with_hash or config.create_safetensors_with_hash):
+        return
+
+    from astrolabe_callbacks.checkpoint import CheckpointMeta, export_checkpoint
+
+    path = Path(config.checkpoint_path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    stamped_at = "2026-08-19T00:00:00Z"
+    if config.create_pt_with_hash:
+        export_checkpoint(
+            {}, path, fmt="pt",
+            meta=CheckpointMeta(
+                aim_run_hash=config.create_pt_with_hash, created_at=stamped_at
+            ),
+        )
+    if config.create_safetensors_with_hash:
+        export_checkpoint(
+            {}, path, fmt="safetensors",
+            meta=CheckpointMeta(
+                aim_run_hash=config.create_safetensors_with_hash,
+                created_at=stamped_at,
+            ),
+        )
+
+
 def run_sample_driver(config: SampleDriverConfig) -> str:
     from astrolabe_callbacks import Sample, log_samples
+
+    _prepare_checkpoint(config)
 
     samples = [
         Sample(input=pair[0], output=pair[1]) for pair in config.samples
