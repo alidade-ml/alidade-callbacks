@@ -88,16 +88,85 @@ def _validate(sample_set: str, samples: Any) -> None:
                 "each output with Sample(input=..., output=...) so the pairing "
                 "is explicit — a bare list reads as a list of outputs."
             )
-        if not isinstance(sample.output, str):
+
+
+# What a payload became. Only outputs are held to one kind per set; see
+# ``_encode``.
+_TEXT = "text"
+_IMAGE = "image"
+
+
+def _encode_value(value: Any, *, where: str) -> tuple[str, Any]:
+    """Dispatch on the runtime type of the value, never on a caller flag.
+
+    A flag would be a second source of truth that can disagree with the
+    payload, and the disagreement would surface only as a corrupt-looking
+    sample in the tab.
+    """
+    from aim import Image, Text
+
+    if isinstance(value, str):
+        return _TEXT, Text(value)
+    if isinstance(value, Path):
+        # aim.Image does load a str as a file path, so a Path here is a
+        # coherent thing to expect. Refused anyway: reading files on the
+        # researcher's behalf guesses at format and failure handling, and
+        # the caller already has the image in memory in every real case.
+        raise SampleInputError(
+            f"{where} is a Path. Open it yourself and pass the image — "
+            "log_samples does not read files."
+        )
+    try:
+        return _IMAGE, Image(value)
+    except SampleInputError:
+        raise
+    except Exception as exc:
+        # aim/PIL messages are written for their own callers: a float32
+        # array fails with "Cannot handle this data type: (1, 1, 3), <f4",
+        # which does not tell a researcher to cast to uint8.
+        raise SampleInputError(
+            f"{where} is {type(value).__name__}, which is not text and not "
+            f"an image aim can encode ({exc}). Supported: str, PIL image, "
+            "torch.Tensor, numpy.ndarray. For a float array, scale to "
+            "0-255 and cast to uint8."
+        ) from None
+
+
+def _encode(sample_set: str, samples: list[Sample]) -> list[tuple[Any, Any]]:
+    """Encode every payload before any Aim run is opened.
+
+    Encoding here rather than inside the track loop keeps the guarantee 02
+    established — a malformed call leaves nothing behind — while paying the
+    image encode exactly once.
+    """
+    encoded: list[tuple[Any, Any]] = []
+    output_kind: str | None = None
+    output_kind_index = 0
+
+    for i, sample in enumerate(samples):
+        kind, out_payload = _encode_value(
+            sample.output, where=f"samples[{i}].output"
+        )
+        if output_kind is None:
+            output_kind, output_kind_index = kind, i
+        elif kind != output_kind:
             raise SampleInputError(
-                f"samples[{i}].output is {type(sample.output).__name__}; only "
-                "text is supported so far. Image payloads are coming."
+                f"samples[{i}].output is {kind} but samples"
+                f"[{output_kind_index}].output is {output_kind}. One "
+                f"sample_set renders as one kind — split {sample_set!r} into "
+                "a set per kind."
             )
-        if sample.input is not None and not isinstance(sample.input, str):
-            raise SampleInputError(
-                f"samples[{i}].input is {type(sample.input).__name__}; only "
-                "text is supported so far. Image inputs are coming."
+
+        in_payload = None
+        if sample.input is not None:
+            # Inputs are deliberately NOT held to one kind. A text input with
+            # an image output is the most common image sample there is.
+            _, in_payload = _encode_value(
+                sample.input, where=f"samples[{i}].input"
             )
+        encoded.append((in_payload, out_payload))
+
+    return encoded
 
 
 def log_samples(
@@ -149,9 +218,10 @@ def log_samples(
         an unattributed run lands in Aim and is invisible to the dashboard
         forever.
     """
-    from aim import Run, Text
+    from aim import Run
 
     _validate(sample_set, samples)
+    encoded = _encode(sample_set, samples)
     try:
         parent = resolve_parent(
             checkpoint=checkpoint,
@@ -180,15 +250,15 @@ def log_samples(
 
         # One step per sample, so order and input↔output pairing are structural
         # rather than conventional.
-        for i, sample in enumerate(samples):
-            if sample.input is not None:
+        for i, (in_payload, out_payload) in enumerate(encoded):
+            if in_payload is not None:
                 run.track(
-                    Text(sample.input),
+                    in_payload,
                     name=f"sample/{sample_set}/input",
                     step=i,
                 )
             run.track(
-                Text(sample.output),
+                out_payload,
                 name=f"sample/{sample_set}/output",
                 step=i,
             )

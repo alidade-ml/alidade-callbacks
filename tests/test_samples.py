@@ -13,6 +13,7 @@ before anything is written:
 
 from __future__ import annotations
 
+import sys
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -194,3 +195,169 @@ class TestAttributionIsEvals:
                     model_run_hash="",
                 )
             assert not run.called
+
+
+def _make_pil(size=(4, 3), color=(10, 200, 30)):
+    from PIL import Image as PILImage
+
+    return PILImage.new("RGB", size, color=color)
+
+
+def _make_ndarray(shape=(3, 4, 3)):
+    import numpy as np
+
+    arr = np.zeros(shape, dtype=np.uint8)
+    arr[:, :, 1] = 128
+    return arr
+
+
+def _log_real_payloads(samples, *, sample_set="faces", **kw):
+    """Like ``_log`` but leaves aim.Text/aim.Image unpatched.
+
+    Dispatch is the thing under test here, so the real encoders have to run —
+    a patched ``aim.Image`` would make these tests measure the mock.
+    """
+    run = _run_mock()
+    with patch("aim.Run", return_value=run):
+        result = log_samples(
+            sample_set=sample_set,
+            samples=samples,
+            model_run_hash=kw.pop("model_run_hash", "parent-hash"),
+            **kw,
+        )
+    return result, run
+
+
+class TestOneSampleSetRendersAsOneKind:
+    def test_mixed_output_types_raise_naming_both(self):
+        with pytest.raises(SampleInputError, match=r"samples\[1\].output is image"):
+            _log_real_payloads([
+                Sample(output="a completion"),
+                Sample(output=_make_pil()),
+            ])
+
+    def test_the_message_names_the_earlier_sample_too(self):
+        with pytest.raises(SampleInputError, match=r"samples\[0\].output is text"):
+            _log_real_payloads([
+                Sample(output="a completion"),
+                Sample(output=_make_pil()),
+            ])
+
+    def test_image_first_then_text_also_raises(self):
+        with pytest.raises(SampleInputError, match="One sample_set renders as one kind"):
+            _log_real_payloads([
+                Sample(output=_make_pil()),
+                Sample(output="a completion"),
+            ])
+
+    def test_a_text_input_with_an_image_output_is_accepted(self):
+        # The prompt-to-image case: the single most common image sample there
+        # is. The mixed-output rule must not reach inputs, and this test is
+        # separate from the mixed-output ones precisely because reading
+        # `input` too would reject the majority case while still passing them.
+        from aim import Image as AimImage
+        from aim import Text as AimText
+
+        _, run = _log_real_payloads([
+            Sample(input="a golden retriever", output=_make_pil()),
+        ])
+        tracked = _tracked(run)
+        kinds = {name: type(value) for name, _step, value in tracked}
+        assert kinds["sample/faces/input"] is AimText
+        assert kinds["sample/faces/output"] is AimImage
+
+    def test_mixed_input_types_are_allowed(self):
+        # Deliberate: one set may pair a text prompt with one image and an
+        # image prompt with another. Only the outputs must agree.
+        _, run = _log_real_payloads([
+            Sample(input="a prompt", output=_make_pil()),
+            Sample(input=_make_pil(), output=_make_pil()),
+        ])
+        assert len(_tracked(run)) == 4
+
+
+class TestWhatCountsAsAPayload:
+    def test_an_image_input_and_image_output_both_encode(self):
+        # The denoising / style-transfer shape.
+        from aim import Image as AimImage
+
+        _, run = _log_real_payloads([
+            Sample(input=_make_ndarray(), output=_make_ndarray()),
+        ])
+        tracked = _tracked(run)
+        assert len(tracked) == 2
+        assert all(type(v) is AimImage for _n, _s, v in tracked)
+
+    def test_unsupported_type_raises_without_promising_images(self):
+        with pytest.raises(SampleInputError) as exc:
+            _log_real_payloads([Sample(output=object())])
+        message = str(exc.value)
+        assert "not text and not an image" in message
+        # 02 said "Image payloads are coming." They are here; the promise
+        # would now be a lie.
+        assert "coming" not in message
+
+    def test_a_path_is_refused_rather_than_read(self):
+        # aim.Image loads a str as a file path, so expecting Path to work is
+        # coherent. Refused deliberately: reading files on the researcher's
+        # behalf guesses format and failure handling.
+        from pathlib import Path
+
+        with pytest.raises(SampleInputError, match="does not read files"):
+            _log_real_payloads([Sample(output=Path("/tmp/nope.png"))])
+
+    def test_a_float_array_says_what_to_do_about_it(self):
+        # PIL's own message is "Cannot handle this data type: (1, 1, 3), <f4",
+        # which does not tell a researcher to cast to uint8. A float array is
+        # a very common way to be holding an image.
+        import numpy as np
+
+        with pytest.raises(SampleInputError, match="uint8"):
+            _log_real_payloads([Sample(output=np.zeros((4, 4, 3), dtype="float32"))])
+
+    def test_nothing_is_written_when_a_payload_is_bad(self):
+        # The property 02 established, still holding for image dispatch:
+        # encoding happens before the Run is opened.
+        run = _run_mock()
+        with patch("aim.Run", return_value=run) as run_ctor:
+            with pytest.raises(SampleInputError):
+                log_samples(
+                    sample_set="faces",
+                    samples=[Sample(output=_make_pil()), Sample(output="text")],
+                    model_run_hash="parent-hash",
+                )
+        run_ctor.assert_not_called()
+        run.track.assert_not_called()
+
+
+class TestTextStillBehavesAsBefore:
+    def test_text_only_batches_are_unchanged_by_dispatch(self):
+        from aim import Text as AimText
+
+        _, run = _log_real_payloads(
+            [
+                Sample(input="prompt one", output="completion one"),
+                Sample(output="completion two"),
+            ],
+            sample_set="completions",
+        )
+        tracked = _tracked(run)
+        assert [(n, s) for n, s, _v in tracked] == [
+            ("sample/completions/input", 0),
+            ("sample/completions/output", 0),
+            ("sample/completions/output", 1),
+        ]
+        assert all(type(v) is AimText for _n, _s, v in tracked)
+
+
+class TestTheBaseInstallStaysThin:
+    def test_image_payloads_do_not_require_torch(self, monkeypatch):
+        # The base install is aim + loguru. A top-level `import torch` behind
+        # an isinstance check would break every training repo without it.
+        # Poison the module so any import of it raises.
+        monkeypatch.setitem(sys.modules, "torch", None)
+        _, run = _log_real_payloads([
+            Sample(input="a prompt", output=_make_pil()),
+            Sample(output=_make_ndarray()),
+        ])
+        assert len(_tracked(run)) == 3
