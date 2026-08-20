@@ -223,6 +223,24 @@ def assert_no_run_exists(repo_path: Path, run_hash: str) -> None:
         raise AssertionError(f"run {run_hash!r} unexpectedly exists in {repo_path}")
 
 
+def get_texts(repo_path: Path, run_hash: str, name: str) -> list[tuple[int, str]]:
+    """``(step, text)`` for one text sequence, or ``[]`` if it was never tracked.
+
+    Text sequences are not metrics and do not come back through
+    ``assert_metric_values``. ``get_text_sequence`` needs a real
+    ``Context`` — a bare dict raises ``unhashable type`` inside Aim — and
+    returns ``None`` rather than an empty sequence for a name that was never
+    written, which is what makes "no input was logged" assertable.
+    """
+    from aim.storage.context import Context
+
+    run = _get_run(repo_path, run_hash)
+    seq = run.get_text_sequence(name, Context({}))
+    if seq is None:
+        return []
+    return [(step, str(getattr(v, "data", v))) for step, v in seq.values.items()]
+
+
 def get_run_tags(repo_path: Path, run_hash: str) -> dict[str, str]:
     """Return all tags on the run as a dict. Used for tag-fidelity checks."""
     run = _get_run(repo_path, run_hash)

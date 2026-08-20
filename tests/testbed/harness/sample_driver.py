@@ -1,0 +1,107 @@
+"""Drive ``log_samples`` inside the client container, against a real Aim server.
+
+Mocking Aim proves nothing about Aim. The failure modes that matter here live
+in its storage layer — whether a tracked ``aim.Text`` comes back as text, and
+whether two sequences sharing a step index still pair after a round trip — and
+a mock returns whatever you tell it to.
+
+Invoked as::
+
+    compose.exec_in(testbed, service="client",
+                    cmd=["python", "-m", "tests.testbed.harness.sample_driver"],
+                    env=sample_config_to_env(config))
+
+Prints ``ASTROLABE_SAMPLE_RUN_HASH=<hash>`` on success; exits 43 on
+``MissingParentError``, matching the eval driver's convention so a scenario can
+assert "refused before writing anything" by exit code.
+"""
+
+from __future__ import annotations
+
+import json
+import os
+import sys
+from dataclasses import dataclass, field
+from pathlib import Path
+
+
+@dataclass
+class SampleDriverConfig:
+    aim_url: str
+    sample_set: str
+    # [[input_or_null, output], ...] — a list, not a mapping, because sample
+    # inputs are not unique.
+    samples: list[list[str | None]]
+    model_run_hash: str | None = None
+    checkpoint_path: str | None = None
+    external_name: str | None = None
+    # Env the engine would have exported into a sample step. Passed verbatim:
+    # the helpers read the real env var names, so anything else tests a
+    # stand-in.
+    submit_env: dict[str, str] = field(default_factory=dict)
+
+    @classmethod
+    def from_env(cls) -> "SampleDriverConfig":
+        def _req(key: str) -> str:
+            v = os.environ.get(key)
+            if v is None:
+                print(f"missing required env var {key}", file=sys.stderr)
+                raise SystemExit(2)
+            return v
+
+        return cls(
+            aim_url=_req("TESTBED_SAMPLE_AIM_URL"),
+            sample_set=_req("TESTBED_SAMPLE_SET"),
+            samples=json.loads(_req("TESTBED_SAMPLE_SAMPLES")),
+            model_run_hash=os.environ.get("TESTBED_SAMPLE_MODEL_RUN_HASH") or None,
+            checkpoint_path=os.environ.get("TESTBED_SAMPLE_CHECKPOINT_PATH") or None,
+            external_name=os.environ.get("TESTBED_SAMPLE_EXTERNAL_NAME") or None,
+        )
+
+
+def sample_config_to_env(config: SampleDriverConfig) -> dict[str, str]:
+    env = {
+        "TESTBED_SAMPLE_AIM_URL": config.aim_url,
+        "TESTBED_SAMPLE_SET": config.sample_set,
+        "TESTBED_SAMPLE_SAMPLES": json.dumps(config.samples),
+        "ASTROLABE_AIM_URL": config.aim_url,
+    }
+    if config.model_run_hash:
+        env["TESTBED_SAMPLE_MODEL_RUN_HASH"] = config.model_run_hash
+    if config.checkpoint_path:
+        env["TESTBED_SAMPLE_CHECKPOINT_PATH"] = config.checkpoint_path
+    if config.external_name:
+        env["TESTBED_SAMPLE_EXTERNAL_NAME"] = config.external_name
+    env.update(config.submit_env)
+    return env
+
+
+def run_sample_driver(config: SampleDriverConfig) -> str:
+    from astrolabe_callbacks import Sample, log_samples
+
+    samples = [
+        Sample(input=pair[0], output=pair[1]) for pair in config.samples
+    ]
+    return log_samples(
+        sample_set=config.sample_set,
+        samples=samples,
+        model_run_hash=config.model_run_hash,
+        checkpoint=config.checkpoint_path,
+        external_name=config.external_name,
+        aim_url=config.aim_url,
+    )
+
+
+def main() -> None:
+    config = SampleDriverConfig.from_env()
+    try:
+        run_hash = run_sample_driver(config)
+    except Exception as e:
+        if type(e).__name__ == "MissingParentError":
+            raise SystemExit(43)
+        raise
+    print(f"ASTROLABE_SAMPLE_RUN_HASH={run_hash}")
+
+
+if __name__ == "__main__":
+    main()
