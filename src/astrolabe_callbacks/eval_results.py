@@ -487,11 +487,29 @@ def log_eval_table(
 ) -> str:
     """Log a one-shot benchmark table for a single training run.
 
-    Primary surface — researchers hand a dict, the library handles the
-    Aim mechanics. Each ``(task, (metric, score))`` entry becomes a
-    metric tracked at ``step=0`` under the name ``eval/<task>/<metric>``.
-    The dashboard's table block parses this convention to populate the
-    leaderboard column for that task.
+    **Use this when you already have the model's run hash.** Otherwise
+    prefer :func:`start_eval_run_from_checkpoint`, which resolves the
+    parent from the checkpoint you just loaded and needs no hash at the
+    call site — see ``docs/eval-results.md``.
+
+    Two reasons that is the better default, and neither is about typing
+    a hash:
+
+    - This function **connects only after every score is in hand**. It
+      validates the dict, then opens the Aim run. A connection that is
+      down at that moment loses an entire benchmarking run.
+      ``start_eval_run_from_checkpoint`` opens first and writes as you
+      go, so the failure surfaces before you spend anything and partial
+      results survive.
+    - Looking the parent up by name is not an alternative: it guesses
+      wrong when several runs exist, and returns nothing at all under
+      local-aim transport.
+
+    Each ``(task, (metric, score))`` entry becomes a metric tracked at
+    ``step=0`` under the name ``eval/<task>/<metric>``. The dashboard's
+    table block parses this convention to populate the leaderboard
+    column for that task; ``step>0`` renders a trace chart instead,
+    which is what :func:`start_eval_run` is for.
 
     The Aim run is opened, tagged, populated, and closed atomically.
     If validation fails, no Aim run is created.
