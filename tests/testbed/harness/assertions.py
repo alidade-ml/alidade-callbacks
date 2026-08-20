@@ -241,6 +241,32 @@ def get_texts(repo_path: Path, run_hash: str, name: str) -> list[tuple[int, str]
     return [(step, str(getattr(v, "data", v))) for step, v in seq.values.items()]
 
 
+def get_images(repo_path: Path, run_hash: str, name: str):
+    """``(step, ndarray)`` for one image sequence, or ``[]`` if never tracked.
+
+    Mirrors :func:`get_texts`, including the two Aim quirks it documents: the
+    sequence accessor needs a real ``Context`` (a bare dict raises
+    ``unhashable type``), and a name that was never written returns ``None``
+    rather than an empty sequence.
+
+    Values come back as ``aim.Image``; ``to_pil_image()`` is the documented way
+    out, and the array conversion is here so a scenario compares pixels rather
+    than object identity.
+    """
+    import numpy as np
+    from aim.storage.context import Context
+
+    run = _get_run(repo_path, run_hash)
+    seq = run.get_image_sequence(name, Context({}))
+    if seq is None:
+        return []
+    out = []
+    for step, value in seq.values.items():
+        image = value[0] if isinstance(value, (list, tuple)) else value
+        out.append((step, np.asarray(image.to_pil_image())))
+    return out
+
+
 def get_run_tags(repo_path: Path, run_hash: str) -> dict[str, str]:
     """Return all tags on the run as a dict. Used for tag-fidelity checks."""
     run = _get_run(repo_path, run_hash)

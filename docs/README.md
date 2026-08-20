@@ -16,6 +16,7 @@ your training repo never depends on the orchestration framework.
 | logging metrics while a model trains | **[Training](training.md)** |
 | saving checkpoints you will evaluate later | **[Checkpoints](checkpoints.md)** |
 | logging benchmark results after training | **[Eval](eval-results.md)** |
+| storing a few outputs so the run can show what it makes | **[Samples](samples.md)** |
 
 They fit together in that order. Training writes metrics *and* stamps checkpoints with
 the run that produced them; eval reads that stamp back so benchmark results attach to the

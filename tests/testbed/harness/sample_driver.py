@@ -30,8 +30,10 @@ class SampleDriverConfig:
     aim_url: str
     sample_set: str
     # [[input_or_null, output], ...] — a list, not a mapping, because sample
-    # inputs are not unique.
-    samples: list[list[str | None]]
+    # inputs are not unique. An element is either a string (logged as text) or
+    # ``{"image": {"w": W, "h": H, "seed": S}}``, which the driver turns into a
+    # real image inside the container.
+    samples: list[list[object]]
     model_run_hash: str | None = None
     checkpoint_path: str | None = None
     external_name: str | None = None
@@ -65,6 +67,28 @@ class SampleDriverConfig:
                 os.environ.get("TESTBED_SAMPLE_CREATE_ST") or None
             ),
         )
+
+
+def make_pattern(width: int, height: int, seed: int):
+    """Deterministic RGB pattern, shared by the driver and the scenario.
+
+    The driver logs it; the scenario regenerates it and compares. Random
+    rather than a solid colour on purpose — a solid image survives a
+    transpose or a channel swap unchanged, so it would assert nothing about
+    the round trip actually preserving the image.
+    """
+    import numpy as np
+
+    rng = np.random.default_rng(seed)
+    return rng.integers(0, 256, size=(height, width, 3), dtype=np.uint8)
+
+
+def _materialize(value: object) -> object:
+    """A JSON sample element becomes the payload log_samples will receive."""
+    if isinstance(value, dict) and "image" in value:
+        spec = value["image"]
+        return make_pattern(spec["w"], spec["h"], spec["seed"])
+    return value
 
 
 def sample_config_to_env(config: SampleDriverConfig) -> dict[str, str]:
@@ -128,7 +152,8 @@ def run_sample_driver(config: SampleDriverConfig) -> str:
     _prepare_checkpoint(config)
 
     samples = [
-        Sample(input=pair[0], output=pair[1]) for pair in config.samples
+        Sample(input=_materialize(pair[0]), output=_materialize(pair[1]))
+        for pair in config.samples
     ]
     return log_samples(
         sample_set=config.sample_set,
