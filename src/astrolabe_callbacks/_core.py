@@ -44,6 +44,7 @@ from typing import Any
 from loguru import logger
 
 from astrolabe_callbacks import contract
+from astrolabe_callbacks._identity import resolve_aim_url
 
 __all__ = [
     "EVAL_METRIC_PREFIX",
@@ -612,6 +613,7 @@ def resolve_run_config(
         ``ASTROLABE_EXPERIMENT_NAME`` when that env var is set.
     aim_url : str | None
         Constructor-supplied Aim URL. Overridden by
+        ``ASTROLABE_AIM_REPO_PATH`` (local-aim mode) then
         ``ASTROLABE_AIM_URL``; falls back to ``DEFAULT_AIM_URL``.
     tags : dict[str, str] | None
         Constructor-supplied tags. Overridden by ``AIM_RUN_TAGS`` when
@@ -626,11 +628,12 @@ def resolve_run_config(
     env_exp = os.environ.get(contract.ENV_EXPERIMENT_NAME) or None
     resolved_exp = env_exp or experiment_name or None
 
-    # ASTROLABE_AIM_URL is callback-side configuration (which Aim
-    # server to talk to), not part of the engine→callback contract.
-    # Stays as a bare literal here for now.
-    env_url = os.environ.get("ASTROLABE_AIM_URL")
-    resolved_url = env_url or aim_url or DEFAULT_AIM_URL
+    # One resolution for every writer. Training used to hand-roll
+    # `env_url or aim_url or DEFAULT_AIM_URL`, which never consulted
+    # ASTROLABE_AIM_REPO_PATH — so in local-aim mode it resolved to the
+    # aim:// default while eval and samples resolved to the repo path.
+    # The local aim server existed to make that default answer.
+    resolved_url = resolve_aim_url(aim_url)
 
     env_tags = contract.parse_aim_run_tags(os.environ.get(contract.ENV_AIM_RUN_TAGS))
     if env_tags:
@@ -689,45 +692,14 @@ def open_aim_run(cfg: RunConfig, *, run_name: str | None = None) -> Any:
         logger.warning(msg)
         return None
 
-    # If the engine has set ASTROLABE_AIM_REPO_PATH, start a local
-    # aim server (subprocess) on this host before opening the Run.
-    # The callback then connects to it via cfg.aim_url (typically
-    # aim://localhost:43800). Producer-side writes stay on localhost
-    # — no SSH in the hot path. The NUC-side sync sidecar pulls
-    # chunks via SSH+rsync on its own cadence.
-    #
-    # When ASTROLABE_AIM_REPO_PATH is unset, behavior matches v1.x:
-    # the callback just connects to whatever aim_url points to
-    # (the engine's reverse-SSH-tunneled remote aim server).
-    local_server = _maybe_start_local_aim_server(cfg)
-
     try:
         run = Run(repo=cfg.aim_url, experiment=cfg.experiment_name)
     except Exception as exc:
         msg = f"Aim connection to {cfg.aim_url} failed: {exc}"
         if is_strict():
-            if local_server is not None:
-                _stop_local_aim_server(local_server)
             raise RuntimeError(msg) from exc
         logger.warning(msg + " — callback degrading to no-op.")
-        if local_server is not None:
-            _stop_local_aim_server(local_server)
         return None
-
-    # Attach the local server handle to the Run so close_run can
-    # shut it down when training finishes. Best-effort attribute
-    # write; if Aim's Run rejects setattr, we still keep the
-    # reference but lose graceful shutdown (the subprocess gets
-    # cleaned up via the atexit handler installed in
-    # _maybe_start_local_aim_server).
-    if local_server is not None:
-        try:
-            run._astrolabe_local_server = local_server
-        except Exception as exc:
-            logger.debug(
-                "couldn't attach local_server to Run (atexit handler will clean up): {}",
-                exc,
-            )
 
     # Run.name carries through to the dashboard so researchers see the
     # meaningful name (e.g. "bert-tiny") instead of the auto-generated
@@ -858,13 +830,6 @@ def close_run(run: Any, *, status: str = "completed") -> None:
         logger.debug("Aim run close failed: {}", exc)
 
     unregister_current_run(run)
-
-    # If we started a local aim server in open_aim_run, shut it down
-    # gracefully now. The subprocess writes a final SST flush on
-    # SIGTERM. Cleanup is idempotent — re-calls return immediately.
-    local_server = getattr(run, "_astrolabe_local_server", None)
-    if local_server is not None:
-        _stop_local_aim_server(local_server)
 
 
 def track_safely(
@@ -1021,201 +986,6 @@ class WallTimeTracker:
 # close, not live" — acceptable degradation. The buffer's existing
 # track-failure path handles the post-failure writes gracefully.
 _DEFAULT_MAX_FINALIZES = 10
-
-
-# Local aim server lifecycle. When the engine sets
-# ``ASTROLABE_AIM_REPO_PATH`` on the compute host, the callback
-# starts an aim transport server subprocess bound to the host:port
-# from cfg.aim_url, writing to that repo path. The hot path
-# (training metric writes) then stays on localhost — no SSH per
-# write. The NUC-side sync sidecar pulls chunks from this repo
-# via SSH+rsync on its own cadence.
-#
-# The "start" function is best-effort: any failure (binary missing,
-# port already taken, init fails) logs a warning and returns None;
-# the callback falls back to direct-connect to whatever aim_url
-# pointed at (legacy behavior). Strict mode raises.
-_LOCAL_SERVER_STARTUP_TIMEOUT_S = 10.0
-_LOCAL_SERVER_SHUTDOWN_TIMEOUT_S = 15.0
-
-
-def _parse_aim_url_host_port(aim_url: str) -> tuple[str, int] | None:
-    """Extract (host, port) from an ``aim://host:port`` URL.
-
-    Returns None on any malformed input. The local-server helper
-    skips startup when the URL can't be parsed (logs a debug message;
-    not strict-mode-promoting since a remote URL is a valid choice).
-    """
-    if not aim_url.startswith("aim://"):
-        return None
-    host_port = aim_url[len("aim://"):].split("/", 1)[0]
-    if ":" not in host_port:
-        return None
-    host, port_str = host_port.rsplit(":", 1)
-    try:
-        port = int(port_str)
-    except ValueError:
-        return None
-    if not host or port <= 0:
-        return None
-    return host, port
-
-
-def _maybe_start_local_aim_server(cfg: "RunConfig") -> Any:
-    """Start a local ``aim server`` subprocess if requested by env.
-
-    Triggered by ``ASTROLABE_AIM_REPO_PATH``. The callback will then
-    connect to ``cfg.aim_url`` (typically ``aim://localhost:43800``)
-    — but the server it talks to is the local subprocess we just
-    started, not a remote one.
-
-    The subprocess is registered via ``atexit`` for cleanup on
-    interpreter shutdown, so even an unhandled exception in the
-    training loop leaves no orphaned aim server.
-
-    Parameters
-    ----------
-    cfg : RunConfig
-        The resolved config. ``cfg.aim_url`` provides host:port.
-
-    Returns
-    -------
-    subprocess.Popen | None
-        The Popen handle for the running aim server, or ``None`` if
-        the env var wasn't set, the URL couldn't be parsed, or
-        startup failed.
-    """
-    import atexit
-    import socket
-    import subprocess
-    from pathlib import Path
-
-    repo_path = os.environ.get(contract.ENV_AIM_REPO_PATH)
-    if not repo_path:
-        return None
-
-    host_port = _parse_aim_url_host_port(cfg.aim_url)
-    if host_port is None:
-        logger.warning(
-            "{} is set but cfg.aim_url={!r} is not a "
-            "parseable aim://host:port — skipping local server startup.",
-            contract.ENV_AIM_REPO_PATH, cfg.aim_url,
-        )
-        return None
-    host, port = host_port
-
-    repo = Path(repo_path)
-    repo.mkdir(parents=True, exist_ok=True)
-    # Initialize the Aim repo if not already initialized. ``aim init``
-    # is idempotent. We tolerate failure (assume already initialized).
-    if not (repo / ".aim").exists():
-        try:
-            subprocess.run(
-                ["aim", "init", "--repo", str(repo)],
-                check=True,
-                capture_output=True,
-                timeout=10.0,
-            )
-        except Exception as exc:  # noqa: BLE001
-            logger.warning(
-                "aim init at {} failed: {} — skipping local server startup.",
-                repo,
-                exc,
-            )
-            return None
-
-    # Spawn the aim server. stdout/stderr → DEVNULL so the training
-    # process's output stays clean; engine-side observability comes
-    # from the sync sidecar's log (which is the real signal anyway).
-    try:
-        proc = subprocess.Popen(
-            [
-                "aim",
-                "server",
-                "--host", host,
-                "--port", str(port),
-                "--repo", str(repo),
-            ],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-        )
-    except Exception as exc:  # noqa: BLE001
-        logger.warning("local aim server failed to spawn: {}", exc)
-        return None
-
-    # Wait for the port to be listening. Aim server takes 1-3s to
-    # come up depending on host load. We poll quickly with a budget.
-    deadline = time.monotonic() + _LOCAL_SERVER_STARTUP_TIMEOUT_S
-    while time.monotonic() < deadline:
-        if proc.poll() is not None:
-            # Process exited before listening — startup failure.
-            logger.warning(
-                "local aim server exited prematurely with code {} (host={}, port={}, repo={})",
-                proc.returncode,
-                host,
-                port,
-                repo,
-            )
-            return None
-        try:
-            with socket.create_connection((host, port), timeout=0.5):
-                logger.info(
-                    "local aim server started at aim://{}:{} (pid {}, repo {})",
-                    host,
-                    port,
-                    proc.pid,
-                    repo,
-                )
-                # Register atexit cleanup as a safety net in case
-                # close_run is never called (training process crashes
-                # without invoking post_close).
-                atexit.register(_stop_local_aim_server, proc)
-                return proc
-        except OSError:
-            time.sleep(0.2)
-
-    # Timeout — kill the subprocess and give up.
-    logger.warning(
-        "local aim server did not start within {}s; killing.",
-        _LOCAL_SERVER_STARTUP_TIMEOUT_S,
-    )
-    _stop_local_aim_server(proc)
-    return None
-
-
-def _stop_local_aim_server(proc: Any) -> None:
-    """Send SIGTERM to the aim server subprocess and wait for exit.
-
-    Idempotent — safe to call multiple times (atexit + close_run).
-    Aim server's RocksDB shutdown handler flushes memtable to SST
-    on SIGTERM, so the final sync after this call has all the
-    typed_traces visible.
-
-    On timeout, escalates to SIGKILL — the next sync cycle's data
-    may be incomplete, but the cleanup completes.
-    """
-    if proc is None:
-        return
-    if proc.poll() is not None:
-        return  # already exited
-    try:
-        proc.terminate()
-        try:
-            proc.wait(timeout=_LOCAL_SERVER_SHUTDOWN_TIMEOUT_S)
-            logger.info("local aim server (pid {}) shut down cleanly", proc.pid)
-        except Exception:
-            logger.warning(
-                "local aim server (pid {}) did not exit within {}s — killing",
-                proc.pid,
-                _LOCAL_SERVER_SHUTDOWN_TIMEOUT_S,
-            )
-            proc.kill()
-            try:
-                proc.wait(timeout=2.0)
-            except Exception:
-                pass
-    except Exception as exc:  # noqa: BLE001 — cleanup must not raise
-        logger.debug("local aim server cleanup error (ignored): {}", exc)
 
 
 @dataclass

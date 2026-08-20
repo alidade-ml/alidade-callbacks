@@ -8,10 +8,11 @@ that env-var precedence, AIM_RUN_TAGS parsing, etc. work correctly.
 from __future__ import annotations
 
 import time
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 
+from astrolabe_callbacks import contract
 from astrolabe_callbacks._core import (
     DEFAULT_AIM_URL,
     EVAL_METRIC_PREFIX,
@@ -143,6 +144,90 @@ class TestResolveRunConfigPrecedence:
         cfg = resolve_run_config()
         assert cfg.aim_url == DEFAULT_AIM_URL
         assert cfg.aim_url == "aim://localhost:43800"
+
+    def test_repo_path_wins_for_training_exactly_as_for_eval(self, monkeypatch):
+        # The regression this slice exists to prevent. Training used to
+        # hand-roll its own precedence chain that never consulted
+        # ASTROLABE_AIM_REPO_PATH, so in local-aim mode it resolved to the
+        # aim:// default while eval and samples resolved to the repo path.
+        # The local aim server existed only to make that default answer, so
+        # deleting the server without this would point training at a dead
+        # port -- and the callback degrades to no-op on a failed connection,
+        # meaning every metric is lost with a warning as the only trace.
+        monkeypatch.setenv(contract.ENV_AIM_REPO_PATH, "/tmp/aim-local-abc123")
+        cfg = resolve_run_config(aim_url="aim://from-arg:1111")
+        assert cfg.aim_url == "/tmp/aim-local-abc123"
+
+    def test_repo_path_beats_the_url_env_var_too(self, monkeypatch):
+        # Both set is the real local-aim submit: the engine exports the repo
+        # path, and ASTROLABE_AIM_URL may still be set from a prior tunnel
+        # -mode config. The engine's transport choice is the one that counts.
+        monkeypatch.setenv(contract.ENV_AIM_REPO_PATH, "/tmp/aim-local-abc123")
+        monkeypatch.setenv("ASTROLABE_AIM_URL", "aim://from-env:9999")
+        cfg = resolve_run_config()
+        assert cfg.aim_url == "/tmp/aim-local-abc123"
+
+    def test_tunnel_mode_precedence_is_untouched(self, monkeypatch):
+        # No repo path set: v1.x behaviour exactly. This is the guard that
+        # unifying the resolution did not quietly change tunnel mode, which
+        # is still the default transport.
+        monkeypatch.delenv(contract.ENV_AIM_REPO_PATH, raising=False)
+        monkeypatch.setenv("ASTROLABE_AIM_URL", "aim://from-env:9999")
+        assert resolve_run_config(aim_url="aim://from-arg:1111").aim_url == (
+            "aim://from-env:9999"
+        )
+        monkeypatch.delenv("ASTROLABE_AIM_URL", raising=False)
+        assert resolve_run_config(aim_url="aim://from-arg:1111").aim_url == (
+            "aim://from-arg:1111"
+        )
+        assert resolve_run_config().aim_url == DEFAULT_AIM_URL
+
+
+class TestNoSubprocessIsEverSpawned:
+    """The point of the deletion.
+
+    The callback used to start an ``aim server`` subprocess per training
+    step, tear it down via ``atexit`` (which does not run on SIGKILL), and
+    adopt a survivor from a killed step through a port collision. None of
+    that was designed; it fell out of putting the spawn inside
+    ``open_aim_run``.
+    """
+
+    def test_opening_a_run_in_local_aim_mode_spawns_nothing(self, monkeypatch):
+        monkeypatch.setenv(contract.ENV_AIM_REPO_PATH, "/tmp/aim-local-abc123")
+        cfg = resolve_run_config()
+        with patch("subprocess.Popen") as popen, patch("aim.Run") as aim_run:
+            aim_run.return_value = MagicMock(hash="h")
+            open_aim_run(cfg)
+        popen.assert_not_called()
+
+    def test_opening_a_run_in_tunnel_mode_spawns_nothing_either(self, monkeypatch):
+        monkeypatch.delenv(contract.ENV_AIM_REPO_PATH, raising=False)
+        cfg = resolve_run_config()
+        with patch("subprocess.Popen") as popen, patch("aim.Run") as aim_run:
+            aim_run.return_value = MagicMock(hash="h")
+            open_aim_run(cfg)
+        popen.assert_not_called()
+
+    def test_close_run_on_a_run_that_never_had_a_server(self):
+        # close_run used to reach for run._astrolabe_local_server. A plain
+        # MagicMock would have answered that getattr with another mock, so
+        # this is asserted against an object that raises on unknown
+        # attributes instead.
+        class BareRun:
+            def __init__(self):
+                self.closed = False
+
+            def __setitem__(self, key, value):
+                pass
+
+            def close(self):
+                self.closed = True
+
+        run = BareRun()
+        close_run(run)
+        assert run.closed is True
+
 
     def test_env_tags_win_over_arg(self, monkeypatch):
         monkeypatch.setenv("AIM_RUN_TAGS", "from=env")
@@ -856,271 +941,6 @@ class TestSchemaPhaseStateDefaults:
     def test_max_finalizes_overridable(self):
         state = SchemaPhaseState(max_finalizes=3)
         assert state.max_finalizes == 3
-
-
-# ----------------------------------------------------------------------
-# Local aim server lifecycle — _maybe_start_local_aim_server +
-# _parse_aim_url_host_port + _stop_local_aim_server
-# ----------------------------------------------------------------------
-#
-# When the engine sets ASTROLABE_AIM_REPO_PATH, the callback starts
-# a local ``aim server`` subprocess so the hot path (metric writes)
-# stays on localhost. The NUC-side sync sidecar pulls chunks via
-# SSH+rsync. These tests exercise the subprocess orchestration
-# without actually spawning aim — they monkey-patch subprocess.Popen.
-
-
-from astrolabe_callbacks._core import (
-    _maybe_start_local_aim_server,
-    _parse_aim_url_host_port,
-    _stop_local_aim_server,
-)
-
-
-class TestParseAimUrlHostPort:
-    """Pin URL-parsing edge cases. A wrong parse silently misroutes the
-    local server, so the failure mode is invisible."""
-
-    def test_standard_url(self):
-        assert _parse_aim_url_host_port("aim://localhost:43800") == ("localhost", 43800)
-
-    def test_ip_url(self):
-        assert _parse_aim_url_host_port("aim://10.0.0.5:9999") == ("10.0.0.5", 9999)
-
-    def test_wrong_scheme_returns_none(self):
-        assert _parse_aim_url_host_port("http://foo:80") is None
-        assert _parse_aim_url_host_port("foo:80") is None
-
-    def test_missing_port_returns_none(self):
-        assert _parse_aim_url_host_port("aim://localhost") is None
-
-    def test_non_integer_port_returns_none(self):
-        assert _parse_aim_url_host_port("aim://localhost:notanint") is None
-
-    def test_negative_port_returns_none(self):
-        assert _parse_aim_url_host_port("aim://localhost:-1") is None
-
-    def test_zero_port_returns_none(self):
-        assert _parse_aim_url_host_port("aim://localhost:0") is None
-
-    def test_empty_host_returns_none(self):
-        assert _parse_aim_url_host_port("aim://:43800") is None
-
-    def test_url_with_trailing_path_extracts_host_port(self):
-        # The remote-aim transport URLs sometimes include a trailing
-        # ``/`` or path; we strip and just take host:port.
-        assert _parse_aim_url_host_port("aim://nuc:43800/some/path") == ("nuc", 43800)
-
-
-class TestMaybeStartLocalAimServerNoOps:
-    """Cases where _maybe_start_local_aim_server must return None
-    without spawning a process. Each test asserts that subprocess.Popen
-    was NOT called — invariant for "no env var means existing behavior"
-    back-compat."""
-
-    def test_env_var_unset_returns_none(self, monkeypatch):
-        # Standalone user case: no ASTROLABE_AIM_REPO_PATH means use
-        # existing remote-only path. Must not start a server.
-        monkeypatch.delenv("ASTROLABE_AIM_REPO_PATH", raising=False)
-        called = []
-        monkeypatch.setattr(
-            "subprocess.Popen", lambda *a, **kw: called.append(1) or MagicMock()
-        )
-        result = _maybe_start_local_aim_server(make_run_config())
-        assert result is None
-        assert called == []
-
-    def test_unparseable_url_returns_none(self, monkeypatch, tmp_path):
-        monkeypatch.setenv("ASTROLABE_AIM_REPO_PATH", str(tmp_path))
-        cfg = make_run_config(aim_url="http://wrong-scheme:1234")
-        called = []
-        monkeypatch.setattr(
-            "subprocess.Popen", lambda *a, **kw: called.append(1) or MagicMock()
-        )
-        result = _maybe_start_local_aim_server(cfg)
-        assert result is None
-        assert called == []
-
-
-class TestMaybeStartLocalAimServerHappyPath:
-    """When env + URL are valid, we call subprocess.Popen with the
-    right args, poll for listening, and return the Popen handle."""
-
-    def test_spawns_subprocess_with_correct_args(self, monkeypatch, tmp_path):
-        import subprocess
-        monkeypatch.setenv("ASTROLABE_AIM_REPO_PATH", str(tmp_path))
-        # Pre-create .aim so we don't trigger init path.
-        (tmp_path / ".aim").mkdir()
-
-        spawned_args = []
-
-        class FakePopen:
-            def __init__(self, args, **kwargs):
-                spawned_args.append(args)
-                self.pid = 12345
-                self._exit_code = None
-
-            def poll(self):
-                return self._exit_code  # None = still running
-
-            def terminate(self):
-                self._exit_code = 0
-
-            def wait(self, timeout=None):
-                self._exit_code = 0
-                return 0
-
-            def kill(self):
-                self._exit_code = -9
-
-        monkeypatch.setattr("subprocess.Popen", FakePopen)
-
-        # Fake socket.create_connection to simulate "listening" on first try
-        class FakeSocket:
-            def __enter__(self):
-                return self
-            def __exit__(self, *a):
-                pass
-
-        monkeypatch.setattr(
-            "socket.create_connection", lambda *a, **kw: FakeSocket()
-        )
-
-        cfg = make_run_config(aim_url="aim://127.0.0.1:43800")
-        proc = _maybe_start_local_aim_server(cfg)
-
-        assert proc is not None
-        assert len(spawned_args) == 1
-        args = spawned_args[0]
-        assert args[0] == "aim"
-        assert args[1] == "server"
-        assert "--host" in args
-        assert "127.0.0.1" in args
-        assert "--port" in args
-        assert "43800" in args
-        assert "--repo" in args
-        assert str(tmp_path) in args
-
-    def test_creates_repo_path_if_missing(self, monkeypatch, tmp_path):
-        # Repo path doesn't exist — open_aim_run must create the dir
-        # AND run ``aim init`` before spawning the server.
-        repo_path = tmp_path / "new-repo"
-        assert not repo_path.exists()
-        monkeypatch.setenv("ASTROLABE_AIM_REPO_PATH", str(repo_path))
-
-        run_calls = []
-        def fake_run(*args, **kwargs):
-            run_calls.append(args[0] if args else None)
-            return MagicMock(returncode=0)
-        monkeypatch.setattr("subprocess.run", fake_run)
-
-        class FakePopen:
-            def __init__(self, args, **kwargs):
-                self.pid = 1; self._exit_code = None
-            def poll(self): return self._exit_code
-            def terminate(self): self._exit_code = 0
-            def wait(self, timeout=None): self._exit_code = 0; return 0
-            def kill(self): self._exit_code = -9
-        monkeypatch.setattr("subprocess.Popen", FakePopen)
-
-        class FakeSocket:
-            def __enter__(self): return self
-            def __exit__(self, *a): pass
-        monkeypatch.setattr("socket.create_connection", lambda *a, **kw: FakeSocket())
-
-        cfg = make_run_config(aim_url="aim://localhost:43800")
-        proc = _maybe_start_local_aim_server(cfg)
-
-        assert proc is not None
-        assert repo_path.is_dir()
-        # aim init was called
-        assert len(run_calls) == 1
-        assert "init" in run_calls[0]
-        assert str(repo_path) in run_calls[0]
-
-
-class TestMaybeStartLocalAimServerFailures:
-    """When the subprocess fails to come up, we must clean up the
-    process handle and return None — never leak an orphan."""
-
-    def test_subprocess_exits_before_listening(self, monkeypatch, tmp_path):
-        monkeypatch.setenv("ASTROLABE_AIM_REPO_PATH", str(tmp_path))
-        (tmp_path / ".aim").mkdir()
-
-        class DyingPopen:
-            def __init__(self, args, **kwargs):
-                self.pid = 1
-                self.returncode = 1  # already exited
-
-            def poll(self):
-                return self.returncode  # non-None = exited
-
-            def terminate(self):
-                pass
-            def wait(self, timeout=None):
-                return self.returncode
-            def kill(self):
-                pass
-
-        monkeypatch.setattr("subprocess.Popen", DyingPopen)
-
-        cfg = make_run_config(aim_url="aim://localhost:43800")
-        proc = _maybe_start_local_aim_server(cfg)
-        assert proc is None  # never returns a dead handle
-
-
-class TestStopLocalAimServer:
-    """Cleanup must be idempotent and never raise."""
-
-    def test_none_proc_is_noop(self):
-        # Defensive: callers shouldn't pass None, but we don't crash.
-        _stop_local_aim_server(None)  # should not raise
-
-    def test_already_exited_is_noop(self):
-        class ExitedProc:
-            pid = 1
-            def poll(self): return 0  # already done
-
-        # Should not call terminate/kill.
-        _stop_local_aim_server(ExitedProc())
-
-    def test_terminate_called_on_running_proc(self):
-        calls = []
-
-        class RunningProc:
-            pid = 1
-            def poll(self):
-                return None if not calls else 0  # still running on first poll, exited after terminate
-            def terminate(self):
-                calls.append("terminate")
-            def wait(self, timeout=None):
-                return 0
-            def kill(self):
-                calls.append("kill")
-
-        _stop_local_aim_server(RunningProc())
-        assert "terminate" in calls
-        assert "kill" not in calls  # clean shutdown, no kill needed
-
-    def test_kill_escalation_on_timeout(self):
-        calls = []
-
-        class HangingProc:
-            pid = 1
-            def poll(self):
-                return None  # never exits
-            def terminate(self):
-                calls.append("terminate")
-            def wait(self, timeout=None):
-                if "terminate" in calls and "kill" not in calls:
-                    # First wait (post-terminate) times out; raise to trigger kill
-                    raise TimeoutError("simulated wait timeout")
-                return -9
-            def kill(self):
-                calls.append("kill")
-
-        _stop_local_aim_server(HangingProc())
-        assert calls == ["terminate", "kill"]
 
 
 # ----------------------------------------------------------------------
