@@ -14,6 +14,7 @@ real socket.
 """
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import TYPE_CHECKING, Callable
 
@@ -730,3 +731,116 @@ class TestFrameworkParityInvariants:
         for name in ("metric_0", "metric_1"):
             series = get_metric_series(aim_repo, result.run_hash, name)
             assert len(series) >= 5, f"{framework}: {name} has {len(series)} values"
+
+
+class TestLocalAimModeNeedsNoServer:
+    """Training writes straight to the repo path the engine exported.
+
+    Until AIMSRV-1.02 the callback started an ``aim server`` subprocess here,
+    because training's resolution never consulted
+    ``ASTROLABE_AIM_REPO_PATH`` and so resolved to the ``aim://`` default that
+    only the subprocess made answer. These assert the replacement: the write
+    lands at the path itself, and nothing is spawned.
+
+    Read back inside the container. The client does not bind-mount the aim
+    repo directory, and adding a mount to docker-compose.yml would change
+    shared infrastructure every other scenario depends on for one test.
+    """
+
+    _REPO = "/tmp/aim-local-testbed"
+
+    def _read_metric_names(self, testbed, run_hash: str) -> list[str]:
+        script = (
+            "import json,warnings;warnings.filterwarnings('ignore');"
+            "from aim import Repo;"
+            "from aim.sdk.index_manager import RepoIndexManager;"
+            f"r=Repo('{self._REPO}');"
+            f"\ntry:\n r.request_props('{run_hash}',read_only=False)\n"
+            "except Exception:\n pass\n"
+            f"RepoIndexManager.get_index_manager(r).index('{run_hash}');"
+            f"run=r.get_run('{run_hash}');"
+            "print('NAMES='+json.dumps([] if run is None else sorted("
+            "m.name for m in run.metrics() if not m.name.startswith('__system__'))))"
+        )
+        _code, out, _err = compose.exec_in(
+            testbed, service="client", cmd=["python", "-c", script],
+            check=True, timeout_s=120.0,
+        )
+        line = [l for l in out.splitlines() if l.startswith("NAMES=")][-1]
+        return json.loads(line[len("NAMES="):])
+
+    def test_metrics_land_at_the_repo_path_with_no_server_running(
+        self, testbed: "TestbedHandle", stats_jsonl_path: Path, run_driver
+    ) -> None:
+        compose.exec_in(
+            testbed, service="client", cmd=["rm", "-rf", self._REPO],
+            check=False, timeout_s=30.0,
+        )
+        result = run_driver(
+            _base_config(
+                testbed,
+                stats_jsonl_path,
+                steps=5,
+                metrics_per_step=2,
+                # TESTBED_ENV_ prefix is what makes a flag become a real env var
+                # in the container; without it the flag only reaches the
+                # driver as JSON and the callback never sees local-aim mode.
+                driver_flags={"TESTBED_ENV_ASTROLABE_AIM_REPO_PATH": self._REPO},
+            )
+        )
+        assert result.exit_code == 0, result.stderr
+        assert result.run_hash is not None
+
+        # No aim server was started. Read /proc rather than shelling to ps:
+        # procps is not installed in the slim client image, and /proc needs
+        # no package. Matching on argv containing both "aim" and "server"
+        # would also match the reader process below, so require the
+        # "--repo" the spawn used to pass.
+        script = (
+            "import os,json;out=[]\n"
+            "for pid in [d for d in os.listdir('/proc') if d.isdigit()]:\n"
+            "    try:\n"
+            "        a=open(f'/proc/{pid}/cmdline','rb').read().split(b'\\0')\n"
+            "    except OSError:\n"
+            "        continue\n"
+            "    argv=[x.decode('utf8','replace') for x in a if x]\n"
+            "    if 'server' in argv and any(x.endswith('aim') for x in argv[:1]+argv):\n"
+            "        out.append(' '.join(argv))\n"
+            "print('SPAWNED='+json.dumps(out))"
+        )
+        _code, procs, _err = compose.exec_in(
+            testbed, service="client", cmd=["python", "-c", script],
+            check=True, timeout_s=60.0,
+        )
+        line = [l for l in procs.splitlines() if l.startswith("SPAWNED=")][-1]
+        spawned = json.loads(line[len("SPAWNED="):])
+        assert spawned == [], f"an aim server was spawned: {spawned}"
+
+        # The repo directory has to exist before the read is meaningful. A
+        # missing one means the callback never entered local-aim mode and
+        # quietly used the tunnel, which is exactly how the first version of
+        # this test passed its exit-code assertions while proving nothing.
+        _code, listing, _err = compose.exec_in(
+            testbed, service="client",
+            cmd=["python", "-c",
+                 f"import os;print('HASAIM='+str(os.path.isdir('{self._REPO}/.aim')))"],
+            check=True, timeout_s=30.0,
+        )
+        assert "HASAIM=True" in listing, (
+            f"{self._REPO}/.aim does not exist — the run did not write there"
+        )
+
+        # And the metrics are actually in the repo the engine named, not
+        # merely absent from an error log.
+        names = self._read_metric_names(testbed, result.run_hash)
+        assert names, f"no metrics landed in {self._REPO}"
+
+    def test_tunnel_mode_is_unaffected(
+        self, testbed: "TestbedHandle", stats_jsonl_path: Path, run_driver, aim_repo: Path
+    ) -> None:
+        """No repo path exported: the run still reaches the aim server."""
+        result = run_driver(
+            _base_config(testbed, stats_jsonl_path, steps=3, metrics_per_step=1)
+        )
+        assert result.exit_code == 0, result.stderr
+        assert_metric_landed(aim_repo, result.run_hash, "metric_0")

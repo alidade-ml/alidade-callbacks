@@ -197,9 +197,13 @@ Use `"warn"` only if you intend to stamp the run afterwards.
 Every helper takes an optional `aim_url`, resolved the same way as everywhere else in the
 library:
 
-1. `ASTROLABE_AIM_URL` env — set by astrolabe on provisioned instances
-2. the `aim_url=` argument
-3. `aim://localhost:43800`, the tunnel astrolabe opens
+1. `ASTROLABE_AIM_REPO_PATH` env — a filesystem path, set in local-aim mode
+2. `ASTROLABE_AIM_URL` env — set by astrolabe on provisioned instances
+3. the `aim_url=` argument
+4. `aim://localhost:43800`, the tunnel astrolabe opens
+
+The repo path wins because in local-aim mode astrolabe opens no tunnel, so the
+`aim://` default answers nothing.
 
 Running as a step of an astrolabe submit, omit it. Running elsewhere, pass it — a URL or
 a filesystem path both work.
