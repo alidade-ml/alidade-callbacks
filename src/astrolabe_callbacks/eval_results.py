@@ -39,6 +39,13 @@ from typing import Any
 from loguru import logger
 
 from astrolabe_callbacks import contract
+from astrolabe_callbacks._attribution import (
+    AttributionInputError,
+    MissingParentError,
+    mint_model_entry as _mint_model_entry,
+    resolve_parent,
+)
+from astrolabe_callbacks._identity import ambient_identity, resolve_aim_url
 
 from ._core import DEFAULT_AIM_URL
 
@@ -60,57 +67,6 @@ class EvalInputError(ValueError):
     """
 
 
-class MissingParentError(Exception):
-    """Raised when an eval cannot be attributed to any training run.
-
-    Deliberately not an :class:`EvalInputError`: the call was
-    well-formed, the *artifact* carries no provenance. Distinct so a
-    pilot running ``on_missing_parent="raise"`` in CI can catch exactly
-    this without also catching malformed arguments.
-    """
-
-
-def _resolve_aim_url(aim_url: str | None) -> str:
-    """Resolve the Aim connection URL with the lib's standard precedence.
-
-    ``ASTROLABE_AIM_URL`` env wins over the constructor argument, which
-    wins over :data:`DEFAULT_AIM_URL`. Matches ``resolve_run_config`` so
-    an eval script run on the same instance as training connects the
-    same way without extra configuration.
-
-    Note this deliberately does NOT reuse ``resolve_run_config``: that
-    helper resolves a run *name* and applies constructor-supplied tags,
-    neither of which an eval run takes. The identity env vars it reads
-    are picked up by :func:`_ambient_identity` instead.
-    """
-    return os.environ.get("ASTROLABE_AIM_URL") or aim_url or DEFAULT_AIM_URL
-
-
-def _ambient_identity() -> dict[str, str]:
-    """The submit identity the engine exported into this process.
-
-    An eval script launched as an astrolabe step inherits the same
-    ``AIM_RUN_TAGS`` the training callback reads — submit, version,
-    submitter, and the GPU rate the cost views bill against. Reading it
-    here writes nothing new; the identity was already in the process and
-    was being discarded, leaving evals unattributable to the submit that
-    paid for them.
-
-    ``ASTROLABE_EXPERIMENT_NAME`` is authoritative over the tag payload
-    for the experiment, matching ``resolve_run_config``'s precedence.
-    """
-    tags = {
-        key: value
-        for key, value in contract.parse_aim_run_tags(
-            os.environ.get(contract.ENV_AIM_RUN_TAGS)
-        ).items()
-        if value
-    }
-    experiment = os.environ.get(contract.ENV_EXPERIMENT_NAME)
-    if experiment:
-        tags[contract.TAG_EXPERIMENT] = experiment
-    return tags
-
 
 def _open_eval_run(*, task_set: str, aim_url: str | None) -> Any:
     """Open an Aim run carrying everything an eval has except its model.
@@ -131,10 +87,10 @@ def _open_eval_run(*, task_set: str, aim_url: str | None) -> Any:
     """
     from aim import Run
 
-    identity = _ambient_identity()
+    identity = ambient_identity()
     experiment = identity.get(contract.TAG_EXPERIMENT) or f"eval/{task_set}"
 
-    run = Run(experiment=experiment, repo=_resolve_aim_url(aim_url))
+    run = Run(experiment=experiment, repo=resolve_aim_url(aim_url))
     # Identity first, contract tags second: the discovery tags are the
     # only reason the dashboard can see this run at all, so an unexpected
     # key in the ambient payload must not be able to shadow one.
@@ -357,43 +313,23 @@ def start_eval_run_from_checkpoint(
     ...     run.track(mcc, name="eval/cola/matthews", step=step)
     >>> run.close()
     """
-    if on_missing_parent not in ("warn", "raise"):
-        raise EvalInputError(
-            f"on_missing_parent must be 'warn' or 'raise', got {on_missing_parent!r}"
-        )
     if not isinstance(task_set, str) or not task_set:
         raise EvalInputError("task_set must be a non-empty string")
-    if model_run_hash is not None and (
-        not isinstance(model_run_hash, str) or not model_run_hash
-    ):
-        raise EvalInputError(
-            "model_run_hash, when given, must be a non-empty string; pass None "
-            "to resolve from the checkpoint"
-        )
-    if external_name is not None and (
-        not isinstance(external_name, str) or not external_name.strip()
-    ):
-        # Checked here rather than at use: an empty string is falsy, so it
-        # would otherwise fall through to "nothing was given" and report a
-        # missing parent at a call site that plainly supplied a name.
-        raise EvalInputError(
-            "external_name, when given, must be a non-empty string"
-        )
 
-    resolved = model_run_hash or _parent_run_hash(checkpoint)
-    if resolved and external_name:
-        # A sweep over a mix of your own and downloaded models will pass
-        # external_name unconditionally; refusing the overlap would break
-        # the obvious way to write that loop. The file knows better than
-        # the argument, so the file wins — but say so, or the name looks
-        # like it took effect.
-        logger.info(
-            "ignoring external_name={!r} — the checkpoint carries its own "
-            "provenance, which wins",
-            external_name,
+    # Attribution is shared with every other surface that logs about a model;
+    # see _attribution for why resolution never reads Aim. Argument errors
+    # surface as EvalInputError so this function's contract is unchanged.
+    try:
+        resolved = resolve_parent(
+            checkpoint=checkpoint,
+            model_run_hash=model_run_hash,
+            external_name=external_name,
+            on_missing_parent=on_missing_parent,
+            aim_url=aim_url,
+            what="eval",
         )
-    if not resolved and external_name:
-        resolved = _mint_model_entry(external_name, aim_url)
+    except AttributionInputError as exc:
+        raise EvalInputError(str(exc)) from None
 
     if resolved:
         run = start_eval_run(
@@ -401,15 +337,6 @@ def start_eval_run_from_checkpoint(
         )
         run.astrolabe_linked = True
         return run
-
-    if on_missing_parent == "raise":
-        raise MissingParentError(
-            "nothing to attribute this eval to: the checkpoint carries no "
-            "astrolabe provenance, and neither model_run_hash= nor "
-            "external_name= was given. If astrolabe trained this model, stamp "
-            "the checkpoint or pass model_run_hash=. If you downloaded it, "
-            'pass external_name= to name it — e.g. external_name="roberta-base".'
-        )
 
     logger.warning(
         "Eval run for task_set={} is UNLINKED — the checkpoint carries no "
@@ -423,59 +350,6 @@ def start_eval_run_from_checkpoint(
     run = _open_eval_run(task_set=task_set, aim_url=aim_url)
     run.astrolabe_linked = False
     return run
-
-
-def _mint_model_entry(name: str, aim_url: str | None) -> str:
-    """Record a model astrolabe never trained, and return its run hash.
-
-    Only reachable through ``external_name=``. A downloaded checkpoint
-    has no training run, so an eval scoring it has nothing to attribute
-    to and the dashboard has no row to put in a leaderboard; this is the
-    row. It carries no metrics — it exists to be pointed at.
-
-    Filed under the submitting experiment, carrying the same identity as
-    every other run of that submit. There is no way to reach this
-    outside a submit, which matters: with no experiment to inherit, the
-    entry would land in Aim's ``default`` bucket, attached to nothing.
-
-    Never reads from Aim. Passing the same name again — another step,
-    another submit — makes another entry. Reusing one would mean asking
-    Aim which run to reuse, and that lookup cannot work under local-aim
-    transport, where the compute host sees only its own submit's runs:
-    it would find nothing and mint a duplicate anyway, silently.
-    """
-    from aim import Run
-
-    identity = _ambient_identity()
-    run = Run(
-        experiment=identity.get(contract.TAG_EXPERIMENT),
-        repo=_resolve_aim_url(aim_url),
-    )
-    try:
-        for key, value in identity.items():
-            run[key] = value
-        run[contract.TAG_KIND] = contract.KIND_EXTERNAL_CHECKPOINT
-        try:
-            run.name = name
-        except Exception as exc:  # older Aim treats name as read-only
-            logger.debug("Failed to set Aim run name {}: {}", name, exc)
-        return run.hash
-    finally:
-        run.close()
-
-
-def _parent_run_hash(checkpoint: str | Path | dict[str, Any]) -> str | None:
-    """The training run a checkpoint attributes to, or ``None``.
-
-    Deliberately a two-line read rather than a resolution helper: the
-    checkpoint's own ``aim_run_hash`` is the answer, because transforms
-    copy it forward at write time instead of leaving the reader to walk
-    a chain.
-    """
-    from astrolabe_callbacks.checkpoint import read_checkpoint_meta
-
-    meta = read_checkpoint_meta(checkpoint)
-    return meta.aim_run_hash if meta else None
 
 
 def log_eval_table(
