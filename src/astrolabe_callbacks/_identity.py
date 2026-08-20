@@ -19,9 +19,15 @@ def resolve_aim_url(aim_url: str | None) -> str:
     """Resolve the Aim connection URL with the lib's standard precedence.
 
     ``ASTROLABE_AIM_URL`` env wins over the constructor argument, which wins
-    over :data:`DEFAULT_AIM_URL`. Matches ``resolve_run_config`` so a script
-    run on the same instance as training connects the same way without extra
-    configuration.
+    over :data:`DEFAULT_AIM_URL`.
+
+    **Known gap — AIMURL-1.** Nothing sets ``ASTROLABE_AIM_URL``: the engine
+    never exports it, so this always falls through to the default
+    ``aim://localhost:43800``. That is the reverse SSH tunnel under the default
+    transport and is correct there. Under local-aim mode the engine opens no
+    tunnel, and the local ``aim server`` belongs to the training process — so a
+    later eval or sample step, being a separate process, finds nothing
+    listening. Carried forward unchanged here rather than fixed in a refactor.
 
     Deliberately does NOT reuse ``resolve_run_config``: that helper resolves a
     run *name* and applies constructor-supplied tags, neither of which these

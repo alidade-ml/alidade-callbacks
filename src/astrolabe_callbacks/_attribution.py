@@ -1,33 +1,21 @@
 """Who is a result about?
 
-One implementation, shared by every surface that logs something *about* a
-model — evals and samples today. The question is identical in both cases, and
-two implementations would drift: a model attributed one way in the Eval tab
-and another in Examples is a bug unexplainable from either side.
+Moved here from ``eval_results.py`` so ``log_samples`` shares one implementation
+rather than growing a second. Behaviour is unchanged.
 
-Resolution order, highest first:
+Resolution order: explicit ``model_run_hash`` > the checkpoint's embedded
+provenance > ``external_name`` (which registers an entry) > raise.
 
-1. an explicit ``model_run_hash``
-2. the checkpoint's own embedded provenance
-3. ``external_name``, which registers an entry for a model astrolabe never
-   trained
-4. ``on_missing_parent`` decides — raise (default) or return ``None``
+Three constraints, each of which a plausible change would break:
 
-Three properties are load-bearing and easy to lose in a refactor:
-
-**Resolution never reads Aim.** The checkpoint is read offline — header only
-for safetensors, ``map_location="meta"`` for torch pickle. This is not an
-optimisation. Looking a parent up by name returns *nothing* under local-aim
-transport, where the compute host sees a repo holding only its own submit's
-runs, so a lookup silently finds nothing and registers a duplicate every time.
-
-**A file carrying a submit but no run is unresolved, not a lookup trigger.**
-Picking among several runs under one submit would be a guess, and guessing by
-resemblance is the mechanism this exists to replace.
-
-**Raising happens before any work.** An unattributed run lands in Aim and is
-invisible to the dashboard forever — an hour of GPU time producing results
-nobody can find. Refusing to start costs nothing.
+- **Never read Aim to resolve.** Under local-aim transport the compute host
+  sees a repo holding only its own submit's runs, so a name lookup finds
+  nothing and registers a duplicate.
+- **A file with a submit but no run is unresolved.** Do not fall back to
+  picking among that submit's runs.
+- **Raise before doing any work.** An unattributed run is invisible to the
+  dashboard forever, so failing late costs a benchmark; failing early costs
+  nothing.
 """
 
 from __future__ import annotations

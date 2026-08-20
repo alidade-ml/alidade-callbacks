@@ -68,12 +68,6 @@ class EvalInputError(ValueError):
 
 
 
-# Moved to _identity so samples can share them; the private names stay as
-# aliases because this module's internals and its tests both use them.
-_resolve_aim_url = resolve_aim_url
-_ambient_identity = ambient_identity
-
-
 def _open_eval_run(*, task_set: str, aim_url: str | None) -> Any:
     """Open an Aim run carrying everything an eval has except its model.
 
@@ -93,10 +87,10 @@ def _open_eval_run(*, task_set: str, aim_url: str | None) -> Any:
     """
     from aim import Run
 
-    identity = _ambient_identity()
+    identity = ambient_identity()
     experiment = identity.get(contract.TAG_EXPERIMENT) or f"eval/{task_set}"
 
-    run = Run(experiment=experiment, repo=_resolve_aim_url(aim_url))
+    run = Run(experiment=experiment, repo=resolve_aim_url(aim_url))
     # Identity first, contract tags second: the discovery tags are the
     # only reason the dashboard can see this run at all, so an unexpected
     # key in the ambient payload must not be able to shadow one.
