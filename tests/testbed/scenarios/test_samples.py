@@ -23,9 +23,13 @@ from tests.testbed.harness.assertions import (
     assert_run_closed,
     assert_run_experiment,
     get_run_tags,
+    get_images,
     get_texts,
 )
-from tests.testbed.harness.sample_driver import SampleDriverConfig
+from tests.testbed.harness.sample_driver import (
+    SampleDriverConfig,
+    make_pattern,
+)
 
 if TYPE_CHECKING:
     from tests.testbed.harness.compose import TestbedHandle
@@ -276,3 +280,92 @@ class TestCheckpointResolutionAgainstRealFiles:
         assert result.exit_code == 0, result.stderr
         tags = get_run_tags(aim_repo, result.sample_run_hash)
         assert tags.get(contract.TAG_MODEL_RUN_HASH) == "c" * 24
+
+
+def _image(w: int, h: int, seed: int) -> dict:
+    """A sample element the driver turns into a real image in the container."""
+    return {"image": {"w": w, "h": h, "seed": seed}}
+
+
+class TestImagesSurviveARealRoundTrip:
+    """The half a mock cannot show.
+
+    ``aim.Image`` encodes to PNG on the way in and decodes on the way out.
+    Whether the pixels that come back are the pixels that went in is a fact
+    about Aim's storage layer, and a patched ``aim.Image`` returns whatever
+    the test told it to.
+    """
+
+    def test_an_image_output_returns_as_an_image_with_the_same_pixels(
+        self, testbed: "TestbedHandle", aim_repo: Path, run_sample_driver
+    ) -> None:
+        import numpy as np
+
+        result = run_sample_driver(
+            _config(
+                testbed,
+                sample_set="faces",
+                samples=[["a golden retriever", _image(8, 6, seed=7)]],
+            )
+        )
+        assert result.exit_code == 0, result.stderr
+
+        images = get_images(aim_repo, result.sample_run_hash, "sample/faces/output")
+        assert [step for step, _ in images] == [0]
+        got = dict(images)[0]
+        expected = make_pattern(8, 6, seed=7)
+        # Shape first: a transpose would otherwise fail the value comparison
+        # with an unreadable broadcast error rather than naming the problem.
+        assert got.shape == expected.shape == (6, 8, 3)
+        assert np.array_equal(got, expected), "pixels changed across the round trip"
+
+    def test_a_text_prompt_and_an_image_output_land_in_their_own_sequences(
+        self, testbed: "TestbedHandle", aim_repo: Path, run_sample_driver
+    ) -> None:
+        """The prompt-to-image case, end to end.
+
+        The input is text and the output is an image *on the same sample*, so
+        this is the scenario that would break if the one-kind-per-set rule
+        ever reached inputs.
+        """
+        result = run_sample_driver(
+            _config(
+                testbed,
+                sample_set="faces",
+                samples=[["a golden retriever", _image(4, 4, seed=1)]],
+            )
+        )
+        assert result.exit_code == 0, result.stderr
+
+        texts = get_texts(aim_repo, result.sample_run_hash, "sample/faces/input")
+        assert dict(texts)[0] == "a golden retriever"
+        assert len(get_images(aim_repo, result.sample_run_hash, "sample/faces/output")) == 1
+        # And the output is NOT retrievable as text — i.e. it was stored as an
+        # image, not as a repr of one, which is the failure this slice exists
+        # to prevent.
+        assert get_texts(aim_repo, result.sample_run_hash, "sample/faces/output") == []
+
+    def test_an_image_input_and_image_output_both_round_trip(
+        self, testbed: "TestbedHandle", aim_repo: Path, run_sample_driver
+    ) -> None:
+        """The denoising shape: image in, image out, paired by step."""
+        import numpy as np
+
+        result = run_sample_driver(
+            _config(
+                testbed,
+                sample_set="denoise",
+                samples=[
+                    [_image(5, 4, seed=11), _image(5, 4, seed=12)],
+                    [_image(5, 4, seed=13), _image(5, 4, seed=14)],
+                ],
+            )
+        )
+        assert result.exit_code == 0, result.stderr
+
+        ins = dict(get_images(aim_repo, result.sample_run_hash, "sample/denoise/input"))
+        outs = dict(get_images(aim_repo, result.sample_run_hash, "sample/denoise/output"))
+        assert sorted(ins) == sorted(outs) == [0, 1]
+        # Pairing is the point: step 1's input must be seed 13, not seed 11.
+        assert np.array_equal(ins[1], make_pattern(5, 4, seed=13))
+        assert np.array_equal(outs[1], make_pattern(5, 4, seed=14))
