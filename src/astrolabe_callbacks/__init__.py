@@ -49,6 +49,7 @@ except ImportError:
     # Older Aim versions or aim not installed — nothing to disable.
     pass
 
+from astrolabe_callbacks.samples import Sample, SampleInputError, log_samples
 from astrolabe_callbacks.eval_results import (
     EvalInputError,
     MissingParentError,
@@ -76,6 +77,9 @@ __all__ = [
     "AstrolabeRun",
     "Run",
     "log_eval_table",
+    "log_samples",
+    "Sample",
+    "SampleInputError",
     "start_eval_run",
     "start_eval_run_from_checkpoint",
     "EvalInputError",

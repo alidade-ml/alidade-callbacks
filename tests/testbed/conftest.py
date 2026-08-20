@@ -20,6 +20,7 @@ import re
 import subprocess
 import threading
 import time
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Generator
 
@@ -27,6 +28,10 @@ import pytest
 
 from tests.testbed.harness import compose
 from tests.testbed.harness.compose import TestbedHandle
+from tests.testbed.harness.sample_driver import (
+    SampleDriverConfig,
+    sample_config_to_env,
+)
 from tests.testbed.harness.driver import (
     DriverConfig,
     DriverResult,
@@ -51,6 +56,7 @@ __all__ = [
     "stats_jsonl_path",
     "run_driver",
     "run_eval_driver",
+    "run_sample_driver",
     "run_checkpoint_driver",
 ]
 
@@ -61,6 +67,7 @@ COMPOSE_FILE = TESTBED_DIR / "docker-compose.yml"
 _RUN_HASH_RE = re.compile(r"ASTROLABE_RUN_HASH=([a-f0-9]{24})")
 _EVAL_RUN_HASH_RE = re.compile(r"ASTROLABE_EVAL_RUN_HASH=([a-f0-9]{24})")
 _EVAL_LINKED_RE = re.compile(r"ASTROLABE_EVAL_LINKED=(true|false)")
+_SAMPLE_RUN_HASH_RE = re.compile(r"ASTROLABE_SAMPLE_RUN_HASH=([a-f0-9]{24})")
 _MARKER_TOUCHED_RE = re.compile(r"ASTROLABE_MARKER_TOUCHED=(true|false)")
 
 
@@ -350,6 +357,39 @@ def _parse_probe(stdout: str) -> dict:
         if line.startswith(PROBE_PREFIX):
             return json.loads(line[len(PROBE_PREFIX) :])
     return {}
+
+
+@dataclass
+class SampleDriverResult:
+    exit_code: int
+    sample_run_hash: str | None
+    stdout: str
+    stderr: str
+
+
+@pytest.fixture
+def run_sample_driver(
+    testbed: TestbedHandle,
+) -> Callable[[SampleDriverConfig], SampleDriverResult]:
+    """Return a callable that runs the sample driver inside the client container."""
+
+    def _run(config: SampleDriverConfig) -> SampleDriverResult:
+        exit_code, stdout, stderr = compose.exec_in(
+            testbed,
+            service="client",
+            cmd=["python", "-m", "tests.testbed.harness.sample_driver"],
+            env=sample_config_to_env(config),
+            check=False,
+            timeout_s=120.0,
+        )
+        return SampleDriverResult(
+            exit_code=exit_code,
+            sample_run_hash=_parse_run_hash(stdout, _SAMPLE_RUN_HASH_RE),
+            stdout=stdout,
+            stderr=stderr,
+        )
+
+    return _run
 
 
 @pytest.fixture
