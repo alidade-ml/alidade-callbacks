@@ -42,7 +42,7 @@ from __future__ import annotations
 # vendored from; the engine refuses submits whose pinned callback was
 # vendored against a contract older than what this engine version
 # requires.
-CONTRACT_VERSION = "1.7.0"
+CONTRACT_VERSION = "1.8.0"
 
 # --- Env vars: ENGINE sets in the training process -------------------------
 #
@@ -169,6 +169,22 @@ SYNTHESIZED_WALL_TIME = "wall_time"
 # ``LOCAL_AIM_REPO_PATH_TEMPLATE.format(...)`` directly at call sites.
 LOCAL_AIM_REPO_PATH_TEMPLATE = "/tmp/aim-local-{submit_id}"
 
+# Sequence names a sample batch writes. ``log_samples`` tracks an
+# ``aim.Text`` or ``aim.Image`` under ``sample/<set>/input`` and
+# ``sample/<set>/output``, paired by step.
+#
+# Declared here because it has two consumers that must agree exactly: the
+# callback builds these names, and the NUC-side exporter reads them back
+# (SAMPEXP-1). A disagreement is silent — the reader finds no sequence and
+# reports a batch with no samples, which is a plausible and wrong answer.
+# Substitute via :func:`format_sample_sequence_name`; do not call
+# ``.format(...)`` at a call site.
+SAMPLE_SEQUENCE_TEMPLATE = "sample/{sample_set}/{role}"
+
+# The two halves of a sample. ``role`` is one of these and nothing else.
+SAMPLE_ROLE_INPUT = "input"
+SAMPLE_ROLE_OUTPUT = "output"
+
 # Default Aim tracking-server URL. The engine opens a reverse SSH
 # tunnel from the compute host to the NUC's Aim server on port 43800
 # (see ``astrolabe.engine._setup``). Training-time consumers (callbacks
@@ -254,8 +270,41 @@ def format_local_aim_repo_path(submit_id: str) -> str:
 
     Substitutes ``submit_id`` into :data:`LOCAL_AIM_REPO_PATH_TEMPLATE`.
     Engine sets the env var via this helper in local-aim mode.
+
+    Every consumer must derive the path from here rather than rebuild it.
+    The callback writes to this path and the sync sidecar reads from it, and
+    a disagreement between them is silent: rsync of a nonexistent source is
+    not fatal to the sidecar, so training completes normally and the
+    dashboard simply shows a run with no data.
     """
     return LOCAL_AIM_REPO_PATH_TEMPLATE.format(submit_id=submit_id)
+
+
+def format_sample_sequence_name(sample_set: str, role: str) -> str:
+    """Construct the Aim sequence name for one half of a sample batch.
+
+    Parameters
+    ----------
+    sample_set : str
+        The researcher's label for the batch. Must not contain ``/`` — it is a
+        path segment here, and a slash forks the namespace so the name cannot
+        be taken apart again. ``log_samples`` refuses one at the call site;
+        this refuses it too, because the exporter reads runs Aim will happily
+        have accepted from anywhere.
+    role : str
+        :data:`SAMPLE_ROLE_INPUT` or :data:`SAMPLE_ROLE_OUTPUT`.
+    """
+    if "/" in sample_set:
+        raise ValueError(
+            f"sample_set must not contain '/' (got {sample_set!r}) — it is a "
+            "path segment in the sequence name"
+        )
+    if role not in (SAMPLE_ROLE_INPUT, SAMPLE_ROLE_OUTPUT):
+        raise ValueError(
+            f"role must be {SAMPLE_ROLE_INPUT!r} or {SAMPLE_ROLE_OUTPUT!r}, "
+            f"got {role!r}"
+        )
+    return SAMPLE_SEQUENCE_TEMPLATE.format(sample_set=sample_set, role=role)
 
 
 def format_first_metric_marker_path(submit_id: str, step_num: int) -> str:

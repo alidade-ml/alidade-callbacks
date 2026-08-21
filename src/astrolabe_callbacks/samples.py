@@ -254,12 +254,16 @@ def log_samples(
             if in_payload is not None:
                 run.track(
                     in_payload,
-                    name=f"sample/{sample_set}/input",
+                    name=contract.format_sample_sequence_name(
+                        sample_set, contract.SAMPLE_ROLE_INPUT
+                    ),
                     step=i,
                 )
             run.track(
                 out_payload,
-                name=f"sample/{sample_set}/output",
+                name=contract.format_sample_sequence_name(
+                    sample_set, contract.SAMPLE_ROLE_OUTPUT
+                ),
                 step=i,
             )
         return run.hash
