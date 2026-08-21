@@ -361,3 +361,50 @@ class TestTheBaseInstallStaysThin:
             Sample(output=_make_ndarray()),
         ])
         assert len(_tracked(run)) == 3
+
+
+class TestTheSequenceNameComesFromTheContract:
+    """The names in the assertions above are the wire contract, and they are
+    deliberately spelled out there so a change to them fails loudly.
+
+    These tests answer the other half: that ``log_samples`` *derives* the name
+    from ``contract.format_sample_sequence_name`` rather than reproducing it. A
+    hardcoded f-string satisfies every literal assertion in this file forever,
+    including after the engine renames the template.
+    """
+
+    def test_the_tracked_name_follows_the_contract_template(self, monkeypatch):
+        # If samples.py builds the name itself, the tracked names ignore this
+        # and the assertion fails on the original "sample/..." strings.
+        monkeypatch.setattr(
+            contract, "SAMPLE_SEQUENCE_TEMPLATE", "moved/{sample_set}/{role}"
+        )
+        _, run = _log([Sample(input="in", output="out")])
+        assert [name for name, _, _ in _tracked(run)] == [
+            "moved/completions/input",
+            "moved/completions/output",
+        ]
+
+    def test_the_roles_are_the_contract_constants(self, monkeypatch):
+        # Two derivations can agree on the template and disagree on the role.
+        monkeypatch.setattr(contract, "SAMPLE_ROLE_INPUT", "prompt")
+        monkeypatch.setattr(contract, "SAMPLE_ROLE_OUTPUT", "completion")
+        _, run = _log([Sample(input="in", output="out")])
+        assert [name for name, _, _ in _tracked(run)] == [
+            "sample/completions/prompt",
+            "sample/completions/completion",
+        ]
+
+    def test_a_slash_in_the_sample_set_raises_the_producers_error(self):
+        # The formatter also rejects this, but later and with a worse message.
+        # The producer's validation must stay the thing a user sees.
+        with pytest.raises(SampleInputError) as exc:
+            _log([Sample(output="x")], sample_set="a/b")
+        assert "sample_set" in str(exc.value)
+
+    def test_the_vendored_contract_is_current(self):
+        # The hash pin proves the vendored file is untampered, not that it is
+        # current — it compares the copy against its own recorded hash. This
+        # pins the version the sample sequence contract arrived in.
+        assert contract.CONTRACT_VERSION >= "1.8.0"
+        assert hasattr(contract, "format_sample_sequence_name")
