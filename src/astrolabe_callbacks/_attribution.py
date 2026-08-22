@@ -20,6 +20,9 @@ Three constraints, each of which a plausible change would break:
 
 from __future__ import annotations
 
+import json
+import os
+
 from pathlib import Path
 from typing import Any
 
@@ -142,16 +145,36 @@ def mint_model_entry(name: str, aim_url: str | None) -> str:
     which matters: with no experiment to inherit, the entry would land in Aim's
     ``default`` bucket, attached to nothing.
 
-    Never reads from Aim. Passing the same name again — another step, another
-    submit — makes another entry. Reusing one would mean asking Aim which run
-    to reuse, and that lookup cannot work under local-aim transport, where the
-    compute host sees only its own submit's runs: it would find nothing and
-    mint a duplicate anyway, silently.
+    **One entry per submit, not per call.** The first call for a name mints an
+    entry and records it in the per-submit registry the engine points
+    ``ASTROLABE_EXTERNAL_MODELS`` at; later calls in the same submit read it
+    back. Scoring one downloaded model on GLUE, MMLU and BEIR as three steps
+    therefore produces three results about one model, rather than three models
+    with one result each — which broke ``--include`` silently, since including
+    by name resolves to whichever entry was newest and carried a third of the
+    evidence.
+
+    A local file rather than a lookup: asking Aim which entry to reuse returns
+    nothing under local-aim transport, where the compute host sees only its own
+    submit's runs, so it would mint a duplicate anyway and say nothing. Steps of
+    a submit share an instance and run sequentially, so a file on that instance
+    is exactly the right scope and needs no locking.
+
+    **Across submits the identity is deliberately NOT shared.** A later submit
+    mints a new entry for the same name. Sharing would need a registry that
+    outlives the instance, and there is nowhere to put one that compute can
+    reach.
     """
+
     from aim import Run
 
     from astrolabe_callbacks import contract
     from astrolabe_callbacks._identity import ambient_identity, resolve_aim_url
+
+    recorded = _read_external_model(name)
+    if recorded:
+        logger.debug("reusing external model entry {} for {!r}", recorded, name)
+        return recorded
 
     identity = ambient_identity()
     run = Run(
@@ -166,6 +189,66 @@ def mint_model_entry(name: str, aim_url: str | None) -> str:
             run.name = name
         except Exception as exc:  # older Aim treats name as read-only
             logger.debug("Failed to set Aim run name {}: {}", name, exc)
+        _record_external_model(name, run.hash)
         return run.hash
     finally:
         run.close()
+
+
+def _external_models_path() -> Path | None:
+    """The per-submit registry path, or None outside a submit.
+
+    Absent outside astrolabe orchestration, where there is no submit to
+    scope an identity to and every call minting its own entry is the
+    honest answer.
+    """
+    from astrolabe_callbacks import contract
+
+    raw = os.environ.get(contract.ENV_EXTERNAL_MODELS)
+    return Path(os.path.expanduser(raw)) if raw else None
+
+
+def _read_external_model(name: str) -> str | None:
+    """Look up a previously minted entry for this name in this submit.
+
+    Best-effort in every failure mode: a missing, unreadable or corrupt
+    registry means "mint a new one", which is exactly the behaviour that
+    existed before the registry did. Losing the file costs a duplicate
+    entry; raising here would cost the result.
+    """
+    path = _external_models_path()
+    if path is None or not path.exists():
+        return None
+    try:
+        entries = json.loads(path.read_text())
+        value = entries.get(name)
+        return value if isinstance(value, str) and value else None
+    except Exception as exc:  # noqa: BLE001 — a bad registry must not fail a result
+        logger.debug("unreadable external-model registry at {}: {}", path, exc)
+        return None
+
+
+def _record_external_model(name: str, run_hash: str) -> None:
+    """Record a minted entry so later steps of this submit reuse it.
+
+    Written whole rather than appended, and via a temp file plus rename,
+    so a reader never sees a half-written registry. Steps run
+    sequentially on one instance, so there is no writer to race with —
+    the rename is for crash safety, not concurrency.
+    """
+    path = _external_models_path()
+    if path is None:
+        return
+    try:
+        entries = {}
+        if path.exists():
+            try:
+                entries = json.loads(path.read_text())
+            except Exception:  # noqa: BLE001 — a corrupt registry is replaced
+                entries = {}
+        entries[name] = run_hash
+        tmp = path.with_suffix(path.suffix + ".tmp")
+        tmp.write_text(json.dumps(entries, indent=2))
+        tmp.replace(path)
+    except Exception as exc:  # noqa: BLE001 — best-effort, never fail a result
+        logger.debug("could not record external model {!r}: {}", name, exc)

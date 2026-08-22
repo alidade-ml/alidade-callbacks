@@ -42,7 +42,7 @@ from __future__ import annotations
 # vendored from; the engine refuses submits whose pinned callback was
 # vendored against a contract older than what this engine version
 # requires.
-CONTRACT_VERSION = "1.8.0"
+CONTRACT_VERSION = "1.9.0"
 
 # --- Env vars: ENGINE sets in the training process -------------------------
 #
@@ -93,6 +93,11 @@ ENV_FIRST_METRIC_MARKER = "ASTROLABE_FIRST_METRIC_MARKER"
 # because the two windows close on different events: a run can emit
 # metrics for hours before its first checkpoint.
 ENV_FIRST_CHECKPOINT_MARKER = "ASTROLABE_FIRST_CHECKPOINT_MARKER"
+
+# Where the callback records the model entries it minted for models
+# astrolabe never trained, so every step of one submit attributes to the
+# same entry instead of forking one per call.
+ENV_EXTERNAL_MODELS = "ASTROLABE_EXTERNAL_MODELS"
 
 # --- Aim run tags: CALLBACK writes, ENGINE + dashboard read ----------------
 #
@@ -321,6 +326,30 @@ def format_first_metric_marker_path(submit_id: str, step_num: int) -> str:
     closed by step 1's evidence.
     """
     return f"astrolabe-first-metric-{submit_id}-step{step_num}.marker"
+
+
+def format_external_models_path(submit_id: str) -> str:
+    """Construct the per-submit external-model registry path.
+
+    Engine sets ``ASTROLABE_EXTERNAL_MODELS`` to this value. The callback
+    reads it before minting an entry for an ``external_name=`` model and
+    writes back what it minted, so a submit that scores one downloaded
+    model across several steps produces one entry rather than one per
+    call.
+
+    **Keyed on submit, not step** — the opposite of the marker paths
+    above, and for the opposite reason. A marker must not leak across
+    steps because it is evidence about one step. This is an identity, and
+    identity leaking across the steps of a submit is the entire point:
+    GLUE, MMLU and BEIR as three steps are three results about one model.
+
+    Deliberately not shared beyond the submit. Reusing an entry across
+    submits would need a lookup, and under local-aim transport the
+    compute host sees only its own submit's runs — it would find nothing
+    and mint a duplicate anyway, silently. A submit is exactly the scope
+    that can be answered from a local file.
+    """
+    return f"astrolabe-external-models-{submit_id}.json"
 
 
 def format_first_checkpoint_marker_path(submit_id: str, step_num: int) -> str:
