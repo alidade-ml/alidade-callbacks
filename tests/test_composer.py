@@ -370,10 +370,10 @@ class TestLogHyperparameters:
 
 
 class TestLifecycle:
-    def test_batch_end_logs_only_wall_time(self, fake_aim_run):
-        # The new contract: Composer's automatic train metrics flow
-        # through log_metrics, NOT batch_end. batch_end synthesizes
-        # only wall_time.
+    def test_batch_end_tracks_nothing(self, fake_aim_run):
+        # Every metric, wall_time included, flows through log_metrics.
+        # batch_end reads a batch counter Composer has already advanced,
+        # so anything written from here lands a step ahead of its pair.
         class FakeTimestamp:
             batch = 5
 
@@ -384,11 +384,7 @@ class TestLifecycle:
         cb = AstrolabeComposerLogger()
         cb.init(state=None, logger_obj=None)
         cb.batch_end(state=FakeState(), logger_obj=None)
-        names = [t["name"] for t in fake_aim_run[-1].tracked]
-        assert "wall_time" in names
-        # state.loss is NOT auto-extracted anymore — only flows via
-        # log_metrics from Composer's Logger.
-        assert "train/loss" not in names
+        assert fake_aim_run[-1].tracked == []
 
     def test_eval_start_pauses_wall_time(self, fake_aim_run):
         cb = AstrolabeComposerLogger()
@@ -459,6 +455,131 @@ class TestLifecycle:
         cb.post_close()
         # Second post_close must not raise or re-close.
         cb.post_close()  # _run is None at this point; no error
+
+
+# ----------------------------------------------------------------------
+# wall_time step alignment
+# ----------------------------------------------------------------------
+
+
+def _tracked(instances):
+    """Every track call across the run, including post-finalize reopens."""
+    return [t for run in instances for t in run.tracked]
+
+
+def _steps(instances, name):
+    return [t["step"] for t in _tracked(instances) if t["name"] == name]
+
+
+class _FakeState:
+    """Composer state at BATCH_END — the counter is already advanced."""
+
+    def __init__(self, batch):
+        self.timestamp = type("_Ts", (), {"batch": batch})()
+        self.loss = None
+
+
+class TestWallTimeStepAlignment:
+    """``wall_time`` is the dashboard's x-axis for every other series, so
+    a step carrying a metric and no ``wall_time`` charts at zero."""
+
+    def test_wall_time_lands_on_the_step_composer_gave_the_metrics(
+        self, fake_aim_run
+    ):
+        # Composer's Logger stamps a batch's metrics with the counter as
+        # it stood *during* the batch, then advances it before BATCH_END.
+        cb = AstrolabeComposerLogger()
+        cb.init(state=None, logger_obj=None)
+        cb.log_metrics({"loss/train/total": 3.4}, step=0)
+        cb.batch_end(state=_FakeState(1), logger_obj=None)
+        assert _steps(fake_aim_run, "wall_time") == [0]
+        assert _steps(fake_aim_run, "train/loss") == [0]
+
+    def test_one_wall_time_point_per_step(self, fake_aim_run):
+        # Composer logs several times per batch (time/*, then the loss,
+        # then computed train metrics) all under one step.
+        cb = AstrolabeComposerLogger()
+        cb.init(state=None, logger_obj=None)
+        cb.log_metrics({"time/batch": 0.0}, step=0)
+        cb.log_metrics({"loss/train/total": 3.4}, step=0)
+        cb.log_metrics({"metrics/train/accuracy": 0.1}, step=0)
+        assert _steps(fake_aim_run, "wall_time") == [0]
+
+    def test_val_metrics_get_a_wall_time_at_their_own_step(self, fake_aim_run):
+        # Evaluators run after BATCH_END, so their metrics carry the
+        # advanced counter and need a point of their own.
+        cb = AstrolabeComposerLogger()
+        cb.init(state=None, logger_obj=None)
+        cb.log_metrics({"loss/train/total": 3.4}, step=0)
+        cb.batch_end(state=_FakeState(1), logger_obj=None)
+        cb.eval_start(state=None, logger_obj=None)
+        cb.log_metrics({"metrics/eval/accuracy": 0.9}, step=1)
+        cb.eval_end(state=None, logger_obj=None)
+        assert _steps(fake_aim_run, "wall_time") == [0, 1]
+        assert _steps(fake_aim_run, "val/accuracy") == [1]
+
+    def test_unstepped_metrics_always_get_a_wall_time(self, fake_aim_run):
+        # step=None means "let Aim auto-increment", so no two calls share
+        # a step and none of them can be deduplicated away.
+        cb = AstrolabeComposerLogger()
+        cb.init(state=None, logger_obj=None)
+        cb.log_metrics({"loss/train/total": 3.4})
+        cb.log_metrics({"loss/train/total": 3.3})
+        assert _steps(fake_aim_run, "wall_time") == [None, None]
+
+    def test_real_trainer_pairs_every_metric_step_with_a_wall_time(
+        self, fake_aim_run
+    ):
+        """The one that would have caught it: a real Composer Trainer.
+
+        Hand-driving the hooks tests the event ordering the author
+        assumed. Composer's own ordering is what the offset came from.
+        """
+        pytest.importorskip("composer")
+        import torch
+        import torch.nn as nn
+        from torch.utils.data import DataLoader, TensorDataset
+        from composer import Trainer
+        from composer.models import ComposerModel
+
+        class TinyComposer(ComposerModel):
+            def __init__(self):
+                super().__init__()
+                self.lin = nn.Linear(4, 1)
+
+            def forward(self, batch):
+                x, _ = batch
+                return self.lin(x)
+
+            def loss(self, outputs, batch):
+                _, y = batch
+                return ((outputs - y) ** 2).mean()
+
+        steps = 4
+        loader = DataLoader(
+            TensorDataset(torch.randn(steps, 4), torch.randn(steps, 1)),
+            batch_size=1,
+        )
+        cb = AstrolabeComposerLogger()
+        Trainer(
+            model=TinyComposer(),
+            train_dataloader=loader,
+            max_duration=f"{steps}ba",
+            loggers=[cb],
+            device="cpu",
+            progress_bar=False,
+        ).fit()
+
+        tracked = _tracked(fake_aim_run)
+        wall_steps = {t["step"] for t in tracked if t["name"] == "wall_time"}
+        metric_steps = {t["step"] for t in tracked if t["name"] != "wall_time"}
+
+        assert "train/loss" in {t["name"] for t in tracked}
+        assert metric_steps, "the trainer logged nothing to assert against"
+        assert metric_steps <= wall_steps, (
+            f"steps charting at zero: {sorted(metric_steps - wall_steps)}"
+        )
+        assert min(wall_steps) == min(metric_steps) == 0
 
 
 # ============================================================

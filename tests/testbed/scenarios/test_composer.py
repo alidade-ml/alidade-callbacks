@@ -24,6 +24,7 @@ from tests.testbed.harness.assertions import (
     assert_metric_count,
     assert_metric_landed,
     assert_run_closed,
+    get_metric_series,
 )
 from tests.testbed.harness.driver import DriverConfig, DriverResult
 
@@ -102,6 +103,40 @@ class TestTraining:
         assert result.run_hash is not None
         # After the mid-epoch new metric + epoch_end, the metric is readable
         assert_metric_landed(aim_repo, result.run_hash, "metric_new_step3")
+
+
+    def test_wall_time_covers_every_step_train_loss_lands_on(
+        self,
+        testbed: "TestbedHandle",
+        aim_repo: Path,
+        stats_jsonl_path: Path,
+        run_driver: RunFixture,
+    ) -> None:
+        """A step with a loss and no wall_time charts at the origin.
+
+        Composer stamps its automatic loss with the batch counter as it
+        stood during the batch and advances it before BATCH_END, so the
+        two series are only aligned when the real trainer says so — a
+        hand-driven hook sequence cannot show this.
+        """
+        pytest.importorskip("composer")
+        result = run_driver(_composer_config(testbed, stats_jsonl_path, steps=6))
+        assert result.exit_code == 0, result.stderr
+        assert result.run_hash is not None
+
+        loss_steps = {
+            step
+            for step, _ in get_metric_series(aim_repo, result.run_hash, "train/loss")
+        }
+        wall_steps = {
+            step
+            for step, _ in get_metric_series(aim_repo, result.run_hash, "wall_time")
+        }
+        assert loss_steps, "Composer logged no train/loss to align against"
+        assert loss_steps <= wall_steps, (
+            f"steps charting at zero: {sorted(loss_steps - wall_steps)}"
+        )
+        assert min(wall_steps) == min(loss_steps)
 
 
 class TestValidation:

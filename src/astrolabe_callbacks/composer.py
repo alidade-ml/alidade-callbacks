@@ -149,6 +149,7 @@ class AstrolabeComposerLogger(LoggerDestination):
         self._explicit_run_name = run_name
         self._run: Any = None
         self._wall_time = _core.WallTimeTracker()
+        self._last_wall_time_step: int | None = None
         self._rank_zero = is_rank_zero()
         # Schema-phase: tracks which metric names have been registered
         # via a close-and-reopen cycle so the NUC-side sync sidecar
@@ -248,6 +249,26 @@ class AstrolabeComposerLogger(LoggerDestination):
                 self._run, name=name, value=scalar, step=step
             )
 
+        self._track_wall_time(step)
+
+    def _track_wall_time(self, step: int | None) -> None:
+        """Write ``wall_time`` for ``step`` unless it already has one.
+
+        Synthesized here rather than at ``batch_end`` because this is the
+        only hook that sees the step Composer attributed the metrics to,
+        and a wall-clock x-axis is useless for any step it does not cover.
+        """
+        if step is not None and step == self._last_wall_time_step:
+            return
+        self._last_wall_time_step = step
+        _core.observe_name(self._schema_state, "wall_time")
+        _core.track_safely(
+            self._run,
+            name="wall_time",
+            value=self._wall_time.elapsed(),
+            step=step,
+        )
+
     def log_hyperparameters(self, hyperparameters: dict[str, Any]) -> None:
         """Apply hyperparameters as Aim run params."""
         if not self._rank_zero or self._run is None or not hyperparameters:
@@ -303,6 +324,12 @@ class AstrolabeComposerLogger(LoggerDestination):
                 new_run_hash=getattr(self._run, "hash", None),
             )
 
+    def batch_start(self, state: Any, logger_obj: Any) -> None:
+        """Anchor the wall-time clock to the first training batch."""
+        if not self._rank_zero or self._run is None:
+            return
+        self._wall_time.mark_first_batch()
+
     def eval_start(self, state: Any, logger_obj: Any) -> None:
         """Pause wall-time accounting during eval."""
         if not self._rank_zero or self._run is None:
@@ -310,34 +337,21 @@ class AstrolabeComposerLogger(LoggerDestination):
         self._wall_time.pause_for_eval()
 
     def batch_end(self, state: Any, logger_obj: Any) -> None:
-        """Anchor wall-time at first training batch + log it, then
-        check whether a schema-phase finalize is due.
+        """Check whether a schema-phase finalize is due.
 
-        Composer's auto-logged train metrics flow through ``log_metrics``
-        (called by Composer's Logger before this hook on the same
-        batch), so this hook only handles the synthesized ``wall_time``
-        metric. The first call also anchors the wall-time clock.
+        Every metric — including the synthesized ``wall_time`` — flows
+        through ``log_metrics``, which Composer's Logger calls before
+        this hook on the same batch. Composer advances
+        ``timestamp.batch`` before firing this event, so a step read
+        here would be one ahead of the metrics it is meant to pair with.
 
-        After the wall_time write, ``_core.maybe_finalize_schema`` runs.
-        On batch 1 (first time around), this is the schema-phase
-        finalize that registers all of batch 0's observed metric names.
-        On subsequent batches with no new names, it's a cheap no-op.
+        On batch 1 (first time around), the finalize below registers all
+        of batch 0's observed metric names. On subsequent batches with
+        no new names, it's a cheap no-op.
         """
         if not self._rank_zero or self._run is None:
             return
         self._wall_time.mark_first_batch()
-
-        try:
-            step = int(state.timestamp.batch)
-        except Exception:
-            step = None
-        _core.observe_name(self._schema_state, "wall_time")
-        _core.track_safely(
-            self._run,
-            name="wall_time",
-            value=self._wall_time.elapsed(),
-            step=step,
-        )
 
         self._run = _core.maybe_finalize_schema(
             self._run, self._schema_state, cfg=self._cfg

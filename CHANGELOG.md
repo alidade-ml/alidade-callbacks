@@ -1,5 +1,22 @@
 # Changelog
 
+## v2.0.0-rc5 — unreleased
+
+### Fixed
+
+- **`wall_time` was written one step ahead of the metrics it pairs with (Composer).**
+  Composer's `Logger` stamps a batch's metrics with the batch counter as it stood during
+  the batch, then advances the counter before firing `BATCH_END` — where the callback used
+  to synthesize `wall_time`. `train/loss` therefore covered steps `0..N-1` and `wall_time`
+  covered `1..N`, leaving the first and last points of every run without a partner. On the
+  dashboard's wall-clock x-axis the run's *final* loss was drawn at t=0, inventing a spike
+  that never happened. `wall_time` is now synthesized in `log_metrics`, once per step, so
+  it covers exactly the steps that carry a metric — including validation metrics, which
+  evaluators log after the counter has advanced. The clock is now anchored at `BATCH_START`
+  of the first batch rather than its end, so the axis includes the first batch's duration.
+  The other three framework callbacks were never affected; they write `wall_time` in the
+  same call as the metrics.
+
 ## v2.0.0-rc4
 
 Relative to **rc3**, this carries the whole checkpoint-provenance surface — which had
