@@ -2,6 +2,19 @@
 
 ## v2.0.0-rc5 — unreleased
 
+### Changed
+
+- **A second metric on one eval task now raises `EvalInputError`.** The Eval tab gives a
+  task one column and picks the survivor by sorting the metric segment, so a second
+  `run.track("eval/<task>/<other_metric>", ...)` reached Aim and was then unreachable from
+  the tab — with no error and no warning, and with which value survived decided by
+  alphabetical order rather than by write order. `start_eval_run` and
+  `start_eval_run_from_checkpoint` now hand back a run whose `track` refuses it, naming
+  both metric paths. Tracking the *same* path at many steps is the rolling-eval case and
+  is unaffected, as is `log_eval_table`, whose `rows` dict could never express the
+  duplicate. A benchmark that genuinely reports two numbers — MNLI matched and mismatched
+  — wants a task each, or a `task_set` each.
+
 ### Fixed
 
 - **`wall_time` was written one step ahead of the metrics it pairs with (Composer).**
@@ -16,6 +29,13 @@
   of the first batch rather than its end, so the axis includes the first batch's duration.
   The other three framework callbacks were never affected; they write `wall_time` in the
   same call as the metrics.
+
+- **`docs/eval-results.md` named the wrong axis.** "Segment 2 becomes a row, segment 3
+  becomes a column" contradicted the same page's "a leaderboard, one row per model" and
+  described a table the Eval tab does not render. The row is the model, segment 2 is the
+  column, and segment 3 is the metric that column reports — carried for provenance, not
+  displayed. Reading the old sentence literally is what leads to putting several metrics
+  on one task.
 
 ## v2.0.0-rc4
 

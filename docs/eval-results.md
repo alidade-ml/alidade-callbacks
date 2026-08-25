@@ -146,15 +146,25 @@ eval / <task> / <metric>
         cola      matthews
 ```
 
-- segment 2 becomes a **row** in the table
-- segment 3 becomes a **column**
+**One metric per task.** The row is the *model*. Segment 2 becomes that task's **column**,
+and segment 3 is the metric that column reports — carried for provenance, not displayed:
+
+```
+RUN                          COLA    SST2    MNLI     AVG
+my-run  99abe53             0.822   0.943   0.864   0.876
+```
+
+A task with two metrics has one column and nowhere to put the second, so the second
+`track()` **raises `EvalInputError`** rather than writing a number nothing can reach. If a
+benchmark genuinely reports two numbers — MNLI matched and mismatched — give them a task
+each (`mnli_matched`, `mnli_mismatched`), or a `task_set` each.
 
 Slashes in either field are rejected at the call site, because a stray one silently
 scrambles which segment is which.
 
 ### The `avg` column
 
-Log it as a row. The dashboard renders a row keyed `"avg"` as the last column.
+Log it as one more task. The dashboard renders the task keyed `"avg"` as the last column.
 
 ```python
 rows = {"cola": ("matthews", 0.822), "avg": ("mean", 0.876)}

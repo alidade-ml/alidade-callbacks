@@ -13,8 +13,9 @@ discovers from the model-run page:
 * ``astrolabe.model_run_hash = "<training_run_hash>"`` — the join key.
   One eval run scores exactly one training run.
 
-Metric path convention: ``eval/<task>/<metric>`` — the dashboard parses
-this to populate the table's row (task) and metric column.
+Metric path convention: ``eval/<task>/<metric>`` — the dashboard's table
+gives each model a row and each task a column, so a task carries exactly
+one metric and a second one is refused at the call site.
 
 This lives in ``astrolabe-callbacks`` rather than the main ``astrolabe``
 package so training/eval repos depend on **one** lightweight library
@@ -68,6 +69,50 @@ class EvalInputError(ValueError):
 
 
 
+def _split_eval_path(name: Any) -> tuple[str, str] | None:
+    if not isinstance(name, str):
+        return None
+    parts = name.split("/")
+    if len(parts) != 3 or parts[0] != "eval":
+        return None
+    return parts[1], parts[2]
+
+
+class _GuardedTrack:
+    """``run.track`` that refuses a second metric on an already-scored task.
+
+    The Eval tab gives a task one column and picks the survivor by sorting
+    the metric segment, so the loser reaches Aim and is then unreachable —
+    the silent-loss shape that makes a missing parent raise too. Delegates
+    every other attribute so the wrapped run's ``track`` stays inspectable.
+    """
+
+    def __init__(self, inner: Any):
+        self._inner = inner
+        self._scored: dict[str, str] = {}
+
+    def __getattr__(self, item: str) -> Any:
+        return getattr(self._inner, item)
+
+    def __call__(self, *args: Any, **kwargs: Any) -> Any:
+        name = kwargs["name"] if "name" in kwargs else (
+            args[1] if len(args) > 1 else None
+        )
+        split = _split_eval_path(name)
+        if split is not None:
+            task, metric = split
+            first = self._scored.setdefault(task, metric)
+            if first != metric:
+                raise EvalInputError(
+                    f"task {task!r} is already scored by 'eval/{task}/{first}'; "
+                    f"'eval/{task}/{metric}' would reach Aim and then be "
+                    f"unreachable, because the Eval tab gives a task one "
+                    f"column. Give each metric its own task, or its own "
+                    f"task_set."
+                )
+        return self._inner(*args, **kwargs)
+
+
 def _open_eval_run(*, task_set: str, aim_url: str | None) -> Any:
     """Open an Aim run carrying everything an eval has except its model.
 
@@ -98,6 +143,7 @@ def _open_eval_run(*, task_set: str, aim_url: str | None) -> Any:
         run[key] = value
     run[contract.TAG_KIND] = contract.KIND_EVAL
     run[contract.TAG_TASK_SET] = task_set
+    run.track = _GuardedTrack(run.track)
     return run
 
 
@@ -171,6 +217,12 @@ def start_eval_run(
     display the run, but cost / duration views may treat it as
     in-flight indefinitely.
 
+    ``.track(...)`` raises :class:`EvalInputError` if it is given a second
+    metric for a task the run has already scored: the Eval tab gives a
+    task one column, so the second value would be written and then be
+    unreachable. Tracking the *same* ``eval/<task>/<metric>`` path at many
+    steps is the rolling-eval case and is fine.
+
     Parameters
     ----------
     model_run_hash : str
@@ -197,6 +249,8 @@ def start_eval_run(
     ------
     EvalInputError
         If ``model_run_hash`` or ``task_set`` is empty or not a string.
+        Also raised by the returned run's ``.track(...)`` on a second
+        metric for one task.
     ImportError
         If the ``aim`` package isn't installed (re-raised, not
         swallowed — eval scripts that can't reach Aim should fail

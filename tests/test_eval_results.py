@@ -363,6 +363,112 @@ class TestMetricPaths:
         assert value == 1.0
 
 
+# ---------- one metric per task --------------------------------------
+
+
+class TestOneMetricPerTask:
+    """A task gets one column on the Eval tab, and the survivor is picked
+    by sorting the metric segment. A second metric therefore reaches Aim
+    and is then unreachable — the same silent loss that makes a missing
+    parent raise rather than warn."""
+
+    def _run(self, mock):
+        with patch("aim.Run", return_value=mock):
+            return start_eval_run(
+                model_run_hash="abc", task_set="ordering", aim_url="aim://test"
+            )
+
+    def test_second_metric_on_one_task_raises(self):
+        run = self._run(_make_run_mock())
+        run.track(0.111, name="eval/multi/aaa_first", step=0)
+        with pytest.raises(EvalInputError):
+            run.track(0.222, name="eval/multi/zzz_last", step=0)
+
+    def test_error_names_both_metric_paths(self):
+        # The message has to say which value is already there, or the
+        # author cannot tell which of their two calls to change.
+        run = self._run(_make_run_mock())
+        run.track(0.111, name="eval/multi/aaa_first", step=0)
+        with pytest.raises(EvalInputError) as exc:
+            run.track(0.222, name="eval/multi/zzz_last", step=0)
+        assert "eval/multi/aaa_first" in str(exc.value)
+        assert "eval/multi/zzz_last" in str(exc.value)
+
+    def test_rejected_value_never_reaches_aim(self):
+        mock = _make_run_mock()
+        run = self._run(mock)
+        run.track(0.111, name="eval/multi/aaa_first", step=0)
+        with pytest.raises(EvalInputError):
+            run.track(0.222, name="eval/multi/zzz_last", step=0)
+        assert mock.track.call_count == 1
+
+    def test_write_order_does_not_decide_which_one_raises(self):
+        # The tab's survivor is the sort winner, so it was the *last*
+        # write that got dropped in one run and the first in another.
+        # The call site sees the same rejection either way.
+        run = self._run(_make_run_mock())
+        run.track(0.222, name="eval/multi/zzz_last", step=0)
+        with pytest.raises(EvalInputError):
+            run.track(0.111, name="eval/multi/aaa_first", step=0)
+
+    def test_same_metric_at_many_steps_is_allowed(self):
+        # A rolling eval tracks one path repeatedly; that is the trace
+        # block, not a second column.
+        mock = _make_run_mock()
+        run = self._run(mock)
+        for step in (10_000, 20_000, 30_000):
+            run.track(0.5, name="eval/cola/matthews", step=step)
+        assert mock.track.call_count == 3
+
+    def test_tasks_are_independent(self):
+        mock = _make_run_mock()
+        run = self._run(mock)
+        run.track(0.111, name="eval/multi/aaa_first", step=0)
+        run.track(0.333, name="eval/solo/only", step=0)
+        assert mock.track.call_count == 2
+
+    def test_two_runs_do_not_share_scored_tasks(self):
+        # The guard is per-run state; leaking it across runs would
+        # reject the second benchmark of a two-benchmark script.
+        first = self._run(_make_run_mock())
+        second = self._run(_make_run_mock())
+        first.track(0.111, name="eval/multi/aaa_first", step=0)
+        second.track(0.222, name="eval/multi/zzz_last", step=0)
+
+    def test_name_passed_positionally_is_still_guarded(self):
+        run = self._run(_make_run_mock())
+        run.track(0.111, "eval/multi/aaa_first", 0)
+        with pytest.raises(EvalInputError):
+            run.track(0.222, "eval/multi/zzz_last", 0)
+
+    @pytest.mark.parametrize(
+        "first,second",
+        [
+            ("wall_time", "throughput"),
+            ("eval/multi", "eval/solo"),
+            ("eval/multi/a/b", "eval/multi/c/d"),
+            (None, 7),
+        ],
+    )
+    def test_non_eval_paths_pass_through(self, first, second):
+        # The guard reads a three-segment eval path and nothing else.
+        # Two *different* names, so a guard that mis-parses them into a
+        # shared task would reject the second.
+        mock = _make_run_mock()
+        run = self._run(mock)
+        run.track(0.1, name=first, step=0)
+        run.track(0.2, name=second, step=0)
+        assert mock.track.call_count == 2
+
+    def test_track_stays_inspectable(self):
+        # Callers (and the rest of this file) reach through run.track to
+        # the underlying Aim method; the guard must not hide it.
+        mock = _make_run_mock()
+        run = self._run(mock)
+        run.track(0.111, name="eval/multi/aaa_first", step=0)
+        assert run.track.call_args.kwargs["name"] == "eval/multi/aaa_first"
+
+
 # ---------- run lifecycle ----------------------------------------------
 
 
