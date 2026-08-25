@@ -273,6 +273,57 @@ class TestStartEvalRun:
         )
 
 
+    def test_second_metric_on_one_task_is_refused(
+        self,
+        testbed: "TestbedHandle",
+        run_eval_driver: RunEvalFixture,
+    ) -> None:
+        """A task gets one column, so the second metric is refused at the
+        call site rather than written and left unreachable."""
+        result = run_eval_driver(
+            _streaming_config(
+                testbed,
+                model_run_hash=FAKE_PARENT_HASH,
+                task_set="ordering",
+                streaming=[
+                    ("eval/multi/aaa_first", [(0, 0.111)]),
+                    ("eval/multi/zzz_last", [(0, 0.222)]),
+                ],
+            )
+        )
+        assert result.exit_code != 0
+        assert "eval/multi/aaa_first" in result.stderr
+        assert "eval/multi/zzz_last" in result.stderr
+
+    def test_one_metric_each_on_two_tasks_both_land(
+        self,
+        testbed: "TestbedHandle",
+        aim_repo: Path,
+        run_eval_driver: RunEvalFixture,
+    ) -> None:
+        """The guard is per task. A mock cannot show that wrapping a real
+        ``aim.Run``'s ``track`` still writes through to Aim."""
+        result = run_eval_driver(
+            _streaming_config(
+                testbed,
+                model_run_hash=FAKE_PARENT_HASH,
+                task_set="ordering",
+                streaming=[
+                    ("eval/multi/aaa_first", [(0, 0.111)]),
+                    ("eval/solo/only", [(0, 0.333)]),
+                ],
+            )
+        )
+        assert result.exit_code == 0, result.stderr
+        assert result.eval_run_hash is not None
+        assert_metric_values(
+            aim_repo, result.eval_run_hash, "eval/multi/aaa_first", [(0, 0.111)]
+        )
+        assert_metric_values(
+            aim_repo, result.eval_run_hash, "eval/solo/only", [(0, 0.333)]
+        )
+
+
 class TestStartEvalRunFromCheckpoint:
     """Checkpoint-based eval linkage. Unskipped when the helper landed."""
 
