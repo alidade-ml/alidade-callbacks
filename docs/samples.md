@@ -13,7 +13,7 @@ are a separate run kind rather than an eval with unusual values.
 |---|---|---|
 | `train/*`, `val/*` | the training run | Training tab |
 | `eval/<task>/<metric>` | a separate eval run | Eval tab |
-| `sample/<set>/{input,output}` | a separate sample run | Examples tab |
+| `sample/<set>/{input,output}` | a separate sample run | Samples tab |
 
 ---
 
@@ -38,7 +38,7 @@ log_samples(
 Attribution works exactly as it does for eval: `checkpoint=` reads the training run's
 identity out of the file, offline, without contacting Aim. `model_run_hash=` and
 `external_name=` are there for the cases eval documents. A model cannot end up
-attributed one way on the Eval tab and another on Examples, because it is the same
+attributed one way on the Eval tab and another on Samples, because it is the same
 code deciding.
 
 ---
