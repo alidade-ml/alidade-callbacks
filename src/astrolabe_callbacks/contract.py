@@ -42,7 +42,7 @@ from __future__ import annotations
 # vendored from; the engine refuses submits whose pinned callback was
 # vendored against a contract older than what this engine version
 # requires.
-CONTRACT_VERSION = "1.9.0"
+CONTRACT_VERSION = "1.9.2"
 
 # --- Env vars: ENGINE sets in the training process -------------------------
 #
@@ -51,12 +51,14 @@ CONTRACT_VERSION = "1.9.0"
 # (directly or via helpers) to wire itself to the orchestration.
 
 # Unique identifier for one submit (one `astrolabe submit` invocation).
-# Callbacks tag the Aim run with this so the dashboard can link the run
-# back to the submit row in the state DB.
+# The Aim run carries it as ``astrolabe.submit_id``, which arrives through
+# AIM_RUN_TAGS rather than from this variable; the callback reads this one
+# directly only for checkpoint provenance.
 ENV_SUBMIT_ID = "ASTROLABE_SUBMIT_ID"
 
-# Human-readable experiment name from the YAML. Callbacks may use this
-# as the Aim run name when one isn't set explicitly.
+# Human-readable experiment name from the YAML. The callback resolves it
+# as the Aim *experiment*, taking precedence over any experiment_name
+# passed at the call site. Not the run name, which is a separate field.
 ENV_EXPERIMENT_NAME = "ASTROLABE_EXPERIMENT_NAME"
 
 # Tag dict the engine wants applied to every run produced under this
@@ -67,20 +69,23 @@ ENV_EXPERIMENT_NAME = "ASTROLABE_EXPERIMENT_NAME"
 ENV_AIM_RUN_TAGS = "AIM_RUN_TAGS"
 
 # Filesystem path to the local Aim repo the callback should write
-# through. Set only when the NUC has ``aim_local_mode: true`` in
-# ``/etc/astrolabe/config.yaml`` (v1.7.0+). When unset, callbacks fall
-# back to the tunneled Aim server at ``aim://localhost:43800``.
+# through. Set unless the NUC selected the tunnel transport with
+# ``aim_local_mode: false``, in which case callbacks fall back to the
+# tunneled Aim server at ``aim://localhost:43800``.
 # Engine constructs the value via :func:`format_local_aim_repo_path`.
 ENV_AIM_REPO_PATH = "ASTROLABE_AIM_REPO_PATH"
 
-# Path to a jsonl file the callback appends structured events to (run
-# open/close, schema finalize, dropped batches, etc.). Used by the
-# canary verifier harness for cross-checking claimed side effects.
+# Path to a jsonl file the callback appends structured events to: buffer
+# heartbeats, sample submissions, run close, drain failures, schema
+# finalizes. Every record comes from a live run, so a non-empty file is
+# evidence one existed. There is no run-open record.
+# Read by the canary verifier and by the engine's sidecar gate.
 ENV_CALLBACK_STATS_PATH = "ASTROLABE_CALLBACK_STATS_PATH"
 
-# Directory the engine has provisioned for per-rank stdout/stderr logs
-# during distributed training. Callbacks (and frameworks) write rank-N
-# logs into ``$ASTROLABE_RANK_LOGS_DIR/rank-N.{stdout,stderr}``.
+# Directory the engine provisions for per-rank stdout/stderr logs during
+# distributed training, and pulls back at step end. Written by the
+# researcher's own launcher command, which has to opt in by pointing at
+# it. No callback reads this.
 ENV_RANK_LOGS_DIR = "ASTROLABE_RANK_LOGS_DIR"
 
 # Filesystem path the astrolabe-callbacks library touches when the
@@ -162,9 +167,10 @@ NAMESPACE_TRAIN = "train/"           # during-training metrics
 NAMESPACE_VAL = "val/"               # during-training validation
 NAMESPACE_EVAL = "eval/"             # post-training benchmarks
 
-# Engine-synthesized metric: wall-clock time at each step. Callbacks
-# don't write this themselves; the engine derives it from Aim's
-# per-step timestamps when the Go API serves the run.
+# Wall-clock elapsed seconds, written by the callback alongside the
+# metrics of the step it belongs to so the dashboard can offer a
+# wall-clock x-axis. The name says synthesized because no framework
+# emits it; the callback derives it, and the engine only reads it.
 SYNTHESIZED_WALL_TIME = "wall_time"
 
 # --- Defaults --------------------------------------------------------------
@@ -179,8 +185,8 @@ LOCAL_AIM_REPO_PATH_TEMPLATE = "/tmp/aim-local-{submit_id}"
 # ``sample/<set>/output``, paired by step.
 #
 # Declared here because it has two consumers that must agree exactly: the
-# callback builds these names, and the NUC-side exporter reads them back
-# (SAMPEXP-1). A disagreement is silent — the reader finds no sequence and
+# callback builds these names, and the NUC-side exporter reads them back.
+# A disagreement is silent — the reader finds no sequence and
 # reports a batch with no samples, which is a plausible and wrong answer.
 # Substitute via :func:`format_sample_sequence_name`; do not call
 # ``.format(...)`` at a call site.
@@ -190,12 +196,12 @@ SAMPLE_SEQUENCE_TEMPLATE = "sample/{sample_set}/{role}"
 SAMPLE_ROLE_INPUT = "input"
 SAMPLE_ROLE_OUTPUT = "output"
 
-# Default Aim tracking-server URL. The engine opens a reverse SSH
-# tunnel from the compute host to the NUC's Aim server on port 43800
-# (see ``astrolabe.engine._setup``). Training-time consumers (callbacks
-# and the canary workload) connect to this URL by default; both sides
-# of the contract MUST agree on the port number so the tunnel + client
-# pair line up.
+# Aim tracking-server URL for tunnel transport, which a NUC selects with
+# ``aim_local_mode: false``. The engine then opens a reverse SSH tunnel
+# from the compute host to the NUC's Aim server on port 43800 (see
+# ``astrolabe.engine._setup``). Both sides MUST agree on the port so the
+# tunnel and client pair line up. Under the default local-aim transport
+# nothing listens here — callbacks use ASTROLABE_AIM_REPO_PATH instead.
 DEFAULT_AIM_URL = "aim://localhost:43800"
 
 # --- Canonical formatters / parsers ---------------------------------------
