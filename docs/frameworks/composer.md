@@ -64,11 +64,16 @@ python train.py
 |---|---|
 | Composer's automatic train loss | `train/loss` (renamed from `loss/train/total`) |
 | Composer's per-batch train metrics (e.g. `metrics/train/Accuracy`) | `train/Accuracy` |
-| Composer's eval metrics (e.g. `metrics/eval/MaskedLanguagePerplexity`) | `eval/MaskedLanguagePerplexity` |
+| Composer's eval metrics (e.g. `metrics/eval/MaskedLanguagePerplexity`) | `val/MaskedLanguagePerplexity` |
 | `logger.log_metrics({"my_thing": x})` from your training code | `my_thing` (passed through unchanged) |
 | `lr-DecoupledAdamW` from `lr_monitor` callback | `lr-DecoupledAdamW` (passed through unchanged) |
 | `throughput/samples_per_sec` from `speed_monitor` callback | `throughput/samples_per_sec` (passed through unchanged) |
 | Synthesized | `wall_time` (training-only elapsed seconds, eval-paused) |
+
+Composer's eval loop runs *during* training, so its metrics land under `val/` and chart
+on the dashboard's Training tab. `eval/` is a different namespace — it is reserved for
+post-training benchmark suites logged on their own Aim run, which is what the Eval tab
+reads. See [`docs/eval-results.md`](../eval-results.md) for that side.
 
 ## Logging custom metrics
 
@@ -104,7 +109,7 @@ No special setup. Composer's launcher (`composer -n 8 train.py` or `torchrun`) i
 
 ### Multiple eval suites
 
-If you have multiple eval suites (e.g. `glue_mnli`, `glue_sst2`), Composer emits metrics under `metrics/<suite_name>/<metric>`. The default suite name `"eval"` collapses to `eval/`; named suites keep their name.
+If you have multiple eval suites (e.g. `glue_mnli`, `glue_sst2`), Composer emits metrics under `metrics/<suite_name>/<metric>`. The default suite name `"eval"` collapses to `val/`; named suites keep their name.
 
 ```python
 # Named suite "glue_mnli" with metric "Accuracy"
@@ -113,7 +118,7 @@ If you have multiple eval suites (e.g. `glue_mnli`, `glue_sst2`), Composer emits
 
 # Default suite "eval" with metric "MaskedLanguagePerplexity"
 # → Composer emits: metrics/eval/MaskedLanguagePerplexity
-# → AstrolabeComposerLogger writes to Aim: eval/MaskedLanguagePerplexity
+# → AstrolabeComposerLogger writes to Aim: val/MaskedLanguagePerplexity
 ```
 
 ### Combining with other loggers
