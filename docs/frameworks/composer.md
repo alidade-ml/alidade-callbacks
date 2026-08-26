@@ -109,12 +109,12 @@ No special setup. Composer's launcher (`composer -n 8 train.py` or `torchrun`) i
 
 ### Multiple eval suites
 
-If you have multiple eval suites (e.g. `glue_mnli`, `glue_sst2`), Composer emits metrics under `metrics/<suite_name>/<metric>`. The default suite name `"eval"` collapses to `val/`; named suites keep their name.
+If you have multiple eval suites (e.g. `glue_mnli`, `glue_sst2`), Composer emits metrics under `metrics/<suite_name>/<metric>`. Only the default suite name `"eval"` is rewritten, to `val/`. A named suite is passed through untouched, `metrics/` prefix included — the callback rewrites the two prefixes it can recognise unambiguously and leaves everything else alone.
 
 ```python
 # Named suite "glue_mnli" with metric "Accuracy"
 # → Composer emits: metrics/glue_mnli/Accuracy
-# → AstrolabeComposerLogger writes to Aim: glue_mnli/Accuracy
+# → AstrolabeComposerLogger writes to Aim: metrics/glue_mnli/Accuracy
 
 # Default suite "eval" with metric "MaskedLanguagePerplexity"
 # → Composer emits: metrics/eval/MaskedLanguagePerplexity
