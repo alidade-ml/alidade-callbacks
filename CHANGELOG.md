@@ -30,6 +30,18 @@
   The other three framework callbacks were never affected; they write `wall_time` in the
   same call as the metrics.
 
+- **`docs/frameworks/composer.md` sent Composer's validation metrics to the wrong tab.**
+  The page said `metrics/eval/<x>` lands in Aim as `eval/<x>`, in both the "what gets
+  logged" table and the multiple-eval-suites example. It lands as `val/<x>` — the code and
+  `docs/contract.md` have said so since the `val/` flip. The two namespaces are not
+  interchangeable: `eval/` is reserved for post-training benchmark suites on their own Aim
+  run and is what the dashboard's Eval tab reads, so a researcher following this page would
+  have gone looking for their during-training validation curves on a tab that never shows
+  them. The page now also states the split rather than leaving it to be inferred.
+
+- **`docs/samples.md` called the Samples tab the "Examples tab".** Two places, including
+  the run-kind table that is the first thing the page shows.
+
 - **`docs/eval-results.md` named the wrong axis.** "Segment 2 becomes a row, segment 3
   becomes a column" contradicted the same page's "a leaderboard, one row per model" and
   described a table the Eval tab does not render. The row is the model, segment 2 is the
