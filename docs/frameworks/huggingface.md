@@ -133,7 +133,7 @@ Aim's time-series for `train/loss` reflects HF's `logging_steps` interval. If `l
 
 ### `eval_strategy="no"` skips on_evaluate
 
-If you set `eval_strategy="no"` (no automatic eval during training), `on_evaluate` never fires and you'll have no `eval/*` metrics in Aim. Set `eval_strategy="steps"` or `"epoch"` to get eval metrics.
+If you set `eval_strategy="no"` (no automatic eval during training), `on_evaluate` never fires and you'll have no `val/*` metrics in Aim. Set `eval_strategy="steps"` or `"epoch"` to get them. HF calls this phase "eval"; it lands under `val/` because it is validation during training.
 
 ### No `on_exception` hook in TrainerCallback
 

@@ -108,7 +108,7 @@ with Run() as run:
         run.log_eval(loss=val_loss, step=batch_idx)
 ```
 
-`run.log_train(**metrics)` namespaces under `train/`. `run.log_eval(**metrics)` namespaces under `eval/` (will become `val/` in v1.0.0). For arbitrary names, use `run.log(name, value)`. See [docs/frameworks/pytorch.md](docs/frameworks/pytorch.md).
+`run.log_train(**metrics)` namespaces under `train/`. `run.log_eval(**metrics)` namespaces under `val/` — during-training validation, despite the method name. For arbitrary names, use `run.log(name, value)`. See [docs/frameworks/pytorch.md](docs/frameworks/pytorch.md).
 </details>
 
 ## Configuration

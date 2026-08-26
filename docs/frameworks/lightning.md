@@ -127,7 +127,7 @@ If you want a per-batch metric in Aim's time series, pass `on_step=True` explici
 
 ### `val_` vs `val/` prefix is up to you
 
-Lightning users split: some prefix with underscore (`self.log("val_loss", ...)`), some with slash (`self.log("val/loss", ...)`). Both work — both are re-namespaced under `eval/` in Aim.
+Lightning users split: some prefix with underscore (`self.log("val_loss", ...)`), some with slash (`self.log("val/loss", ...)`). Both work — both are re-namespaced under `val/` in Aim. The `eval/` namespace is reserved for post-training benchmark suites and is never written during training.
 
 ### Eval-pause precision
 
