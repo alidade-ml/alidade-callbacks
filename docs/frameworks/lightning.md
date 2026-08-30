@@ -18,6 +18,12 @@ trainer.fit(model, train_loader, val_loader)
 
 Use Lightning's standard `self.log(...)`. Whatever you log lands in Aim under the same name.
 
+**Name your training loss `train/loss`.** Lightning is the one framework where you
+choose it: Composer emits `loss/train/total` and HuggingFace emits `loss`, both of
+which we rename to `train/loss`, but a name you picked is never rewritten. The
+dashboard's primary chart is `train/loss`, so a run that logs plain `loss` charts
+correctly under its own name and leaves that chart empty.
+
 ```python
 import lightning.pytorch as pl
 
@@ -26,8 +32,8 @@ class MyModel(pl.LightningModule):
         x, y = batch
         loss = self.loss_fn(self(x), y)
         # All three lines below land in Aim with the names you chose:
-        self.log("loss", loss, on_step=True, on_epoch=True)
-        self.log("perplexity", torch.exp(loss), on_step=True)
+        self.log("train/loss", loss, on_step=True, on_epoch=True)
+        self.log("train/perplexity", torch.exp(loss), on_step=True)
         self.log("throughput/samples_per_sec", batch_idx / time_so_far, on_step=True)
         return loss
 
@@ -69,7 +75,7 @@ trainer.fit(model, train_loader, val_loader)
 |---|---|
 | `self.log("name", val)` in `training_step` | `name` (passed through unchanged) |
 | `self.log("val_<x>", val)` or `self.log("val/<x>", val)` in `validation_step` | `val/<x>` |
-| `self.log("loss", val, on_step=True)` | `loss` (your name; not auto-renamed to `train/loss`) |
+| `self.log("loss", val, on_step=True)` | `loss` — your name, **not** auto-renamed to `train/loss`; the primary chart stays empty |
 | Synthesized | `wall_time` (training-only elapsed seconds, eval-paused) |
 
 ## Run name resolution
