@@ -728,3 +728,56 @@ class TestDiagnosticLogs:
 # Note: TestSubmitSample + TestDrainerDeath moved to
 # test_metric_buffer.py — they need the real async drainer path,
 # which test_metric_buffer.py disables the autouse sync override for.
+
+
+class TestWallTimeOnlyWhereAMetricLanded:
+    """wall_time is the x-axis for the other series on a run.
+
+    A sample at a step none of them cover indexes nothing, and downstream
+    it is worse than absent: the dashboard aligns wall_time onto a
+    metric's steps, so a trailing sample beyond the last real step is a
+    point with no pair. Raw counts were 301 wall_time against 300
+    train/loss.
+
+    Composer calls log_metrics for values we skip as non-scalar, and once
+    more at the end of training. Those are the calls that produced it.
+    """
+
+    def _names(self, run):
+        return [entry["name"] for entry in run.tracked]
+
+    def test_no_wall_time_when_every_metric_was_skipped(self, fake_aim_run):
+        cb = AstrolabeComposerLogger()
+        cb.init(state=None, logger_obj=None)
+
+        # A dict of values _to_scalar rejects — a real case, which is why
+        # the skip path exists at all.
+        cb.log_metrics({"some/tensorish": object()}, step=7)
+
+        assert "wall_time" not in self._names(fake_aim_run[-1])
+
+    def test_no_wall_time_for_an_empty_call(self, fake_aim_run):
+        cb = AstrolabeComposerLogger()
+        cb.init(state=None, logger_obj=None)
+        cb.log_metrics({}, step=7)
+        assert "wall_time" not in self._names(fake_aim_run[-1])
+
+    def test_wall_time_still_accompanies_a_real_metric(self, fake_aim_run):
+        """The ordinary case has to keep working, or this trades an extra
+        sample for a missing axis."""
+        cb = AstrolabeComposerLogger()
+        cb.init(state=None, logger_obj=None)
+        cb.log_metrics({"loss/train/total": 0.5}, step=7)
+
+        names = self._names(fake_aim_run[-1])
+        assert "train/loss" in names
+        assert "wall_time" in names
+
+    def test_wall_time_shares_the_step_of_the_metric_it_indexes(self, fake_aim_run):
+        """Same step, or it is not an index for that point."""
+        cb = AstrolabeComposerLogger()
+        cb.init(state=None, logger_obj=None)
+        cb.log_metrics({"loss/train/total": 0.5}, step=11)
+
+        steps = {e["name"]: e["step"] for e in fake_aim_run[-1].tracked}
+        assert steps["wall_time"] == steps["train/loss"] == 11
