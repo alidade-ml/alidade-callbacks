@@ -225,6 +225,7 @@ class AstrolabeComposerLogger(LoggerDestination):
                 )
             return
 
+        tracked_any = False
         for raw_name, value in metrics.items():
             scalar = _to_scalar(value)
             if scalar is None:
@@ -248,8 +249,17 @@ class AstrolabeComposerLogger(LoggerDestination):
             _core.track_safely(
                 self._run, name=name, value=scalar, step=step
             )
+            tracked_any = True
 
-        self._track_wall_time(step)
+        # Only where something was written for it to index.
+        #
+        # wall_time exists to be the x-axis for the other series, so a
+        # sample at a step none of them cover indexes nothing. Composer
+        # calls this hook for values we skip as non-scalar, and once more
+        # at the end of training, which is where the extra sample came
+        # from — 301 wall_time against 300 train/loss.
+        if tracked_any:
+            self._track_wall_time(step)
 
     def _track_wall_time(self, step: int | None) -> None:
         """Write ``wall_time`` for ``step`` unless it already has one.
