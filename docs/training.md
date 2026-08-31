@@ -88,15 +88,10 @@ x-axis. It is written at the steps your metrics are written at, and nowhere else
 a point on that axis with nothing to index would be a point the dashboard has to
 either drop or pair with something that is not there.
 
-`wall_time` answers one question: **how much time has the model spent training so
-far.** Setup is excluded, because loading a model is not training, and eval pauses
-are subtracted, because evaluating is not training either. So two runs that did
-the same amount of training agree at the same step no matter how often they
-stopped to evaluate. Comparing them is the only thing the axis is for.
-
-It is not a timestamp. Aim already writes raw wall-clock on every record, and that
-value includes setup, eval and every stall, which makes an identical pair of runs
-look different for reasons that have nothing to do with training.
+It excludes setup and subtracts eval pauses so that runs stay comparable: two that
+did the same amount of training agree at the same step no matter how often they
+stopped to evaluate. Aim's own per-record wall-clock includes all of it, which is
+why we synthesize this instead of reading that.
 
 **A few framework-owned names get normalized** so the dashboard can find them across
 frameworks — Composer's `loss/train/total` and HuggingFace's bare `loss` both become
