@@ -84,7 +84,9 @@ self.log("my/custom/thing", value)          # lands as my/custom/thing
 ```
 
 The only metric we synthesize is `wall_time`, so the dashboard can offer a wall-clock
-x-axis.
+x-axis. It is written at the steps your metrics are written at, and nowhere else —
+a point on that axis with nothing to index would be a point the dashboard has to
+either drop or pair with something that is not there.
 
 **A few framework-owned names get normalized** so the dashboard can find them across
 frameworks — Composer's `loss/train/total` and HuggingFace's bare `loss` both become

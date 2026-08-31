@@ -51,6 +51,8 @@ Close failures are silent — by the time we close, the data has been streamed a
 
 This is the core contract. The callback exists to forward your metrics to Aim with astrolabe's tag conventions applied — not to decide what's worth logging.
 
+`wall_time` is written **only at steps where a metric of yours landed**. That is not a tidiness rule: Aim stores metrics in a reservoir of bounded size, so a sample at a step nothing else covers does not simply sit there unused — it *evicts* a real one, and the evicted point can be anywhere in the run rather than at the end.
+
 | Framework | How user metrics flow through |
 |---|---|
 | Composer | `LoggerDestination.log_metrics(metrics, step)` receives every `logger.log_metrics(...)` call from your training YAML and any user code |
