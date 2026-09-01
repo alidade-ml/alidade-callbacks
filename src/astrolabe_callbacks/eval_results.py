@@ -20,7 +20,7 @@ one metric and a second one is refused at the call site.
 This lives in ``astrolabe-callbacks`` rather than the main ``astrolabe``
 package so training/eval repos depend on **one** lightweight library
 for all Aim instrumentation — they never pull in the orchestration
-framework. It uses the same ``aim_url`` / ``ASTROLABE_AIM_URL``
+framework. It uses the same ``aim_url`` / ``ALIDADE_AIM_URL``
 connection convention as the framework callbacks and the raw-PyTorch
 ``Run`` context manager.
 
@@ -235,7 +235,7 @@ def start_eval_run(
         ``"agent-rollouts-2026q2"``, etc.). Becomes
         ``astrolabe.task_set``. Groups sections in the dashboard.
     aim_url : str | None
-        Aim tracking URL. ``ASTROLABE_AIM_URL`` env wins over this
+        Aim tracking URL. ``ALIDADE_AIM_URL`` env wins over this
         argument; defaults to ``aim://localhost:43800`` (the SSH
         reverse tunnel astrolabe opens on GPU instances). Accepts a
         filesystem path too — ``aim.Run`` resolves either.
@@ -316,7 +316,7 @@ def start_eval_run_from_checkpoint(
     task_set : str
         Benchmark suite label (``"glue"``, ``"mmlu"``, ...).
     aim_url : str, optional
-        Aim tracking URL. ``ASTROLABE_AIM_URL`` wins over this argument.
+        Aim tracking URL. ``ALIDADE_AIM_URL`` wins over this argument.
     model_run_hash : str, optional
         Explicit parent, overriding whatever the file says. For
         checkpoints written before provenance existed, or when you know
@@ -459,7 +459,7 @@ def log_eval_table(
         aggregates itself; that's the researcher's call (mean? harmonic
         mean? a paper-specific subset?).
     aim_url : str | None
-        Aim tracking URL. ``ASTROLABE_AIM_URL`` env wins; defaults to
+        Aim tracking URL. ``ALIDADE_AIM_URL`` env wins; defaults to
         ``aim://localhost:43800``.
 
     Returns

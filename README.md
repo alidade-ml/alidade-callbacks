@@ -117,11 +117,11 @@ All four callbacks read the same environment variables. Astrolabe sets them auto
 
 | Variable | Purpose | Default |
 |---|---|---|
-| `ASTROLABE_EXPERIMENT_NAME` | Aim experiment name | constructor arg or `None` |
-| `ASTROLABE_AIM_URL` | Aim tracking URL | `aim://localhost:43800` |
+| `ALIDADE_EXPERIMENT_NAME` | Aim experiment name | constructor arg or `None` |
+| `ALIDADE_AIM_URL` | Aim tracking URL | `aim://localhost:43800` |
 | `AIM_RUN_TAGS` | Tags applied to the run, format `k1=v1,k2=v2` | constructor arg or empty |
-| `ASTROLABE_AIM_REPO_PATH` | When set (v2.0+), callback starts a local `aim server` on the compute host writing to this path. NUC-side `astrolabe-sync` sidecar pulls chunks from here every ~3s. Unset = legacy reverse-SSH-tunnel mode. | unset (tunnel mode) |
-| `ASTROLABE_CALLBACK_STRICT` | `1` to raise on Aim failures instead of degrading | unset (graceful degrade) |
+| `ALIDADE_AIM_REPO_PATH` | When set (v2.0+), callback starts a local `aim server` on the compute host writing to this path. NUC-side `astrolabe-sync` sidecar pulls chunks from here every ~3s. Unset = legacy reverse-SSH-tunnel mode. | unset (tunnel mode) |
+| `ALIDADE_CALLBACK_STRICT` | `1` to raise on Aim failures instead of degrading | unset (graceful degrade) |
 | `RANK` / `LOCAL_RANK` | Distributed rank (set by `torchrun`) | rank-zero |
 
 **Env wins over constructor args.** Astrolabe is the orchestrator — its identity is authoritative. Constructor args are the standalone fallback.
@@ -131,7 +131,7 @@ All four callbacks read the same environment variables. Astrolabe sets them auto
 Two transport modes are supported:
 
 - **Tunnel mode (default)**: callback connects directly to the NUC's Aim server via the engine-managed reverse SSH tunnel at `aim://localhost:43800`. Simple, ~40 writes/sec ceiling under realistic emission patterns due to per-call SSH framing overhead.
-- **Local-aim mode (opt-in, NUC sets `ASTROLABE_AIM_REPO_PATH`)**: callback starts a local `aim server` subprocess on the compute host. Writes stay on localhost (~1900 writes/sec). The NUC-side `astrolabe-sync` sidecar pulls per-run chunks every ~3s via SSH+rsync.
+- **Local-aim mode (opt-in, NUC sets `ALIDADE_AIM_REPO_PATH`)**: callback starts a local `aim server` subprocess on the compute host. Writes stay on localhost (~1900 writes/sec). The NUC-side `astrolabe-sync` sidecar pulls per-run chunks every ~3s via SSH+rsync.
 
 The mode is selected by the engine, not by the callback. Researchers don't change anything in training code — both modes use the same callback API.
 
@@ -151,7 +151,7 @@ No researcher action required.
 
 By default, this library never crashes training. If Aim is unreachable or misconfigured, you get a single `WARNING` log line at startup and every subsequent operation no-ops. Your training continues; you just lose the metrics for that run.
 
-Set `ASTROLABE_CALLBACK_STRICT=1` to flip this — connection failures and per-metric write failures raise instead of swallowing. Useful for CI pipelines where silent degradation hides bugs.
+Set `ALIDADE_CALLBACK_STRICT=1` to flip this — connection failures and per-metric write failures raise instead of swallowing. Useful for CI pipelines where silent degradation hides bugs.
 
 Full contract: [docs/contract.md](docs/contract.md).
 

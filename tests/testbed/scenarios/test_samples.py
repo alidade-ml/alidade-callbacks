@@ -142,7 +142,7 @@ class TestNothingIsWrittenWithoutAParent:
 class TestSubmitIdentity:
     """A sample run produced inside a submit inherits that submit's identity.
 
-    The engine exports ``AIM_RUN_TAGS`` and ``ASTROLABE_EXPERIMENT_NAME`` into
+    The engine exports ``AIM_RUN_TAGS`` and ``ALIDADE_EXPERIMENT_NAME`` into
     every step env. ``log_samples`` reads them — and slice 02 shipped that with
     a comment explaining why it matters and no test that it happens.
 
@@ -153,7 +153,7 @@ class TestSubmitIdentity:
     """
 
     SUBMIT_ENV = {
-        "ASTROLABE_EXPERIMENT_NAME": "latent-bert",
+        "ALIDADE_EXPERIMENT_NAME": "latent-bert",
         "AIM_RUN_TAGS": (
             "astrolabe.submit_id=s-testbed-1,astrolabe.version=v3,"
             "astrolabe.user=nathan,astrolabe.experiment=latent-bert"

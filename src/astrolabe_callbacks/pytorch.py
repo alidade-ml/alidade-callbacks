@@ -23,7 +23,7 @@ Usage::
             run.log_eval(loss=val_loss, step=batch_idx)
 
 The same env-var contract as the framework callbacks applies:
-``ASTROLABE_EXPERIMENT_NAME``, ``AIM_RUN_TAGS``, ``ASTROLABE_AIM_URL``
+``ALIDADE_EXPERIMENT_NAME``, ``AIM_RUN_TAGS``, ``ALIDADE_AIM_URL``
 all win over constructor arguments.
 
 Failure handling
@@ -31,7 +31,7 @@ Failure handling
 
 Same contract as the framework callbacks: connection failures log a
 single ``WARNING`` and downgrade to no-ops; per-track failures log
-``DEBUG`` once per metric. Set ``ASTROLABE_CALLBACK_STRICT=1`` to flip
+``DEBUG`` once per metric. Set ``ALIDADE_CALLBACK_STRICT=1`` to flip
 warnings into raised exceptions for fail-fast CI behavior. See
 ``_core.py`` for the full failure-handling contract.
 
@@ -70,11 +70,11 @@ class AstrolabeRun:
     ----------
     aim_url : str | None
         Aim tracking URL (e.g. ``aim://localhost:43800``). Overridden
-        by ``ASTROLABE_AIM_URL`` env; defaults to the standard
+        by ``ALIDADE_AIM_URL`` env; defaults to the standard
         astrolabe SSH-tunneled URL.
     experiment_name : str | None
         Aim experiment name. Overridden by
-        ``ASTROLABE_EXPERIMENT_NAME`` env.
+        ``ALIDADE_EXPERIMENT_NAME`` env.
     tags : dict[str, str] | None
         Tags applied to the Aim run on enter. Overridden by
         ``AIM_RUN_TAGS`` env when set.

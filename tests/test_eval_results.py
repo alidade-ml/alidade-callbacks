@@ -779,7 +779,7 @@ class TestSubmitIdentity:
     """
 
     def test_files_under_the_submitting_experiment(self, monkeypatch):
-        monkeypatch.setenv("ASTROLABE_EXPERIMENT_NAME", "latent-bert")
+        monkeypatch.setenv("ALIDADE_EXPERIMENT_NAME", "latent-bert")
         factory = MagicMock(return_value=_make_run_mock())
         with patch("aim.Run", factory):
             start_eval_run(
@@ -792,7 +792,7 @@ class TestSubmitIdentity:
         upstream is inconsistent, and resolve_run_config already treats
         the dedicated env var as authoritative. Matching it keeps one
         answer to 'which experiment am I in' across the library."""
-        monkeypatch.setenv("ASTROLABE_EXPERIMENT_NAME", "authoritative")
+        monkeypatch.setenv("ALIDADE_EXPERIMENT_NAME", "authoritative")
         monkeypatch.setenv("AIM_RUN_TAGS", "astrolabe.experiment=stale")
         run = _make_run_mock()
         factory = MagicMock(return_value=run)
@@ -875,7 +875,7 @@ class TestSubmitIdentity:
     ):
         """A run stamped with its model later must be indistinguishable
         from one that resolved on the first try."""
-        monkeypatch.setenv("ASTROLABE_EXPERIMENT_NAME", "latent-bert")
+        monkeypatch.setenv("ALIDADE_EXPERIMENT_NAME", "latent-bert")
         monkeypatch.setenv("AIM_RUN_TAGS", "astrolabe.submit_id=s-3")
         ckpt = _ckpt(tmp_path)
         run = _make_run_mock()
@@ -888,7 +888,7 @@ class TestSubmitIdentity:
         run.__setitem__.assert_any_call("astrolabe.submit_id", "s-3")
 
     def test_log_eval_table_inherits_it(self, monkeypatch):
-        monkeypatch.setenv("ASTROLABE_EXPERIMENT_NAME", "latent-bert")
+        monkeypatch.setenv("ALIDADE_EXPERIMENT_NAME", "latent-bert")
         monkeypatch.setenv("AIM_RUN_TAGS", "astrolabe.user=nathan")
         run = _make_run_mock()
         factory = MagicMock(return_value=run)
@@ -1011,7 +1011,7 @@ class TestExternalName:
         """It files under the submitting experiment, so it is one of that
         experiment's own rows — a row with no version would sit outside
         every version group and vanish from the page."""
-        monkeypatch.setenv("ASTROLABE_EXPERIMENT_NAME", "latent-bert")
+        monkeypatch.setenv("ALIDADE_EXPERIMENT_NAME", "latent-bert")
         monkeypatch.setenv("AIM_RUN_TAGS", "astrolabe.version=v3")
         plain = export_checkpoint({}, tmp_path / "plain.pt", fmt="pt")
         entry = _make_run_mock("entry")

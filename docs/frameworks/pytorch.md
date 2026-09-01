@@ -68,8 +68,8 @@ with Run(
 
 ```python
 with Run(
-    aim_url=None,             # ASTROLABE_AIM_URL wins; default aim://localhost:43800
-    experiment_name=None,     # ASTROLABE_EXPERIMENT_NAME wins
+    aim_url=None,             # ALIDADE_AIM_URL wins; default aim://localhost:43800
+    experiment_name=None,     # ALIDADE_EXPERIMENT_NAME wins
     tags=None,                # AIM_RUN_TAGS env wins
     run_name=None,            # human-readable name in dashboard
 ) as run:

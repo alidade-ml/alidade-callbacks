@@ -190,12 +190,12 @@ class TestBufferClose:
 
 
 class TestStrictModeBypass:
-    """Strict mode (``ASTROLABE_CALLBACK_STRICT=1``) bypasses the
+    """Strict mode (``ALIDADE_CALLBACK_STRICT=1``) bypasses the
     buffer entirely — synchronous + raise. Strict semantics ('crash
     on any failure') don't fit a background-thread retry model."""
 
     def test_strict_mode_skips_buffer(self, fake_aim_run, monkeypatch):
-        monkeypatch.setenv("ASTROLABE_CALLBACK_STRICT", "1")
+        monkeypatch.setenv("ALIDADE_CALLBACK_STRICT", "1")
         run = open_aim_run(make_run_config())
         # Even though a buffer was attached at open, strict bypasses it.
         track_safely(run, name="x", value=1.0, step=0)
@@ -212,7 +212,7 @@ class TestStrictModeBypass:
                 raise RuntimeError("aim broke")
 
         monkeypatch.setattr("aim.Run", FailingTrack)
-        monkeypatch.setenv("ASTROLABE_CALLBACK_STRICT", "1")
+        monkeypatch.setenv("ALIDADE_CALLBACK_STRICT", "1")
         run = open_aim_run(make_run_config())
 
         with pytest.raises(RuntimeError, match="aim broke"):
@@ -311,7 +311,7 @@ class TestBufferHeartbeat:
 
 
 class TestStatsToDisk:
-    """The ``ASTROLABE_CALLBACK_STATS_PATH`` env var is the
+    """The ``ALIDADE_CALLBACK_STATS_PATH`` env var is the
     survivability story for buffer diagnostics. Without it,
     heartbeats and the close summary only land in the training
     process's stdout — which dies with the Lambda instance. Astrolabe
@@ -326,7 +326,7 @@ class TestStatsToDisk:
         not bring down the training run)"""
 
     def test_no_env_var_means_no_file(self, fake_aim_run, monkeypatch, tmp_path):
-        monkeypatch.delenv("ASTROLABE_CALLBACK_STATS_PATH", raising=False)
+        monkeypatch.delenv("ALIDADE_CALLBACK_STATS_PATH", raising=False)
         run = open_aim_run(make_run_config())
         run._astrolabe_buffer._heartbeat_interval_s = 0.05
         track_safely(run, name="x", value=1.0, step=1)
@@ -338,7 +338,7 @@ class TestStatsToDisk:
         import json
 
         stats_file = tmp_path / "stats.jsonl"
-        monkeypatch.setenv("ASTROLABE_CALLBACK_STATS_PATH", str(stats_file))
+        monkeypatch.setenv("ALIDADE_CALLBACK_STATS_PATH", str(stats_file))
 
         run = open_aim_run(make_run_config())
         run._astrolabe_buffer._heartbeat_interval_s = 0.05
@@ -365,7 +365,7 @@ class TestStatsToDisk:
         import json
 
         stats_file = tmp_path / "stats.jsonl"
-        monkeypatch.setenv("ASTROLABE_CALLBACK_STATS_PATH", str(stats_file))
+        monkeypatch.setenv("ALIDADE_CALLBACK_STATS_PATH", str(stats_file))
 
         run = open_aim_run(make_run_config())
         for i in range(5):
@@ -386,7 +386,7 @@ class TestStatsToDisk:
         # Use a literal ~ in the env var and verify expansion happens.
         # HOME=tmp_path so ~ resolves into the test dir.
         monkeypatch.setenv("HOME", str(tmp_path))
-        monkeypatch.setenv("ASTROLABE_CALLBACK_STATS_PATH", "~/stats.jsonl")
+        monkeypatch.setenv("ALIDADE_CALLBACK_STATS_PATH", "~/stats.jsonl")
 
         run = open_aim_run(make_run_config())
         run._astrolabe_buffer._heartbeat_interval_s = 0.05
@@ -401,7 +401,7 @@ class TestStatsToDisk:
         bad_path = tmp_path / "nope" / "deep" / "stats.jsonl"
         # Don't pre-create the parents — open() will fail. We expect
         # the diagnostic to swallow the exception.
-        monkeypatch.setenv("ASTROLABE_CALLBACK_STATS_PATH", str(bad_path))
+        monkeypatch.setenv("ALIDADE_CALLBACK_STATS_PATH", str(bad_path))
 
         run = open_aim_run(make_run_config())
         run._astrolabe_buffer._heartbeat_interval_s = 0.05
@@ -520,7 +520,7 @@ class TestBoundedRetry:
         without needing to wait for close(). Mirrored to the disk-stats
         jsonl so survives composer-SIGABRT stdout loss."""
         stats_path = tmp_path / "callback-stats.jsonl"
-        monkeypatch.setenv("ASTROLABE_CALLBACK_STATS_PATH", str(stats_path))
+        monkeypatch.setenv("ALIDADE_CALLBACK_STATS_PATH", str(stats_path))
 
         class AlwaysFails(FakeAimRun):
             def track(self, value, name=None, step=None, context=None):
@@ -554,7 +554,7 @@ class TestBoundedRetry:
         composer's launcher loses to SIGABRT. Mirror it as a jsonl
         record so post-mortem diagnosis isn't blind."""
         stats_path = tmp_path / "callback-stats.jsonl"
-        monkeypatch.setenv("ASTROLABE_CALLBACK_STATS_PATH", str(stats_path))
+        monkeypatch.setenv("ALIDADE_CALLBACK_STATS_PATH", str(stats_path))
 
         class AlwaysFails(FakeAimRun):
             def track(self, value, name=None, step=None, context=None):
@@ -624,7 +624,7 @@ class TestSubmitSample:
         self, fake_aim_run, monkeypatch, tmp_path
     ):
         stats_file = tmp_path / "stats.jsonl"
-        monkeypatch.setenv("ASTROLABE_CALLBACK_STATS_PATH", str(stats_file))
+        monkeypatch.setenv("ALIDADE_CALLBACK_STATS_PATH", str(stats_file))
 
         run = open_aim_run(make_run_config())
         buf: _MetricBuffer = run._astrolabe_buffer
@@ -656,7 +656,7 @@ class TestDrainerDeathCapture:
         import json
 
         stats_file = tmp_path / "stats.jsonl"
-        monkeypatch.setenv("ASTROLABE_CALLBACK_STATS_PATH", str(stats_file))
+        monkeypatch.setenv("ALIDADE_CALLBACK_STATS_PATH", str(stats_file))
 
         # BaseException subclass to escape the inner retry's
         # ``except Exception``. Custom (not KeyboardInterrupt) so we

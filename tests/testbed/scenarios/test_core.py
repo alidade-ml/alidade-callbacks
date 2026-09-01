@@ -604,7 +604,7 @@ class TestBufferDrainer:
 
 
 class TestFirstMetricMarker:
-    """ASTROLABE_FIRST_METRIC_MARKER fires exactly once, on first track_safely.
+    """ALIDADE_FIRST_METRIC_MARKER fires exactly once, on first track_safely.
 
     Feeds astrolabe's healing/failure hook system — a run that never
     produces a first metric is treated differently from one that made
@@ -738,7 +738,7 @@ class TestLocalAimModeNeedsNoServer:
 
     Until AIMSRV-1.02 the callback started an ``aim server`` subprocess here,
     because training's resolution never consulted
-    ``ASTROLABE_AIM_REPO_PATH`` and so resolved to the ``aim://`` default that
+    ``ALIDADE_AIM_REPO_PATH`` and so resolved to the ``aim://`` default that
     only the subprocess made answer. These assert the replacement: the write
     lands at the path itself, and nothing is spawned.
 
@@ -785,7 +785,7 @@ class TestLocalAimModeNeedsNoServer:
                 # TESTBED_ENV_ prefix is what makes a flag become a real env var
                 # in the container; without it the flag only reaches the
                 # driver as JSON and the callback never sees local-aim mode.
-                driver_flags={"TESTBED_ENV_ASTROLABE_AIM_REPO_PATH": self._REPO},
+                driver_flags={"TESTBED_ENV_ALIDADE_AIM_REPO_PATH": self._REPO},
             )
         )
         assert result.exit_code == 0, result.stderr

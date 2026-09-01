@@ -18,7 +18,7 @@ Rules enforced by CI:
   violation; ``tools/check-contract-stdlib-only.py`` blocks merge.
 - Modifying this file requires bumping ``CONTRACT_VERSION``;
   ``tools/check-contract-bump.py`` blocks merge.
-- Every ``ASTROLABE_*``/``AIM_*`` env var the engine sets and every
+- Every ``ALIDADE_*``/``AIM_*`` env var the engine sets and every
   ``astrolabe.*`` Aim tag the engine reads must appear as a constant
   here; ``tests/test_contract_completeness.py`` enforces.
 - Bare contract-literal strings outside this file are a violation;
@@ -42,7 +42,7 @@ from __future__ import annotations
 # vendored from; the engine refuses submits whose pinned callback was
 # vendored against a contract older than what this engine version
 # requires.
-CONTRACT_VERSION = "1.9.2"
+CONTRACT_VERSION = "2.0.0"
 
 # --- Env vars: ENGINE sets in the training process -------------------------
 #
@@ -54,12 +54,12 @@ CONTRACT_VERSION = "1.9.2"
 # The Aim run carries it as ``astrolabe.submit_id``, which arrives through
 # AIM_RUN_TAGS rather than from this variable; the callback reads this one
 # directly only for checkpoint provenance.
-ENV_SUBMIT_ID = "ASTROLABE_SUBMIT_ID"
+ENV_SUBMIT_ID = "ALIDADE_SUBMIT_ID"
 
 # Human-readable experiment name from the YAML. The callback resolves it
 # as the Aim *experiment*, taking precedence over any experiment_name
 # passed at the call site. Not the run name, which is a separate field.
-ENV_EXPERIMENT_NAME = "ASTROLABE_EXPERIMENT_NAME"
+ENV_EXPERIMENT_NAME = "ALIDADE_EXPERIMENT_NAME"
 
 # Tag dict the engine wants applied to every run produced under this
 # submit. Wire format: ``key1=val1,key2=val2`` (NOT JSON — keys and
@@ -73,36 +73,36 @@ ENV_AIM_RUN_TAGS = "AIM_RUN_TAGS"
 # ``aim_local_mode: false``, in which case callbacks fall back to the
 # tunneled Aim server at ``aim://localhost:43800``.
 # Engine constructs the value via :func:`format_local_aim_repo_path`.
-ENV_AIM_REPO_PATH = "ASTROLABE_AIM_REPO_PATH"
+ENV_AIM_REPO_PATH = "ALIDADE_AIM_REPO_PATH"
 
 # Path to a jsonl file the callback appends structured events to: buffer
 # heartbeats, sample submissions, run close, drain failures, schema
 # finalizes. Every record comes from a live run, so a non-empty file is
 # evidence one existed. There is no run-open record.
 # Read by the canary verifier and by the engine's sidecar gate.
-ENV_CALLBACK_STATS_PATH = "ASTROLABE_CALLBACK_STATS_PATH"
+ENV_CALLBACK_STATS_PATH = "ALIDADE_CALLBACK_STATS_PATH"
 
 # Directory the engine provisions for per-rank stdout/stderr logs during
 # distributed training, and pulls back at step end. Written by the
 # researcher's own launcher command, which has to opt in by pointing at
 # it. No callback reads this.
-ENV_RANK_LOGS_DIR = "ASTROLABE_RANK_LOGS_DIR"
+ENV_RANK_LOGS_DIR = "ALIDADE_RANK_LOGS_DIR"
 
 # Filesystem path the astrolabe-callbacks library touches when the
 # first Aim metric write lands.  The engine probes this path at
 # step-failure time to enforce ``until: first_metric`` healing bounds
 # (:class:`astrolabe.config.StepHealingConfig`).
-ENV_FIRST_METRIC_MARKER = "ASTROLABE_FIRST_METRIC_MARKER"
+ENV_FIRST_METRIC_MARKER = "ALIDADE_FIRST_METRIC_MARKER"
 
 # Same mechanism for ``until: first_checkpoint``.  Separate marker
 # because the two windows close on different events: a run can emit
 # metrics for hours before its first checkpoint.
-ENV_FIRST_CHECKPOINT_MARKER = "ASTROLABE_FIRST_CHECKPOINT_MARKER"
+ENV_FIRST_CHECKPOINT_MARKER = "ALIDADE_FIRST_CHECKPOINT_MARKER"
 
 # Where the callback records the model entries it minted for models
 # astrolabe never trained, so every step of one submit attributes to the
 # same entry instead of forking one per call.
-ENV_EXTERNAL_MODELS = "ASTROLABE_EXTERNAL_MODELS"
+ENV_EXTERNAL_MODELS = "ALIDADE_EXTERNAL_MODELS"
 
 # --- Aim run tags: CALLBACK writes, ENGINE + dashboard read ----------------
 #
@@ -201,7 +201,7 @@ SAMPLE_ROLE_OUTPUT = "output"
 # from the compute host to the NUC's Aim server on port 43800 (see
 # ``astrolabe.engine._setup``). Both sides MUST agree on the port so the
 # tunnel and client pair line up. Under the default local-aim transport
-# nothing listens here — callbacks use ASTROLABE_AIM_REPO_PATH instead.
+# nothing listens here — callbacks use ALIDADE_AIM_REPO_PATH instead.
 DEFAULT_AIM_URL = "aim://localhost:43800"
 
 # --- Canonical formatters / parsers ---------------------------------------
@@ -213,7 +213,7 @@ DEFAULT_AIM_URL = "aim://localhost:43800"
 # Why these specifically: only values with non-trivial encodings need a
 # helper. A constant like ``ENV_SUBMIT_ID`` is just a name; the value
 # is just a string passed through, no encoding involved. ``AIM_RUN_TAGS``
-# encodes a dict into a single string, and ``ASTROLABE_AIM_REPO_PATH``
+# encodes a dict into a single string, and ``ALIDADE_AIM_REPO_PATH``
 # templates a submit_id into a path — both are encodings, both need
 # canonical helpers.
 
@@ -321,7 +321,7 @@ def format_sample_sequence_name(sample_set: str, role: str) -> str:
 def format_first_metric_marker_path(submit_id: str, step_num: int) -> str:
     """Construct the per-step first-metric marker path.
 
-    Engine sets ``ASTROLABE_FIRST_METRIC_MARKER`` to this value.  The
+    Engine sets ``ALIDADE_FIRST_METRIC_MARKER`` to this value.  The
     astrolabe-callbacks library touches this file on the first Aim
     metric write; the engine probes it to enforce
     ``until: first_metric`` healing bounds.
@@ -337,7 +337,7 @@ def format_first_metric_marker_path(submit_id: str, step_num: int) -> str:
 def format_external_models_path(submit_id: str) -> str:
     """Construct the per-submit external-model registry path.
 
-    Engine sets ``ASTROLABE_EXTERNAL_MODELS`` to this value. The callback
+    Engine sets ``ALIDADE_EXTERNAL_MODELS`` to this value. The callback
     reads it before minting an entry for an ``external_name=`` model and
     writes back what it minted, so a submit that scores one downloaded
     model across several steps produces one entry rather than one per
@@ -361,7 +361,7 @@ def format_external_models_path(submit_id: str) -> str:
 def format_first_checkpoint_marker_path(submit_id: str, step_num: int) -> str:
     """Construct the per-step first-checkpoint marker path.
 
-    Engine sets ``ASTROLABE_FIRST_CHECKPOINT_MARKER`` to this value.
+    Engine sets ``ALIDADE_FIRST_CHECKPOINT_MARKER`` to this value.
     The astrolabe-callbacks library touches this file when the first
     checkpoint of the step is written; the engine probes it to enforce
     ``until: first_checkpoint`` healing bounds.

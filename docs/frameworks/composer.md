@@ -16,7 +16,7 @@ trainer = Trainer(
 trainer.fit()
 ```
 
-That's it. The callback reads astrolabe env vars (`ASTROLABE_EXPERIMENT_NAME`, `AIM_RUN_TAGS`, `ASTROLABE_AIM_URL`), opens an Aim run, and forwards every `logger.log_metrics(...)` call from Composer's training loop to Aim under the run's name.
+That's it. The callback reads astrolabe env vars (`ALIDADE_EXPERIMENT_NAME`, `AIM_RUN_TAGS`, `ALIDADE_AIM_URL`), opens an Aim run, and forwards every `logger.log_metrics(...)` call from Composer's training loop to Aim under the run's name.
 
 > **Critical:** attach via `loggers=`, not `callbacks=`. `AstrolabeComposerLogger` is a `LoggerDestination`, and Composer's `Logger` only broadcasts user metrics to destinations registered there. Composer 0.20+ rejects `LoggerDestination` instances passed to `callbacks=` with a clear error; older versions silently drop every `log_metrics` call. The class still implements all `Callback` lifecycle hooks (it inherits from `Callback` via `LoggerDestination`), so you get `wall_time` tracking, eval-pause correction, and clean close — but only if you place it in `loggers=`.
 
@@ -52,8 +52,8 @@ trainer.fit()
 When `astrolabe submit` orchestrates the run, env vars override the constructor args:
 
 ```bash
-ASTROLABE_EXPERIMENT_NAME=bert-pretrain \
-ASTROLABE_AIM_URL=aim://localhost:43800 \
+ALIDADE_EXPERIMENT_NAME=bert-pretrain \
+ALIDADE_AIM_URL=aim://localhost:43800 \
 AIM_RUN_TAGS="astrolabe.version=v3,astrolabe.submit_id=abc-123" \
 python train.py
 ```

@@ -52,7 +52,7 @@ def _exec_aim(
         testbed,
         service="client",
         cmd=["python", "-c", script],
-        env={"ASTROLABE_AIM_URL": testbed.aim_url_from_client},
+        env={"ALIDADE_AIM_URL": testbed.aim_url_from_client},
         check=False,
         timeout_s=timeout_s,
     )
@@ -73,7 +73,7 @@ class TestProtobufMessageFactory:
         """Constructing an aim.Run against the server does not raise protobuf errors."""
         script = (
             "import os, aim\n"
-            "run = aim.Run(repo=os.environ['ASTROLABE_AIM_URL'])\n"
+            "run = aim.Run(repo=os.environ['ALIDADE_AIM_URL'])\n"
             "run.close()\n"
             "print('OK')\n"
         )
@@ -114,7 +114,7 @@ class TestMemtableContract:
 
         script = (
             "import os, aim, time, sys\n"
-            "run = aim.Run(repo=os.environ['ASTROLABE_AIM_URL'])\n"
+            "run = aim.Run(repo=os.environ['ALIDADE_AIM_URL'])\n"
             "run.track(1.0, name='fresh_only_in_memtable', step=0)\n"
             f"open('{signal_path_container}', 'w').write(run.hash)\n"
             # Hold open — host-side reader polls the signal file, then
@@ -131,7 +131,7 @@ class TestMemtableContract:
                 "exec",
                 "-T",
                 "-e",
-                f"ASTROLABE_AIM_URL={testbed.aim_url_from_client}",
+                f"ALIDADE_AIM_URL={testbed.aim_url_from_client}",
                 "client",
                 "python",
                 "-c",
@@ -201,7 +201,7 @@ class TestMemtableContract:
         """When Aim flushes (however triggered), reader sees the metrics."""
         script = (
             "import os, aim\n"
-            "run = aim.Run(repo=os.environ['ASTROLABE_AIM_URL'])\n"
+            "run = aim.Run(repo=os.environ['ALIDADE_AIM_URL'])\n"
             "run.track(1.0, name='will_be_flushed', step=0)\n"
             "print(f'RUN_HASH={run.hash}')\n"
             # close() forces flush
@@ -275,7 +275,7 @@ class TestLocalVsRemoteRepoBehavior:
         # specifically about lack-of-flush regardless of transport.
         script = (
             "import os, aim, time, sys\n"
-            "run = aim.Run(repo=os.environ['ASTROLABE_AIM_URL'])\n"
+            "run = aim.Run(repo=os.environ['ALIDADE_AIM_URL'])\n"
             "print(f'RUN_HASH={run.hash}')\n"
             "sys.stdout.flush()\n"
             "run.track(1.0, name='remote_pre_flush', step=0)\n"
@@ -312,7 +312,7 @@ class TestSDKVersionSurface:
         """aim.Run has a mutable .name attribute."""
         script = (
             "import os, aim\n"
-            "run = aim.Run(repo=os.environ['ASTROLABE_AIM_URL'])\n"
+            "run = aim.Run(repo=os.environ['ALIDADE_AIM_URL'])\n"
             "run.name = 'sdk-surface-probe'\n"
             "assert run.name == 'sdk-surface-probe', f'name mismatch: {run.name}'\n"
             "run.close()\n"
@@ -328,7 +328,7 @@ class TestSDKVersionSurface:
         """Run.track(value, name, step, context) accepts our call shape."""
         script = (
             "import os, aim\n"
-            "run = aim.Run(repo=os.environ['ASTROLABE_AIM_URL'])\n"
+            "run = aim.Run(repo=os.environ['ALIDADE_AIM_URL'])\n"
             # Positional + keyword shape we use in _core.py
             "run.track(1.0, name='sig_check', step=0, context={})\n"
             "run.close()\n"
@@ -345,7 +345,7 @@ class TestSDKVersionSurface:
         """Run.close() actually flushes; downstream state visible after return."""
         script = (
             "import os, aim\n"
-            "run = aim.Run(repo=os.environ['ASTROLABE_AIM_URL'])\n"
+            "run = aim.Run(repo=os.environ['ALIDADE_AIM_URL'])\n"
             "print(f'RUN_HASH={run.hash}')\n"
             "run.track(1.0, name='close_flushes_probe', step=0)\n"
             "run.close()\n"

@@ -142,9 +142,9 @@ This surprises people, so it is worth stating flatly.
 
 | you pass | env that overrides it |
 |---|---|
-| `experiment_name=` | `ASTROLABE_EXPERIMENT_NAME` |
+| `experiment_name=` | `ALIDADE_EXPERIMENT_NAME` |
 | `tags=` | `AIM_RUN_TAGS` |
-| `aim_url=` | `ASTROLABE_AIM_URL` |
+| `aim_url=` | `ALIDADE_AIM_URL` |
 | `run_name=` | *nothing — yours always wins* |
 
 **Inside an astrolabe submit, passing `experiment_name=` does nothing.** The engine sets
@@ -179,7 +179,7 @@ The cost of a training run is too high to lose to a logging hiccup.
 | a metric write fails | `DEBUG`, once per metric name; others keep flowing | re-raises |
 | close fails | silent — data is already streamed | silent |
 
-Strict mode is `ASTROLABE_CALLBACK_STRICT=1`. Use it in CI, where silent metric loss is
+Strict mode is `ALIDADE_CALLBACK_STRICT=1`. Use it in CI, where silent metric loss is
 worse than a red build.
 
 ---

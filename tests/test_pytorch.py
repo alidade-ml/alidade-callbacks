@@ -28,12 +28,12 @@ class TestRunAlias:
 
 class TestConstructor:
     def test_env_experiment_name_wins(self, monkeypatch):
-        monkeypatch.setenv("ASTROLABE_EXPERIMENT_NAME", "from-env")
+        monkeypatch.setenv("ALIDADE_EXPERIMENT_NAME", "from-env")
         r = AstrolabeRun(experiment_name="from-arg")
         assert r._cfg.experiment_name == "from-env"
 
     def test_env_aim_url_wins(self, monkeypatch):
-        monkeypatch.setenv("ASTROLABE_AIM_URL", "aim://from-env:9999")
+        monkeypatch.setenv("ALIDADE_AIM_URL", "aim://from-env:9999")
         r = AstrolabeRun(aim_url="aim://from-arg:1111")
         assert r._cfg.aim_url == "aim://from-env:9999"
 
@@ -63,7 +63,7 @@ class TestContextManagerEdgeCases:
     def test_strict_mode_raises_on_connection_failure(self, monkeypatch):
         import sys
         monkeypatch.setitem(sys.modules, "aim", None)
-        monkeypatch.setenv("ASTROLABE_CALLBACK_STRICT", "1")
+        monkeypatch.setenv("ALIDADE_CALLBACK_STRICT", "1")
         with pytest.raises(RuntimeError, match="aim not installed"):
             with AstrolabeRun():
                 pass
@@ -233,7 +233,7 @@ class TestSetTag:
             def close(self): pass
 
         monkeypatch.setattr("aim.Run", FailingRun)
-        monkeypatch.setenv("ASTROLABE_CALLBACK_STRICT", "1")
+        monkeypatch.setenv("ALIDADE_CALLBACK_STRICT", "1")
         with pytest.raises(RuntimeError, match="aim broke"):
             with AstrolabeRun() as run:
                 run.set_tag("k", "v")

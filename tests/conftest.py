@@ -73,10 +73,10 @@ def clean_astrolabe_env(monkeypatch):
     rank-zero default is consistent.
     """
     for name in (
-        "ASTROLABE_EXPERIMENT_NAME",
-        "ASTROLABE_AIM_URL",
+        "ALIDADE_EXPERIMENT_NAME",
+        "ALIDADE_AIM_URL",
         "AIM_RUN_TAGS",
-        "ASTROLABE_CALLBACK_STRICT",
+        "ALIDADE_CALLBACK_STRICT",
         "RANK",
         "LOCAL_RANK",
     ):

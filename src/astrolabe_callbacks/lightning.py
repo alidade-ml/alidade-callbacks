@@ -1,7 +1,7 @@
 """PyTorch Lightning callback wired to astrolabe-callbacks ``_core``.
 
 Same env-var contract as the other framework callbacks:
-``ASTROLABE_EXPERIMENT_NAME``, ``AIM_RUN_TAGS``, ``ASTROLABE_AIM_URL``
+``ALIDADE_EXPERIMENT_NAME``, ``AIM_RUN_TAGS``, ``ALIDADE_AIM_URL``
 all win over constructor arguments.
 
 Pass-through philosophy
@@ -55,7 +55,7 @@ Failure handling
 
 Same as the other framework callbacks: connection failures log a single
 ``WARNING`` and downgrade to no-ops; per-track failures log ``DEBUG``
-once per metric. Set ``ASTROLABE_CALLBACK_STRICT=1`` for fail-fast
+once per metric. Set ``ALIDADE_CALLBACK_STRICT=1`` for fail-fast
 behavior. See ``_core.py`` for the full contract.
 """
 
@@ -97,9 +97,9 @@ class AstrolabeLightningLogger(Callback):
     Parameters
     ----------
     aim_url : str | None
-        Aim tracking URL. Overridden by ``ASTROLABE_AIM_URL``.
+        Aim tracking URL. Overridden by ``ALIDADE_AIM_URL``.
     experiment_name : str | None
-        Aim experiment name. Overridden by ``ASTROLABE_EXPERIMENT_NAME``.
+        Aim experiment name. Overridden by ``ALIDADE_EXPERIMENT_NAME``.
     tags : dict[str, str] | None
         Tags applied to the Aim run on init. Overridden by
         ``AIM_RUN_TAGS`` env var.

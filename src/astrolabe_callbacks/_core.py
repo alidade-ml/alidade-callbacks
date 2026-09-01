@@ -11,7 +11,7 @@ Failure handling contract
 The default posture of every astrolabe-callbacks callback is **graceful
 degradation, not training crashes.** A misconfigured Aim URL, a network
 blip, or a missing optional dependency must never take down a training
-job. The escape hatch is the ``ASTROLABE_CALLBACK_STRICT=1`` env var,
+job. The escape hatch is the ``ALIDADE_CALLBACK_STRICT=1`` env var,
 which flips warnings into exceptions for users who would rather fail
 fast (typical for CI pipelines or production deployments).
 
@@ -28,7 +28,7 @@ The three failure modes:
    close failure is cosmetic.
 
 Users who want to know whether logging is actually happening should
-either set ``ASTROLABE_CALLBACK_STRICT=1`` (fail fast on any issue) or
+either set ``ALIDADE_CALLBACK_STRICT=1`` (fail fast on any issue) or
 read the ``WARNING`` log line emitted at callback init.
 """
 
@@ -114,13 +114,13 @@ EVAL_METRIC_PREFIX = "val"
 
 # Default Aim tracking URL. Astrolabe sets up an SSH reverse tunnel
 # from the GPU instance back to the NUC's Aim server on port 43800.
-# Standalone users override via ``ASTROLABE_AIM_URL`` env or constructor.
+# Standalone users override via ``ALIDADE_AIM_URL`` env or constructor.
 # Re-exported from the contract rather than restated. The value is a
 # contract literal; a second copy here is exactly the drift the
 # contract file exists to prevent.
 DEFAULT_AIM_URL = contract.DEFAULT_AIM_URL
 
-_STRICT_ENV = "ASTROLABE_CALLBACK_STRICT"
+_STRICT_ENV = "ALIDADE_CALLBACK_STRICT"
 
 
 class _MetricBuffer:
@@ -140,7 +140,7 @@ class _MetricBuffer:
       so a clean training exit doesn't truncate in-flight writes.
 
     Attached to each opened Aim Run as ``run._astrolabe_buffer`` by
-    ``open_aim_run``. Strict mode (``ASTROLABE_CALLBACK_STRICT=1``)
+    ``open_aim_run``. Strict mode (``ALIDADE_CALLBACK_STRICT=1``)
     bypasses the buffer entirely — strict semantics ("I want to know
     immediately if anything fails") map cleanly to synchronous +
     raise, so no queue.
@@ -215,7 +215,7 @@ class _MetricBuffer:
         also signals the drainer thread itself is alive (or hung — a
         long silence with no end-of-run summary either is a tell).
 
-        Also persists each snapshot to ``$ASTROLABE_CALLBACK_STATS_PATH``
+        Also persists each snapshot to ``$ALIDADE_CALLBACK_STATS_PATH``
         when that env var is set. astrolabe's engine sets it on Lambda
         so the file rsyncs back at step end and survives instance
         termination — without that file, mid-run diagnostics are lost
@@ -491,7 +491,7 @@ class _MetricBuffer:
 
 
 def _append_stats_line(**fields) -> None:
-    """Append one JSONL record to ``$ASTROLABE_CALLBACK_STATS_PATH``.
+    """Append one JSONL record to ``$ALIDADE_CALLBACK_STATS_PATH``.
 
     No-op when the env var is unset (the standard out-of-band-of-
     astrolabe case). All failures are silenced — this is a
@@ -522,7 +522,7 @@ _FIRST_METRIC_MARKER_WRITTEN = False
 
 
 def _write_first_metric_marker_once() -> None:
-    """Touch ``$ASTROLABE_FIRST_METRIC_MARKER`` on first invocation.
+    """Touch ``$ALIDADE_FIRST_METRIC_MARKER`` on first invocation.
 
     The astrolabe engine sets this env var when a step's healing
     policy uses ``until: first_metric``.  At step-failure time the
@@ -575,11 +575,11 @@ class RunConfig:
     Attributes
     ----------
     experiment_name : str | None
-        Aim experiment name. ``ASTROLABE_EXPERIMENT_NAME`` env wins
+        Aim experiment name. ``ALIDADE_EXPERIMENT_NAME`` env wins
         over any constructor argument; falls through to ``None`` when
         neither is set (Aim assigns a default).
     aim_url : str
-        Aim tracking URL. ``ASTROLABE_AIM_URL`` env wins over
+        Aim tracking URL. ``ALIDADE_AIM_URL`` env wins over
         constructor argument; defaults to ``DEFAULT_AIM_URL``.
     tags : dict[str, str]
         Tags applied to the run on init. ``AIM_RUN_TAGS`` env wins over
@@ -610,11 +610,11 @@ def resolve_run_config(
     ----------
     experiment_name : str | None
         Constructor-supplied experiment name. Overridden by
-        ``ASTROLABE_EXPERIMENT_NAME`` when that env var is set.
+        ``ALIDADE_EXPERIMENT_NAME`` when that env var is set.
     aim_url : str | None
         Constructor-supplied Aim URL. Overridden by
-        ``ASTROLABE_AIM_REPO_PATH`` (local-aim mode) then
-        ``ASTROLABE_AIM_URL``; falls back to ``DEFAULT_AIM_URL``.
+        ``ALIDADE_AIM_REPO_PATH`` (local-aim mode) then
+        ``ALIDADE_AIM_URL``; falls back to ``DEFAULT_AIM_URL``.
     tags : dict[str, str] | None
         Constructor-supplied tags. Overridden by ``AIM_RUN_TAGS`` when
         that env var is set; pass an empty dict to explicitly disable
@@ -630,7 +630,7 @@ def resolve_run_config(
 
     # One resolution for every writer. Training used to hand-roll
     # `env_url or aim_url or DEFAULT_AIM_URL`, which never consulted
-    # ASTROLABE_AIM_REPO_PATH — so in local-aim mode it resolved to the
+    # ALIDADE_AIM_REPO_PATH — so in local-aim mode it resolved to the
     # aim:// default while eval and samples resolved to the repo path.
     # The local aim server existed to make that default answer.
     resolved_url = resolve_aim_url(aim_url)
@@ -656,7 +656,7 @@ def open_aim_run(cfg: RunConfig, *, run_name: str | None = None) -> Any:
     Returns the live ``aim.Run`` on success. On failure (Aim not
     installed, server unreachable), logs a ``WARNING`` once and
     returns ``None`` — the calling callback then no-ops every Aim
-    write. In strict mode (``ASTROLABE_CALLBACK_STRICT=1``), failures
+    write. In strict mode (``ALIDADE_CALLBACK_STRICT=1``), failures
     raise ``RuntimeError`` instead.
 
     Parameters
@@ -677,7 +677,7 @@ def open_aim_run(cfg: RunConfig, *, run_name: str | None = None) -> Any:
     Raises
     ------
     RuntimeError
-        If ``ASTROLABE_CALLBACK_STRICT=1`` and the Aim run could not be
+        If ``ALIDADE_CALLBACK_STRICT=1`` and the Aim run could not be
         opened (import error or connection error).
     """
     try:

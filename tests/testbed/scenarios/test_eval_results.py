@@ -470,7 +470,7 @@ class TestStartEvalRunFromCheckpoint:
 class TestSubmitIdentity:
     """Eval runs produced inside an astrolabe submit inherit its identity.
 
-    The engine exports ``AIM_RUN_TAGS`` and ``ASTROLABE_EXPERIMENT_NAME``
+    The engine exports ``AIM_RUN_TAGS`` and ``ALIDADE_EXPERIMENT_NAME``
     into every step env; the training callback reads them and the eval
     helpers used not to. These scenarios run the real helpers against a
     real Aim server with that env present, because filing is a property
@@ -479,7 +479,7 @@ class TestSubmitIdentity:
     """
 
     SUBMIT_ENV = {
-        "ASTROLABE_EXPERIMENT_NAME": "latent-bert",
+        "ALIDADE_EXPERIMENT_NAME": "latent-bert",
         "AIM_RUN_TAGS": (
             "astrolabe.submit_id=s-testbed-1,astrolabe.version=v3,"
             "astrolabe.user=nathan,astrolabe.experiment=latent-bert"

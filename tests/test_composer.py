@@ -46,7 +46,7 @@ class TestConstructorPrecedence:
     in test_core.py; this verifies the wiring through to the callback)."""
 
     def test_env_experiment_name_wins(self, monkeypatch):
-        monkeypatch.setenv("ASTROLABE_EXPERIMENT_NAME", "from-env")
+        monkeypatch.setenv("ALIDADE_EXPERIMENT_NAME", "from-env")
         cb = AstrolabeComposerLogger(experiment_name="hardcoded-in-yaml")
         assert cb._cfg.experiment_name == "from-env"
 
@@ -55,7 +55,7 @@ class TestConstructorPrecedence:
         assert cb._cfg.experiment_name == "standalone-name"
 
     def test_env_aim_url_wins(self, monkeypatch):
-        monkeypatch.setenv("ASTROLABE_AIM_URL", "aim://from-env:9999")
+        monkeypatch.setenv("ALIDADE_AIM_URL", "aim://from-env:9999")
         cb = AstrolabeComposerLogger(aim_url="aim://from-arg:1111")
         assert cb._cfg.aim_url == "aim://from-env:9999"
 
@@ -218,7 +218,7 @@ class TestInit:
     def test_strict_mode_raises_when_aim_missing(self, monkeypatch):
         import sys
         monkeypatch.setitem(sys.modules, "aim", None)
-        monkeypatch.setenv("ASTROLABE_CALLBACK_STRICT", "1")
+        monkeypatch.setenv("ALIDADE_CALLBACK_STRICT", "1")
         cb = AstrolabeComposerLogger()
         with pytest.raises(RuntimeError, match="aim not installed"):
             cb.init(state=None, logger_obj=None)
@@ -608,7 +608,7 @@ class TestDiagnosticLogs:
         gun timing question (did fit_end fire mid-training?) becomes
         trivially answerable post-mortem."""
         stats_file = tmp_path / "stats.jsonl"
-        monkeypatch.setenv("ASTROLABE_CALLBACK_STATS_PATH", str(stats_file))
+        monkeypatch.setenv("ALIDADE_CALLBACK_STATS_PATH", str(stats_file))
 
         cb = AstrolabeComposerLogger()
         cb.init(state=None, logger_obj=None)
@@ -631,7 +631,7 @@ class TestDiagnosticLogs:
         # mis-linkage: eval run's astrolabe.model_run_hash didn't
         # equal-match the full 24-char training hash.
         stats_file = tmp_path / "stats.jsonl"
-        monkeypatch.setenv("ASTROLABE_CALLBACK_STATS_PATH", str(stats_file))
+        monkeypatch.setenv("ALIDADE_CALLBACK_STATS_PATH", str(stats_file))
 
         cb = AstrolabeComposerLogger()
         cb.init(state=None, logger_obj=None)
@@ -658,7 +658,7 @@ class TestDiagnosticLogs:
         destination IS being called by Composer (vs Composer having
         removed us from its list). Sampled at 1st + every 100th call."""
         stats_file = tmp_path / "stats.jsonl"
-        monkeypatch.setenv("ASTROLABE_CALLBACK_STATS_PATH", str(stats_file))
+        monkeypatch.setenv("ALIDADE_CALLBACK_STATS_PATH", str(stats_file))
 
         cb = AstrolabeComposerLogger()
         cb.init(state=None, logger_obj=None)
@@ -683,7 +683,7 @@ class TestDiagnosticLogs:
         but if somehow it gets nulled anyway (external code, future
         refactor regression), the records make it visible."""
         stats_file = tmp_path / "stats.jsonl"
-        monkeypatch.setenv("ASTROLABE_CALLBACK_STATS_PATH", str(stats_file))
+        monkeypatch.setenv("ALIDADE_CALLBACK_STATS_PATH", str(stats_file))
 
         cb = AstrolabeComposerLogger()
         cb.init(state=None, logger_obj=None)
@@ -704,7 +704,7 @@ class TestDiagnosticLogs:
         non-tensor, NaN, inf), record ``skip_to_scalar`` with the
         metric name + value type. First per metric + every 100th."""
         stats_file = tmp_path / "stats.jsonl"
-        monkeypatch.setenv("ASTROLABE_CALLBACK_STATS_PATH", str(stats_file))
+        monkeypatch.setenv("ALIDADE_CALLBACK_STATS_PATH", str(stats_file))
 
         cb = AstrolabeComposerLogger()
         cb.init(state=None, logger_obj=None)

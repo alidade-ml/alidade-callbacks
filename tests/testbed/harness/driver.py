@@ -38,7 +38,7 @@ drainer death at step N, for example.
 
 Invoked as a subprocess by ``compose.exec_in`` from the pytest
 harness. Config comes in via env vars (``TESTBED_*``); result comes
-out via stdout (``ASTROLABE_RUN_HASH=<hash>``) + parsed stats jsonl.
+out via stdout (``ALIDADE_RUN_HASH=<hash>``) + parsed stats jsonl.
 """
 from __future__ import annotations
 
@@ -119,7 +119,7 @@ class DriverResult:
     stats_events: list[dict]
     stdout: str
     stderr: str
-    marker_touched: bool = False  # ASTROLABE_FIRST_METRIC_MARKER file existed after run
+    marker_touched: bool = False  # ALIDADE_FIRST_METRIC_MARKER file existed after run
 
 
 class SimulatedFailure(RuntimeError):
@@ -148,9 +148,9 @@ def config_to_env(config: DriverConfig) -> dict[str, str]:
         env["TESTBED_HAS_FAIL_AT"] = "1"
 
     # Pass callback-library env contract too
-    env["ASTROLABE_AIM_URL"] = config.aim_url
-    env["ASTROLABE_EXPERIMENT_NAME"] = config.experiment_name
-    env["ASTROLABE_CALLBACK_STATS_PATH"] = config.stats_jsonl_container_path
+    env["ALIDADE_AIM_URL"] = config.aim_url
+    env["ALIDADE_EXPERIMENT_NAME"] = config.experiment_name
+    env["ALIDADE_CALLBACK_STATS_PATH"] = config.stats_jsonl_container_path
     if config.tags:
         env["AIM_RUN_TAGS"] = ",".join(f"{k}={v}" for k, v in config.tags.items())
 
@@ -158,7 +158,7 @@ def config_to_env(config: DriverConfig) -> dict[str, str]:
     # checks the file after training and prints the touched-or-not
     # signal so scenarios can assert on it.
     marker_path = f"/tmp/testbed-first-metric-marker/{config.run_name}.tag"
-    env["ASTROLABE_FIRST_METRIC_MARKER"] = marker_path
+    env["ALIDADE_FIRST_METRIC_MARKER"] = marker_path
 
     # driver_flags cascade into env under their own names so downstream code
     # in the container can read them directly (e.g. rank-detection reads
@@ -431,7 +431,7 @@ def _run_raw(config: DriverConfig) -> str | None:
                 # Emit the hash BEFORE the body — so it lands in stdout
                 # even if _drive_raw_body raises SimulatedFailure.
                 if captured_hash:
-                    print(f"ASTROLABE_RUN_HASH={captured_hash}", flush=True)
+                    print(f"ALIDADE_RUN_HASH={captured_hash}", flush=True)
                 _drive_raw_body(config, run, captured_hash)
             return captured_hash
         except SimulatedFailure:
@@ -839,7 +839,7 @@ def main() -> None:
     # itself on first ``track_safely``; we just need the dir to exist.
     # Also unlink any leftover from a prior run to make touched-vs-not
     # unambiguous.
-    marker_env = os.environ.get("ASTROLABE_FIRST_METRIC_MARKER")
+    marker_env = os.environ.get("ALIDADE_FIRST_METRIC_MARKER")
     if marker_env:
         Path(marker_env).parent.mkdir(parents=True, exist_ok=True)
         Path(marker_env).unlink(missing_ok=True)
@@ -854,12 +854,12 @@ def main() -> None:
     # exception scenarios still get it. For the normal path, print
     # here.
     if run_hash and not config.driver_flags.get("TESTBED_USE_CONTEXT_MANAGER") == "1":
-        print(f"ASTROLABE_RUN_HASH={run_hash}")
+        print(f"ALIDADE_RUN_HASH={run_hash}")
 
     # First-metric marker check: report whether the callback touched it.
     if marker_env:
         touched = Path(marker_env).exists()
-        print(f"ASTROLABE_MARKER_TOUCHED={'true' if touched else 'false'}")
+        print(f"ALIDADE_MARKER_TOUCHED={'true' if touched else 'false'}")
 
 
 if __name__ == "__main__":
