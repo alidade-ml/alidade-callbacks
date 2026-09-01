@@ -59,17 +59,17 @@ never shipped in any tag — and the eval linkage built on top of it.
 - **Checkpoint provenance.** A checkpoint records which run trained it, so a later eval
   attributes to that run instead of guessing by name. `CheckpointMeta` +
   `export_checkpoint` / `read_checkpoint_meta`, three framework checkpointers
-  (`AstrolabeComposerCheckpointer`, `AstrolabeLightningCheckpointer`,
-  `AstrolabeHFCheckpointer`), `save_checkpoint` for raw PyTorch, `save_derived_checkpoint`
+  (`AlidadeComposerCheckpointer`, `AlidadeLightningCheckpointer`,
+  `AlidadeHFCheckpointer`), `save_checkpoint` for raw PyTorch, `save_derived_checkpoint`
   for transforms, and `stamp_checkpoint` to back-fill. See
   [docs/checkpoints.md](docs/checkpoints.md).
 - **`start_eval_run_from_checkpoint`.** Name the file you are evaluating; the training run
   comes from the file's own provenance, read offline.
-- **Scoring models astrolabe never trained.** `external_name=` on the eval helper, plus
+- **Scoring models alidade never trained.** `external_name=` on the eval helper, plus
   `register_external_model`. The model gets an entry in Aim under the submitting
   experiment, so it can sit in a leaderboard beside models you trained. Never writes to
   the checkpoint file.
-- **`run_name` on `AstrolabeComposerLogger`**, matching the other three callbacks.
+- **`run_name` on `AlidadeComposerLogger`**, matching the other three callbacks.
   Composer's own `state.run_name` was previously the only source.
 
 ### Changed
@@ -95,17 +95,17 @@ never shipped in any tag — and the eval linkage built on top of it.
 
 ### Added
 
-- **First-metric marker.** When the engine sets `ALIDADE_FIRST_METRIC_MARKER` in the training environment (astrolabe engine ≥ contract 1.3.0, healing plans using `until: first_metric`), the callback touches that file on the first `track_safely` call. The engine SSH-probes the marker at step-failure time to close the healing window. Best-effort: any failure to touch the marker is silently swallowed — the training run must never fail because a marker couldn't be written. Idempotent: subsequent `track_safely` calls skip the touch. Callers not on an astrolabe engine (no env var) see no behavior change.
-- **Local-aim transport mode** (opt-in via the NUC's engine, not the training repo). When the engine sets `ALIDADE_AIM_REPO_PATH=/path/to/local-repo` in the training environment, the callback spawns a local `aim server` subprocess on the compute host writing to that path. Training writes stay on localhost (~1900 writes/sec sustained vs. ~40/sec through the legacy SSH tunnel). The NUC-side `astrolabe-sync` sidecar pulls per-run RocksDB chunks every ~3s. Dashboard lag drops from minutes-to-hours under heavy emission to ~6-8s. See [astrolabe's `docs/aim-live-sync.md`](https://github.com/naston/astrolabe/blob/main/docs/aim-live-sync.md). Tunnel mode (no env var) remains the default; nothing changes for callers that don't opt in.
+- **First-metric marker.** When the engine sets `ALIDADE_FIRST_METRIC_MARKER` in the training environment (alidade engine ≥ contract 1.3.0, healing plans using `until: first_metric`), the callback touches that file on the first `track_safely` call. The engine SSH-probes the marker at step-failure time to close the healing window. Best-effort: any failure to touch the marker is silently swallowed — the training run must never fail because a marker couldn't be written. Idempotent: subsequent `track_safely` calls skip the touch. Callers not on an alidade engine (no env var) see no behavior change.
+- **Local-aim transport mode** (opt-in via the NUC's engine, not the training repo). When the engine sets `ALIDADE_AIM_REPO_PATH=/path/to/local-repo` in the training environment, the callback spawns a local `aim server` subprocess on the compute host writing to that path. Training writes stay on localhost (~1900 writes/sec sustained vs. ~40/sec through the legacy SSH tunnel). The NUC-side `alidade-sync` sidecar pulls per-run RocksDB chunks every ~3s. Dashboard lag drops from minutes-to-hours under heavy emission to ~6-8s. See [alidade's `docs/aim-live-sync.md`](https://github.com/alidade-ml/alidade/blob/main/docs/aim-live-sync.md). Tunnel mode (no env var) remains the default; nothing changes for callers that don't opt in.
 - **Schema-phase finalize cycle.** At framework boundary hooks (Composer `batch_end`/`eval_end`, Lightning `on_train_batch_end`/`on_validation_end`, HuggingFace `on_log`/`on_evaluate`, raw PyTorch `log_train`/`log_eval`/`log`), the callback now observes metric names and — when new names appear since the last finalize — drains the buffer, closes the Aim Run, and reopens with `force_resume=True`. The close forces RocksDB memtable contents to flush to stable SST files, which is what makes new metric names visible to read-only readers like the sync sidecar's `RepoIndexManager.index()`. Typical Composer run: 1-2 finalize cycles. Optimizer handoffs (Muon→AdamW) trigger one additional cycle when the new optimizer's metrics first appear. Hard cap of 10 cycles per run prevents pathological churn. Each finalize emits a `schema_finalized` event with the new metric names (capped to 10) for post-mortem observability via the disk-stats jsonl.
-- **`AstrolabeRun.finalize_schema()`** on the raw-PyTorch helper for users who want to force a finalize at a specific point (e.g., after a hand-rolled warmup phase that registers every metric upfront). No-op when no new names have been observed.
+- **`AlidadeRun.finalize_schema()`** on the raw-PyTorch helper for users who want to force a finalize at a specific point (e.g., after a hand-rolled warmup phase that registers every metric upfront). No-op when no new names have been observed.
 - New `alidade_callbacks._core.SchemaPhaseState` dataclass + `observe_name()` + `maybe_finalize_schema()` helpers. Public API; framework callbacks own the timing of `maybe_finalize_schema` calls.
 
 ### Changed
 
 - **Eval runs inherit the submit they were produced by.** The eval helpers now read `ALIDADE_EXPERIMENT_NAME` and `AIM_RUN_TAGS` — the same env the framework callbacks already read — and apply them to the eval run. Two effects: an eval is **filed under the submitting experiment** rather than under `eval/<task_set>`, so it lands on the page for the submit that produced it; and it carries the submit's identity (submitter, version, submit id, GPU rate), so evals are filterable and their compute attributable. Eval scripts are unchanged — nothing new is passed at the call site; the identity was already in the process and was being discarded. Outside a submit there is no experiment to inherit and filing falls back to `eval/<task_set>`, so ad-hoc use is unaffected. The three discovery tags (`kind`, `task_set`, `model_run_hash`) are applied last and always win over the ambient payload.
 
-  Filing under `eval/<task_set>` never held in the first place under local-aim transport: astrolabe's sync sidecar rewrites synced runs to the submit's experiment name, so the same eval landed in a different Aim experiment depending on transport. This makes both transports agree.
+  Filing under `eval/<task_set>` never held in the first place under local-aim transport: alidade's sync sidecar rewrites synced runs to the submit's experiment name, so the same eval landed in a different Aim experiment depending on transport. This makes both transports agree.
 - Failures in the local-aim-server startup degrade gracefully: log a warning, callback falls back to direct-connect (legacy v1.x behavior) against whatever `aim_url` points at. Failure of the schema-phase reopen is similarly non-fatal — the callback keeps the (now-closed) Run object and existing `track_safely` graceful-degradation handles subsequent writes.
 
 ### Migration
@@ -121,8 +121,8 @@ The local-aim mode adds a subprocess (`aim server`) and the schema-phase finaliz
 
 ### Added
 
-- **`log_eval_table` / `start_eval_run` — post-training eval logging.** Moved from the main `astrolabe` package into this library so training/eval repos depend on **one** lightweight package for all Aim instrumentation instead of also pulling in the orchestration framework. The helpers log benchmark-suite results (GLUE, MMLU, …) under the `eval/<task_set>/<metric>` namespace on a dedicated Aim run tagged `astrolabe.kind="eval"`, which populates astrolabe's dashboard Eval tab. Available from the base install (`pip install alidade-callbacks`) — no framework extra needed. See [`docs/eval-results.md`](docs/eval-results.md).
-  - Connection follows the library's standard convention: `aim_url` argument, overridden by `ALIDADE_AIM_URL`, defaulting to `aim://localhost:43800`. (The original `astrolabe.eval_results` took a filesystem `aim_repo` path; the parameter is renamed and now URL-first to match the framework callbacks. `aim.Run` still accepts a filesystem path if you pass one.)
+- **`log_eval_table` / `start_eval_run` — post-training eval logging.** Moved from the main `alidade` package into this library so training/eval repos depend on **one** lightweight package for all Aim instrumentation instead of also pulling in the orchestration framework. The helpers log benchmark-suite results (GLUE, MMLU, …) under the `eval/<task_set>/<metric>` namespace on a dedicated Aim run tagged `astrolabe.kind="eval"`, which populates alidade's dashboard Eval tab. Available from the base install (`pip install alidade-callbacks`) — no framework extra needed. See [`docs/eval-results.md`](docs/eval-results.md).
+  - Connection follows the library's standard convention: `aim_url` argument, overridden by `ALIDADE_AIM_URL`, defaulting to `aim://localhost:43800`. (The original `alidade.eval_results` took a filesystem `aim_repo` path; the parameter is renamed and now URL-first to match the framework callbacks. `aim.Run` still accepts a filesystem path if you pass one.)
   - `EvalInputError` is exported for callers that want to catch malformed-input rejections.
 
 ### Fixed
@@ -133,7 +133,7 @@ The local-aim mode adds a subprocess (`aim server`) and the schema-phase finaliz
 
 ### Breaking changes
 
-- **`EVAL_METRIC_PREFIX` flipped from `"eval"` to `"val"`.** During-training validation metrics emitted by Composer (`metrics/eval/*`), HuggingFace Trainer (`eval_*`), Lightning (`val_*` / `val/*`), and the raw-PyTorch `Run.log_eval()` helper now land in Aim as `val/<name>` instead of `eval/<name>`. The change aligns with astrolabe v1.7's eval-runs schema, which uses `eval/<task_set>/<metric>` exclusively for post-training benchmark suites tracked on separate eval Aim runs (`astrolabe.kind="eval"`). The split puts during-training validation on the dashboard's Training tab and benchmark results on the new Eval tab — sharing the `eval/` prefix made them visually indistinguishable.
+- **`EVAL_METRIC_PREFIX` flipped from `"eval"` to `"val"`.** During-training validation metrics emitted by Composer (`metrics/eval/*`), HuggingFace Trainer (`eval_*`), Lightning (`val_*` / `val/*`), and the raw-PyTorch `Run.log_eval()` helper now land in Aim as `val/<name>` instead of `eval/<name>`. The change aligns with alidade v1.7's eval-runs schema, which uses `eval/<task_set>/<metric>` exclusively for post-training benchmark suites tracked on separate eval Aim runs (`astrolabe.kind="eval"`). The split puts during-training validation on the dashboard's Training tab and benchmark results on the new Eval tab — sharing the `eval/` prefix made them visually indistinguishable.
 
   **Migration**: training repos that pin this package update their pin and re-run; the new prefix lands automatically. Legacy production runs already in Aim keep their `eval/*` metric names — those metrics still chart correctly on the Training tab, they just sit under a now-deprecated prefix. No retroactive migration.
 
@@ -145,50 +145,50 @@ The local-aim mode adds a subprocess (`aim server`) and the schema-phase finaliz
 
 ## v0.2.0 — 2026-05-04
 
-**Renamed**: `astrolabe-composer-callback` → `alidade-callbacks`. The new package supports four ML training frameworks instead of one.
+**Renamed**: `alidade-composer-callback` → `alidade-callbacks`. The new package supports four ML training frameworks instead of one.
 
 ### What's new
 
 - **Four framework callbacks** behind optional extras:
-  - `alidade-callbacks[composer]` — `AstrolabeComposerLogger` (was `AstrolabeLogger`)
-  - `alidade-callbacks[lightning]` — `AstrolabeLightningLogger` (new)
-  - `alidade-callbacks[hf]` — `AstrolabeHFTrainerCallback` (new)
+  - `alidade-callbacks[composer]` — `AlidadeComposerLogger` (was `AlidadeLogger`)
+  - `alidade-callbacks[lightning]` — `AlidadeLightningLogger` (new)
+  - `alidade-callbacks[hf]` — `AlidadeHFTrainerCallback` (new)
   - `alidade-callbacks[all]` — everything
 - **`Run` context manager** for raw PyTorch / JAX / Accelerate / custom loops. Same env-var contract; `with Run() as run: run.log_train(loss=x, step=n)`.
 - **Pass-through philosophy**: every metric the user logs flows to Aim under the user's chosen name. The library only synthesizes `wall_time`. No metric whitelists, no surprise prefixes. Replaces the v0.1.x behavior where only `train/loss` and a few framework metrics were logged.
 - **Strict mode**: `ALIDADE_CALLBACK_STRICT=1` flips graceful-degrade warnings into raised exceptions for fail-fast CI behavior.
-- **Centralized eval namespace**: `_core.EVAL_METRIC_PREFIX` is the single point of truth — flips from `eval/` to `val/` in v1.0.0 alongside astrolabe v1.7's eval-runs schema. One-line change cascades to every framework.
+- **Centralized eval namespace**: `_core.EVAL_METRIC_PREFIX` is the single point of truth — flips from `eval/` to `val/` in v1.0.0 alongside alidade v1.7's eval-runs schema. One-line change cascades to every framework.
 - **Rank-zero gating** built into every callback. N-process distributed runs produce one Aim run, not N.
 - **`track_safely` failures now log at `WARNING`** (rate-limited to once per metric name) instead of `DEBUG`. The previous default level meant `track()` failures were invisible under loguru's stock `INFO` filter — exactly the diagnostic gap that hid the multi-rank issue we hit in ProjectOrion's muon experiment. Strict mode still re-raises.
-- **Write-buffer + retry layer** (`_MetricBuffer`) owns reliability for `track_safely`. Every track call now enqueues into a bounded in-process queue (default 100k items, ~20 MB at typical scalar-tuple sizes) and a daemon drainer thread does the actual `run.track()` with exponential-backoff retry on any exception. Eliminates two failure modes that bit ProjectOrion's muon run: gRPC transient failures (Aim's client raises on connection blip → silently drops) and Aim's internal queue overflow under sustained per-batch logging across an SSH-tunneled WAN. The buffer is **default-on, no flag** — silent reliability gaps are exactly the bug class users don't think to opt into fixing, and the overhead is microseconds per submit. Strict mode bypasses (synchronous + raise). `close_run` blocks on buffer drain (30s timeout) so end-of-training doesn't truncate in-flight metrics, then logs a one-line summary (`Aim buffer: N submitted, N drained, N retried, N dropped, N unflushed`) so the operator sees network-side activity even when training succeeds. **What this does NOT fix**: silent drops where `run.track()` returns success without raising — those need an architectural fix (the tracking-API sidecar in astrolabe's roadmap).
+- **Write-buffer + retry layer** (`_MetricBuffer`) owns reliability for `track_safely`. Every track call now enqueues into a bounded in-process queue (default 100k items, ~20 MB at typical scalar-tuple sizes) and a daemon drainer thread does the actual `run.track()` with exponential-backoff retry on any exception. Eliminates two failure modes that bit ProjectOrion's muon run: gRPC transient failures (Aim's client raises on connection blip → silently drops) and Aim's internal queue overflow under sustained per-batch logging across an SSH-tunneled WAN. The buffer is **default-on, no flag** — silent reliability gaps are exactly the bug class users don't think to opt into fixing, and the overhead is microseconds per submit. Strict mode bypasses (synchronous + raise). `close_run` blocks on buffer drain (30s timeout) so end-of-training doesn't truncate in-flight metrics, then logs a one-line summary (`Aim buffer: N submitted, N drained, N retried, N dropped, N unflushed`) so the operator sees network-side activity even when training succeeds. **What this does NOT fix**: silent drops where `run.track()` returns success without raising — those need an architectural fix (the tracking-API sidecar in alidade's roadmap).
 - **Dependency drift monitoring** via scheduled GitHub Actions workflow (`dep-watch.yml`). Aim daily, frameworks weekly. New version → auto-test → commit on pass / open `dep-drift` issue on fail.
 
 ### Breaking changes (migration)
 
-If you were using `astrolabe-composer-callback==0.1.x`:
+If you were using `alidade-composer-callback==0.1.x`:
 
 ```diff
-- pip install astrolabe-composer-callback
+- pip install alidade-composer-callback
 + pip install alidade-callbacks[composer]
 ```
 
 ```diff
-- from astrolabe_composer_callback import AstrolabeLogger
-+ from alidade_callbacks import AstrolabeComposerLogger
+- from alidade_composer_callback import AlidadeLogger
++ from alidade_callbacks import AlidadeComposerLogger
 ```
 
 ```diff
   trainer = Trainer(
       model=...,
--     callbacks=[AstrolabeLogger(repo="aim://localhost:43800")],
-+     loggers=[AstrolabeComposerLogger()],
+-     callbacks=[AlidadeLogger(repo="aim://localhost:43800")],
++     loggers=[AlidadeComposerLogger()],
   )
 ```
 
 Three changes to be aware of:
 
 1. **Package + class names changed.** No back-compat shim — the v0.1.4 release stays on PyPI under the old name as the migration anchor; the new package is `alidade-callbacks`.
-2. **Attachment point changed for Composer.** `AstrolabeComposerLogger` is now a `LoggerDestination` (was a plain `Callback`). Composer 0.20+ rejects `LoggerDestination` instances passed to `callbacks=` with a clear error; older Composer versions silently dropped every `log_metrics` call. Move to `loggers=`.
+2. **Attachment point changed for Composer.** `AlidadeComposerLogger` is now a `LoggerDestination` (was a plain `Callback`). Composer 0.20+ rejects `LoggerDestination` instances passed to `callbacks=` with a clear error; older Composer versions silently dropped every `log_metrics` call. Move to `loggers=`.
 3. **Constructor parameter renamed.** `repo=` is now `aim_url=`. `log_interval=` is gone — `LoggerDestination.log_metrics` fires per Composer's own logging cadence (`console_log_interval` in your training YAML), not a separate per-callback throttle.
 
 ### Other behavior changes
@@ -203,7 +203,7 @@ v0.1.x hardcoded `train/loss` as the only training metric extracted from `state.
 
 ---
 
-## Pre-rename history (`astrolabe-composer-callback`)
+## Pre-rename history (`alidade-composer-callback`)
 
 ### v0.1.4
 
@@ -215,7 +215,7 @@ v0.1.x hardcoded `train/loss` as the only training metric extracted from `state.
 
 ### v0.1.2
 
-- Env vars (`ALIDADE_EXPERIMENT_NAME`, `AIM_RUN_TAGS`) now win over constructor args. Astrolabe is the orchestrator; its identity is authoritative.
+- Env vars (`ALIDADE_EXPERIMENT_NAME`, `AIM_RUN_TAGS`) now win over constructor args. Alidade is the orchestrator; its identity is authoritative.
 
 ### v0.1.1
 

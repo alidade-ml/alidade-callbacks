@@ -2,7 +2,7 @@
 
 Integration tests for `alidade-callbacks` against a **docker-compose environment**: two containers on a shared bridge network — `aim-server` (simulates the NUC's Aim endpoint) and `client` (simulates a compute host running the callback library). Scenarios exercise the callback across a real TCP hop into a real Aim server, in the shape that a customer's Lambda instance would see.
 
-Companion testbed: `astrolabe/tests/testbed/`. Same design pattern, different scope. Astrolabe testbed simulates the full NUC-plus-compute environment (SSH, sidecar, engine, dashboard). This one simulates only what the callback sees: bridge network + Aim server.
+Companion testbed: `alidade/tests/testbed/`. Same design pattern, different scope. Alidade testbed simulates the full NUC-plus-compute environment (SSH, sidecar, engine, dashboard). This one simulates only what the callback sees: bridge network + Aim server.
 
 ## Running
 
@@ -35,7 +35,7 @@ tests/testbed/
 ├── harness/
 │   ├── compose.py          docker-compose lifecycle: up, down, exec_in, logs
 │   ├── assertions.py       Aim SDK query helpers, host-side reads
-│   ├── driver.py           dispatches by framework — raw uses AstrolabeRun directly, composer/lightning/hf run real tiny CPU training; runs INSIDE the client container
+│   ├── driver.py           dispatches by framework — raw uses AlidadeRun directly, composer/lightning/hf run real tiny CPU training; runs INSIDE the client container
 │   └── eval_driver.py      exercises log_eval_table / start_eval_run / start_eval_run_from_checkpoint; runs INSIDE the client container
 └── scenarios/
     ├── test_core.py            _core.py — Logger, buffer, drainer, schema-finalize, tags, name, first_metric marker, hash fidelity
@@ -64,4 +64,4 @@ tests/testbed/
 
 - `plans/callback-testbed.md` — this testbed's design plan
 - `plans/eval-linkage-and-checkpoint-callbacks.md` — checkpoint metadata + eval-linkage work; adds CLI scenarios to this testbed when the CLIs land
-- `astrolabe/plans/healing-and-failure-hooks-testing.md` — sibling testbed in the astrolabe repo
+- `alidade/plans/healing-and-failure-hooks-testing.md` — sibling testbed in the alidade repo

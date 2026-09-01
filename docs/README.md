@@ -1,7 +1,7 @@
-# Getting your data into astrolabe
+# Getting your data into alidade
 
 `alidade-callbacks` is the one library your training and eval code imports. It streams
-metrics to Aim with astrolabe's conventions applied, so your runs show up on the
+metrics to Aim with alidade's conventions applied, so your runs show up on the
 dashboard attached to the right experiment, the right submit, and the right model.
 
 It is deliberately small. The base install pulls `aim` and `loguru` and nothing else —
@@ -52,12 +52,12 @@ to a trainer.
 Training:
 
 ```python
-from alidade_callbacks import AstrolabeComposerLogger, AstrolabeComposerCheckpointer
+from alidade_callbacks import AlidadeComposerLogger, AlidadeComposerCheckpointer
 
 trainer = Trainer(
     model=...,
-    loggers=[AstrolabeComposerLogger()],        # metrics
-    callbacks=[AstrolabeComposerCheckpointer()],  # provenance on every save
+    loggers=[AlidadeComposerLogger()],        # metrics
+    callbacks=[AlidadeComposerCheckpointer()],  # provenance on every save
 )
 ```
 
@@ -77,7 +77,7 @@ Nothing was passed between them but the file.
 
 ## Two things worth knowing early
 
-**Inside an astrolabe submit, the environment wins.** The engine sets
+**Inside an alidade submit, the environment wins.** The engine sets
 `ALIDADE_EXPERIMENT_NAME` and `AIM_RUN_TAGS`, and those override the matching
 constructor arguments. That is what lets the same script work submitted and standalone —
 but it means `experiment_name=` silently does nothing inside a submit. Details in

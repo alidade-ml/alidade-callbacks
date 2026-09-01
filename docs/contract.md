@@ -8,24 +8,24 @@ These four behaviors hold for **every** framework callback (Composer, Lightning,
 
 Behaviors 1–3 also hold for the post-training eval helpers in
 [`docs/eval-results.md`](eval-results.md). An eval script running as a step of an
-astrolabe submit picks up the same identity the trainer does, so its results are
+alidade submit picks up the same identity the trainer does, so its results are
 attributable to the submit that paid for them. Behavior 4 does not apply — an eval
 run has no training lifecycle to report a status for.
 
 ### 1. Honors `ALIDADE_EXPERIMENT_NAME`
 
-When the env var is set, it wins over any constructor argument. Astrolabe sets it on every orchestrated run; the callback picks it up automatically. Empty-string env values fall through to the constructor arg (so accidentally-empty shells don't break standalone use).
+When the env var is set, it wins over any constructor argument. Alidade sets it on every orchestrated run; the callback picks it up automatically. Empty-string env values fall through to the constructor arg (so accidentally-empty shells don't break standalone use).
 
 ### 2. Honors `AIM_RUN_TAGS`
 
-Format: `key1=val1,key2=val2,...`. Whitespace tolerated. Each key/value becomes a tag on the Aim run. Astrolabe writes `astrolabe.experiment`, `astrolabe.version`, `astrolabe.submit_id`, `astrolabe.user` here on every orchestrated run. Standalone users can write whatever they want.
+Format: `key1=val1,key2=val2,...`. Whitespace tolerated. Each key/value becomes a tag on the Aim run. Alidade writes `astrolabe.experiment`, `astrolabe.version`, `astrolabe.submit_id`, `astrolabe.user` here on every orchestrated run. Standalone users can write whatever they want.
 
 ### 3. Connects where the engine says, in one fixed order
 
 1. `ALIDADE_AIM_REPO_PATH` — a filesystem path, set in local-aim mode
-2. `ALIDADE_AIM_URL` — set by astrolabe on provisioned instances
+2. `ALIDADE_AIM_URL` — set by alidade on provisioned instances
 3. the `aim_url=` constructor argument
-4. `aim://localhost:43800`, the tunnel astrolabe opens
+4. `aim://localhost:43800`, the tunnel alidade opens
 
 The repo path comes first because it is the engine stating which transport it chose.
 In local-aim mode it exports that path and opens **no** tunnel, so anything reaching
@@ -49,7 +49,7 @@ Close failures are silent — by the time we close, the data has been streamed a
 
 > **We log every metric you produce. We synthesize one (`wall_time`). We never invent the rest.**
 
-This is the core contract. The callback exists to forward your metrics to Aim with astrolabe's tag conventions applied — not to decide what's worth logging.
+This is the core contract. The callback exists to forward your metrics to Aim with alidade's tag conventions applied — not to decide what's worth logging.
 
 `wall_time` is written **only at steps where a metric of yours landed**. That is not a tidiness rule: Aim stores metrics in a reservoir of bounded size, so a sample at a step nothing else covers does not simply sit there unused — it *evicts* a real one, and the evicted point can be anywhere in the run rather than at the end.
 
@@ -72,7 +72,7 @@ User-chosen names are **never** rewritten. If you call `self.log("my_thing/foo",
 
 ### Validation namespace — `val/` (v1.0.0+)
 
-As of v1.0.0 during-training validation metrics emit under `val/<name>`. Pre-v1.0.0 they emitted under `eval/<name>`; the flip aligns with astrolabe's eval-runs schema, which reserves `eval/<task>/<metric>` for **post-training benchmark suites** tracked on dedicated eval Aim runs (see [the eval guide](eval-results.md)). The `val/` vs `eval/` split puts during-training validation on the dashboard's Training tab and benchmark results on the Eval tab — sharing one prefix made them visually indistinguishable.
+As of v1.0.0 during-training validation metrics emit under `val/<name>`. Pre-v1.0.0 they emitted under `eval/<name>`; the flip aligns with alidade's eval-runs schema, which reserves `eval/<task>/<metric>` for **post-training benchmark suites** tracked on dedicated eval Aim runs (see [the eval guide](eval-results.md)). The `val/` vs `eval/` split puts during-training validation on the dashboard's Training tab and benchmark results on the Eval tab — sharing one prefix made them visually indistinguishable.
 
 The single source of truth is `_core.EVAL_METRIC_PREFIX`; flipping it cascades through every framework callback. Legacy production runs in Aim keep their `eval/*` metric names — those still chart correctly on the Training tab; they just sit under a deprecated prefix.
 
@@ -121,5 +121,5 @@ Non-rank-zero processes never open a run, never write metrics, never close. They
 - **No metric aggregation.** Each framework already aggregates per-batch metrics into per-step or per-epoch scalars; we trust that.
 - **No re-namespacing of user-chosen names.** Your `MyCustomThroughput` lands as `MyCustomThroughput`.
 - **No multi-Aim-backend support.** One Aim URL per run; choose between the SSH tunnel and a direct connection at config time.
-- **No checkpoint upload.** Use astrolabe's git tag provenance or your training framework's checkpoint sink.
+- **No checkpoint upload.** Use alidade's git tag provenance or your training framework's checkpoint sink.
 - **No auto-detection of the framework.** You import the class that matches your framework explicitly. The base install (no extras) doesn't pull in any framework deps.

@@ -1,12 +1,12 @@
 # HuggingFace Trainer
 
-Cookbook for `AstrolabeHFTrainerCallback` — `transformers.Trainer` and TRL.
+Cookbook for `AlidadeHFTrainerCallback` — `transformers.Trainer` and TRL.
 
 ## Minimal example
 
 ```python
 from transformers import Trainer, TrainingArguments
-from alidade_callbacks import AstrolabeHFTrainerCallback
+from alidade_callbacks import AlidadeHFTrainerCallback
 
 trainer = Trainer(
     model=model,
@@ -19,14 +19,14 @@ trainer = Trainer(
     train_dataset=train_ds,
     eval_dataset=val_ds,
 )
-trainer.add_callback(AstrolabeHFTrainerCallback())
+trainer.add_callback(AlidadeHFTrainerCallback())
 trainer.train()
 ```
 
 ## Full example
 
 ```python
-callback = AstrolabeHFTrainerCallback(
+callback = AlidadeHFTrainerCallback(
     aim_url="aim://my-aim-server.example.com:43800",
     experiment_name="llama-finetune",
     tags={"task": "instruction-tuning", "base_model": "llama3-8b"},
@@ -42,13 +42,13 @@ TRL's `SFTTrainer`, `DPOTrainer`, `RewardTrainer`, and `PPOTrainer` all inherit 
 
 ```python
 from trl import SFTTrainer
-from alidade_callbacks import AstrolabeHFTrainerCallback
+from alidade_callbacks import AlidadeHFTrainerCallback
 
 trainer = SFTTrainer(
     model=model,
     args=training_args,
     train_dataset=train_ds,
-    callbacks=[AstrolabeHFTrainerCallback()],
+    callbacks=[AlidadeHFTrainerCallback()],
 )
 trainer.train()
 ```
@@ -113,7 +113,7 @@ Construct once, attach to multiple Trainers — but the callback holds an Aim ru
 ```python
 for fold in range(5):
     trainer = Trainer(...)
-    trainer.add_callback(AstrolabeHFTrainerCallback(
+    trainer.add_callback(AlidadeHFTrainerCallback(
         run_name=f"cv-fold-{fold}",
     ))
     trainer.train()
@@ -125,7 +125,7 @@ for fold in range(5):
 
 HF Trainer doesn't expose a clean per-batch hook with metric data — only `on_step_end` (no metrics) and `on_log` (every `logging_steps` batches). The callback anchors `wall_time` at the first `on_step_end` and writes it on every `on_log`. If eval falls between two `on_log` events, the eval time gets included in the next `wall_time` reading.
 
-For most users this is fine. For fine-grained timing analysis, switch to `AstrolabeRun` and write the loop yourself.
+For most users this is fine. For fine-grained timing analysis, switch to `AlidadeRun` and write the loop yourself.
 
 ### `logging_steps` controls metric cadence
 
@@ -139,6 +139,6 @@ If you set `eval_strategy="no"` (no automatic eval during training), `on_evaluat
 
 HF's `TrainerCallback` API doesn't expose an exception hook. If training raises, the run closes via Python's normal cleanup — but `astrolabe.status` ends up `completed` because `on_train_end` fired during cleanup, not the failure path. The Aim run will still have all metrics streamed up to the crash. For accurate failure marking, use the `ALIDADE_CALLBACK_STRICT=1` env var in CI environments where you want training failures to be loud.
 
-### Migrating from `astrolabe-composer-callback`
+### Migrating from `alidade-composer-callback`
 
 If you were using a Composer callback, this is a different package and a different framework. Just install `alidade-callbacks[hf]` fresh.

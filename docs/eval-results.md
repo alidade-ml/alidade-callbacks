@@ -1,7 +1,7 @@
 # Eval
 
 Logging benchmark results — GLUE, MMLU, a held-out set you built — so they land on
-astrolabe's **Eval tab** attached to the model that earned them.
+alidade's **Eval tab** attached to the model that earned them.
 
 For during-training metrics, see [training](training.md). The split matters:
 
@@ -69,9 +69,9 @@ One call: opens the run, tags it, writes every row, closes. `rows` maps a task t
 
 ---
 
-## Models astrolabe never trained
+## Models alidade never trained
 
-Benchmarking a downloaded checkpoint — `roberta-base`, a collaborator's file. Astrolabe
+Benchmarking a downloaded checkpoint — `roberta-base`, a collaborator's file. Alidade
 has no record of it, so there is nothing for results to attach to. Name it and the library
 creates that record:
 
@@ -191,7 +191,7 @@ at the end costs the whole run.
 run = start_eval_run_from_checkpoint(
     checkpoint=ckpt, task_set="glue", on_missing_parent="warn",
 )
-if not run.astrolabe_linked:
+if not run.alidade_linked:
     ...   # returns an unlinked run; stamp it later
 ```
 
@@ -208,14 +208,14 @@ Every helper takes an optional `aim_url`, resolved the same way as everywhere el
 library:
 
 1. `ALIDADE_AIM_REPO_PATH` env — a filesystem path, set in local-aim mode
-2. `ALIDADE_AIM_URL` env — set by astrolabe on provisioned instances
+2. `ALIDADE_AIM_URL` env — set by alidade on provisioned instances
 3. the `aim_url=` argument
-4. `aim://localhost:43800`, the tunnel astrolabe opens
+4. `aim://localhost:43800`, the tunnel alidade opens
 
-The repo path wins because in local-aim mode astrolabe opens no tunnel, so the
+The repo path wins because in local-aim mode alidade opens no tunnel, so the
 `aim://` default answers nothing.
 
-Running as a step of an astrolabe submit, omit it. Running elsewhere, pass it — a URL or
+Running as a step of an alidade submit, omit it. Running elsewhere, pass it — a URL or
 a filesystem path both work.
 
 ### What you inherit inside a submit

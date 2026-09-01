@@ -2,7 +2,7 @@
 
 Storing a few actual model outputs, so the run can show what it produces.
 
-Every other number astrolabe surfaces is a scalar: loss curves, eval scores, cost.
+Every other number alidade surfaces is a scalar: loss curves, eval scores, cost.
 None of them answers the question people ask first when a run finishes, and the only
 one a person outside the project understands: *what does it actually make?*
 
