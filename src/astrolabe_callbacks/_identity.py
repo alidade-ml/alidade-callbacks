@@ -17,7 +17,7 @@ __all__ = ["ambient_identity", "resolve_aim_url"]
 def resolve_aim_url(aim_url: str | None) -> str:
     """Resolve the Aim connection URL with the lib's standard precedence.
 
-    Order: ``ASTROLABE_AIM_REPO_PATH`` > ``ASTROLABE_AIM_URL`` > the argument
+    Order: ``ALIDADE_AIM_REPO_PATH`` > ``ALIDADE_AIM_URL`` > the argument
     > ``contract.DEFAULT_AIM_URL``.
 
     The repo path comes first because it is the engine saying which transport
@@ -48,7 +48,7 @@ def resolve_aim_url(aim_url: str | None) -> str:
     if repo_path:
         return repo_path
     return (
-        os.environ.get("ASTROLABE_AIM_URL")
+        os.environ.get("ALIDADE_AIM_URL")
         or aim_url
         or contract.DEFAULT_AIM_URL
     )
@@ -63,7 +63,7 @@ def ambient_identity() -> dict[str, str]:
     identity was already in the process and was being discarded, leaving
     results unattributable to the submit that paid for them.
 
-    ``ASTROLABE_EXPERIMENT_NAME`` is authoritative over the tag payload for the
+    ``ALIDADE_EXPERIMENT_NAME`` is authoritative over the tag payload for the
     experiment, matching ``resolve_run_config``'s precedence.
     """
     tags = {

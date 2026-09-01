@@ -78,13 +78,13 @@ Nothing was passed between them but the file.
 ## Two things worth knowing early
 
 **Inside an astrolabe submit, the environment wins.** The engine sets
-`ASTROLABE_EXPERIMENT_NAME` and `AIM_RUN_TAGS`, and those override the matching
+`ALIDADE_EXPERIMENT_NAME` and `AIM_RUN_TAGS`, and those override the matching
 constructor arguments. That is what lets the same script work submitted and standalone —
 but it means `experiment_name=` silently does nothing inside a submit. Details in
 [training](training.md#env-wins-over-your-arguments).
 
 **Logging never crashes training.** A dead Aim server costs you a warning and the
-metrics, not the run. Set `ASTROLABE_CALLBACK_STRICT=1` to invert that in CI, where
+metrics, not the run. Set `ALIDADE_CALLBACK_STRICT=1` to invert that in CI, where
 losing metrics silently is the worse failure.
 
 ---

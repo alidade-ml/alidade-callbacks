@@ -45,7 +45,7 @@ class EvalDriverConfig:
     on_missing_parent: str
     driver_flags: dict[str, str]
     # Env the astrolabe engine would have exported into an eval step
-    # (ASTROLABE_EXPERIMENT_NAME, AIM_RUN_TAGS). Passed through to the
+    # (ALIDADE_EXPERIMENT_NAME, AIM_RUN_TAGS). Passed through to the
     # container verbatim rather than serialized: the helpers read the
     # real env var names, so anything else would test a stand-in.
     submit_env: dict[str, str] = field(default_factory=dict)
@@ -107,7 +107,7 @@ def config_to_env(config: EvalDriverConfig) -> dict[str, str]:
         "TESTBED_EVAL_USE_FROM_CHECKPOINT": "1" if config.use_from_checkpoint else "0",
         "TESTBED_EVAL_ON_MISSING_PARENT": config.on_missing_parent,
         "TESTBED_EVAL_DRIVER_FLAGS": json.dumps(config.driver_flags),
-        "ASTROLABE_AIM_URL": config.aim_url,
+        "ALIDADE_AIM_URL": config.aim_url,
     }
     if config.checkpoint_path is not None:
         env["TESTBED_EVAL_CHECKPOINT_PATH"] = config.checkpoint_path
@@ -229,13 +229,13 @@ def main() -> None:
     except Exception as e:
         # MissingParentError → exit code 43
         if type(e).__name__ == "MissingParentError":
-            print(f"ASTROLABE_EVAL_LINKED=false")
+            print(f"ALIDADE_EVAL_LINKED=false")
             raise SystemExit(43)
         raise
 
     if eval_hash:
-        print(f"ASTROLABE_EVAL_RUN_HASH={eval_hash}")
-    print(f"ASTROLABE_EVAL_LINKED={'true' if linked else 'false'}")
+        print(f"ALIDADE_EVAL_RUN_HASH={eval_hash}")
+    print(f"ALIDADE_EVAL_LINKED={'true' if linked else 'false'}")
 
 
 if __name__ == "__main__":

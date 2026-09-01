@@ -206,7 +206,7 @@ def log_samples(
         Name for a model astrolabe never trained. Registers an entry and
         attributes the samples to it. A checkpoint carrying provenance wins.
     aim_url : str, optional
-        Aim tracking URL. ``ASTROLABE_AIM_URL`` wins over this argument.
+        Aim tracking URL. ``ALIDADE_AIM_URL`` wins over this argument.
 
     Raises
     ------

@@ -49,7 +49,7 @@ services:
       - ../../src:/app/src:ro
       - ../../tests:/app/tests:ro
     environment:
-      ASTROLABE_AIM_URL: "aim://aim-server:43800"
+      ALIDADE_AIM_URL: "aim://aim-server:43800"
       PYTHONUNBUFFERED: "1"
     networks:
       - testbed

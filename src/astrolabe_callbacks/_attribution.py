@@ -147,7 +147,7 @@ def mint_model_entry(name: str, aim_url: str | None) -> str:
 
     **One entry per submit, not per call.** The first call for a name mints an
     entry and records it in the per-submit registry the engine points
-    ``ASTROLABE_EXTERNAL_MODELS`` at; later calls in the same submit read it
+    ``ALIDADE_EXTERNAL_MODELS`` at; later calls in the same submit read it
     back. Scoring one downloaded model on GLUE, MMLU and BEIR as three steps
     therefore produces three results about one model, rather than three models
     with one result each — which broke ``--include`` silently, since including

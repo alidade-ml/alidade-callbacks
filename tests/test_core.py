@@ -116,27 +116,27 @@ class TestResolveRunConfigPrecedence:
     driving the run. Constructor args are the standalone fallback."""
 
     def test_env_experiment_name_wins_over_arg(self, monkeypatch):
-        monkeypatch.setenv("ASTROLABE_EXPERIMENT_NAME", "from-env")
+        monkeypatch.setenv("ALIDADE_EXPERIMENT_NAME", "from-env")
         cfg = resolve_run_config(experiment_name="from-arg")
         assert cfg.experiment_name == "from-env"
 
     def test_arg_used_when_env_unset(self, monkeypatch):
         # autouse fixture already cleared env; explicit guard for clarity.
-        monkeypatch.delenv("ASTROLABE_EXPERIMENT_NAME", raising=False)
+        monkeypatch.delenv("ALIDADE_EXPERIMENT_NAME", raising=False)
         cfg = resolve_run_config(experiment_name="from-arg")
         assert cfg.experiment_name == "from-arg"
 
     def test_empty_env_falls_through_to_arg(self, monkeypatch):
         # Empty string env is treated as "not set" — `or None` chains
         # the precedence forward. Without this, accidentally setting
-        # ASTROLABE_EXPERIMENT_NAME="" in a shell would silently break
+        # ALIDADE_EXPERIMENT_NAME="" in a shell would silently break
         # the constructor fallback.
-        monkeypatch.setenv("ASTROLABE_EXPERIMENT_NAME", "")
+        monkeypatch.setenv("ALIDADE_EXPERIMENT_NAME", "")
         cfg = resolve_run_config(experiment_name="from-arg")
         assert cfg.experiment_name == "from-arg"
 
     def test_env_aim_url_wins(self, monkeypatch):
-        monkeypatch.setenv("ASTROLABE_AIM_URL", "aim://from-env:9999")
+        monkeypatch.setenv("ALIDADE_AIM_URL", "aim://from-env:9999")
         cfg = resolve_run_config(aim_url="aim://from-arg:1111")
         assert cfg.aim_url == "aim://from-env:9999"
 
@@ -148,7 +148,7 @@ class TestResolveRunConfigPrecedence:
     def test_repo_path_wins_for_training_exactly_as_for_eval(self, monkeypatch):
         # The regression this slice exists to prevent. Training used to
         # hand-roll its own precedence chain that never consulted
-        # ASTROLABE_AIM_REPO_PATH, so in local-aim mode it resolved to the
+        # ALIDADE_AIM_REPO_PATH, so in local-aim mode it resolved to the
         # aim:// default while eval and samples resolved to the repo path.
         # The local aim server existed only to make that default answer, so
         # deleting the server without this would point training at a dead
@@ -160,10 +160,10 @@ class TestResolveRunConfigPrecedence:
 
     def test_repo_path_beats_the_url_env_var_too(self, monkeypatch):
         # Both set is the real local-aim submit: the engine exports the repo
-        # path, and ASTROLABE_AIM_URL may still be set from a prior tunnel
+        # path, and ALIDADE_AIM_URL may still be set from a prior tunnel
         # -mode config. The engine's transport choice is the one that counts.
         monkeypatch.setenv(contract.ENV_AIM_REPO_PATH, "/tmp/aim-local-abc123")
-        monkeypatch.setenv("ASTROLABE_AIM_URL", "aim://from-env:9999")
+        monkeypatch.setenv("ALIDADE_AIM_URL", "aim://from-env:9999")
         cfg = resolve_run_config()
         assert cfg.aim_url == "/tmp/aim-local-abc123"
 
@@ -172,11 +172,11 @@ class TestResolveRunConfigPrecedence:
         # unifying the resolution did not quietly change tunnel mode, which
         # is still the default transport.
         monkeypatch.delenv(contract.ENV_AIM_REPO_PATH, raising=False)
-        monkeypatch.setenv("ASTROLABE_AIM_URL", "aim://from-env:9999")
+        monkeypatch.setenv("ALIDADE_AIM_URL", "aim://from-env:9999")
         assert resolve_run_config(aim_url="aim://from-arg:1111").aim_url == (
             "aim://from-env:9999"
         )
-        monkeypatch.delenv("ASTROLABE_AIM_URL", raising=False)
+        monkeypatch.delenv("ALIDADE_AIM_URL", raising=False)
         assert resolve_run_config(aim_url="aim://from-arg:1111").aim_url == (
             "aim://from-arg:1111"
         )
@@ -271,19 +271,19 @@ class TestIsStrict:
         assert is_strict() is False
 
     def test_unset_explicit(self, monkeypatch):
-        monkeypatch.delenv("ASTROLABE_CALLBACK_STRICT", raising=False)
+        monkeypatch.delenv("ALIDADE_CALLBACK_STRICT", raising=False)
         assert is_strict() is False
 
     @pytest.mark.parametrize("value", ["1", "true", "yes", "TRUE", "Yes", "True"])
     def test_truthy_values(self, monkeypatch, value):
-        monkeypatch.setenv("ASTROLABE_CALLBACK_STRICT", value)
+        monkeypatch.setenv("ALIDADE_CALLBACK_STRICT", value)
         assert is_strict() is True
 
     @pytest.mark.parametrize(
         "value", ["", "0", "false", "no", "off", "False", "anything-else"]
     )
     def test_falsy_values(self, monkeypatch, value):
-        monkeypatch.setenv("ASTROLABE_CALLBACK_STRICT", value)
+        monkeypatch.setenv("ALIDADE_CALLBACK_STRICT", value)
         assert is_strict() is False
 
 
@@ -308,7 +308,7 @@ class TestOpenAimRunFailureModes:
         import sys
 
         monkeypatch.setitem(sys.modules, "aim", None)
-        monkeypatch.setenv("ASTROLABE_CALLBACK_STRICT", "1")
+        monkeypatch.setenv("ALIDADE_CALLBACK_STRICT", "1")
         cfg = make_run_config()
         with pytest.raises(RuntimeError, match="aim not installed"):
             open_aim_run(cfg)
@@ -329,7 +329,7 @@ class TestOpenAimRunFailureModes:
                 raise ConnectionError("server down")
 
         monkeypatch.setattr("aim.Run", BrokenRun)
-        monkeypatch.setenv("ASTROLABE_CALLBACK_STRICT", "1")
+        monkeypatch.setenv("ALIDADE_CALLBACK_STRICT", "1")
         cfg = make_run_config()
         with pytest.raises(RuntimeError, match="Aim connection"):
             open_aim_run(cfg)
@@ -469,7 +469,7 @@ class TestTrackSafelyFailureModes:
 
         monkeypatch.setattr("aim.Run", TrackFails)
         run = open_aim_run(make_run_config())
-        monkeypatch.setenv("ASTROLABE_CALLBACK_STRICT", "1")
+        monkeypatch.setenv("ALIDADE_CALLBACK_STRICT", "1")
         with pytest.raises(RuntimeError, match="aim disconnected"):
             track_safely(run, name="train/loss", value=0.5, step=1)
 
@@ -962,7 +962,7 @@ class TestFirstMetricMarker:
         self, tmp_path, monkeypatch, fake_aim_run, _reset_first_metric_flag,
     ):
         marker = tmp_path / "marker"
-        monkeypatch.delenv("ASTROLABE_FIRST_METRIC_MARKER", raising=False)
+        monkeypatch.delenv("ALIDADE_FIRST_METRIC_MARKER", raising=False)
         run = open_aim_run(make_run_config())
         track_safely(run, name="train/loss", value=1.0, step=0)
         assert not marker.exists()
@@ -971,7 +971,7 @@ class TestFirstMetricMarker:
         self, tmp_path, monkeypatch, fake_aim_run, _reset_first_metric_flag,
     ):
         marker = tmp_path / "first-metric.marker"
-        monkeypatch.setenv("ASTROLABE_FIRST_METRIC_MARKER", str(marker))
+        monkeypatch.setenv("ALIDADE_FIRST_METRIC_MARKER", str(marker))
         run = open_aim_run(make_run_config())
         track_safely(run, name="train/loss", value=1.0, step=0)
         assert marker.exists()
@@ -983,7 +983,7 @@ class TestFirstMetricMarker:
         # hot path — deleting the file and calling again should NOT
         # recreate it.
         marker = tmp_path / "first-metric.marker"
-        monkeypatch.setenv("ASTROLABE_FIRST_METRIC_MARKER", str(marker))
+        monkeypatch.setenv("ALIDADE_FIRST_METRIC_MARKER", str(marker))
         run = open_aim_run(make_run_config())
         track_safely(run, name="train/loss", value=1.0, step=0)
         assert marker.exists()
@@ -997,7 +997,7 @@ class TestFirstMetricMarker:
         # Env points at an unwriteable path; track_safely must still
         # complete the metric write without raising.
         unwriteable = tmp_path / "does-not-exist" / "marker"
-        monkeypatch.setenv("ASTROLABE_FIRST_METRIC_MARKER", str(unwriteable))
+        monkeypatch.setenv("ALIDADE_FIRST_METRIC_MARKER", str(unwriteable))
         run = open_aim_run(make_run_config())
         track_safely(run, name="train/loss", value=1.0, step=0)  # must not raise
         assert not unwriteable.exists()
@@ -1009,6 +1009,6 @@ class TestFirstMetricMarker:
         # check; explicit spec so a future refactor can't quietly
         # start touching on ``run=None``.
         marker = tmp_path / "marker"
-        monkeypatch.setenv("ASTROLABE_FIRST_METRIC_MARKER", str(marker))
+        monkeypatch.setenv("ALIDADE_FIRST_METRIC_MARKER", str(marker))
         track_safely(None, name="x", value=1.0)
         assert not marker.exists()

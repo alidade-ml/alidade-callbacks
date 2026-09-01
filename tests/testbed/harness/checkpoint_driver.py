@@ -23,7 +23,7 @@ Why real frameworks rather than calling the hooks by hand: the claim
 under test is "the framework serializes and replays our block", and a
 hand-called hook proves nothing about the framework.
 
-Reporting contract: one ``ASTROLABE_CKPT_PROBE=<json>`` line on stdout.
+Reporting contract: one ``ALIDADE_CKPT_PROBE=<json>`` line on stdout.
 The driver only *observes* — every judgement lives in the scenario. The
 checkpoint files themselves are left in ``config.workdir`` so the
 harness can ``docker cp`` them out for host-side reads with the real
@@ -52,7 +52,7 @@ __all__ = [
 
 CheckpointFramework = Literal["composer", "lightning", "pytorch", "hf"]
 
-PROBE_PREFIX = "ASTROLABE_CKPT_PROBE="
+PROBE_PREFIX = "ALIDADE_CKPT_PROBE="
 
 # Both the HF trainer and the HF-only scenarios build this model, and a
 # from_pretrained on the host has to reconstruct the same architecture.
@@ -129,7 +129,7 @@ class CheckpointDriverConfig:
             aim_url=_req("TESTBED_CKPT_AIM_URL"),
             experiment_name=_req("TESTBED_CKPT_EXPERIMENT_NAME"),
             run_name=_req("TESTBED_CKPT_RUN_NAME"),
-            submit_id=os.environ.get("ASTROLABE_SUBMIT_ID", ""),
+            submit_id=os.environ.get("ALIDADE_SUBMIT_ID", ""),
             version=os.environ.get("TESTBED_CKPT_VERSION", ""),
             steps=int(_req("TESTBED_CKPT_STEPS")),
             save_every=int(os.environ.get("TESTBED_CKPT_SAVE_EVERY", "1")),
@@ -138,7 +138,7 @@ class CheckpointDriverConfig:
             export_formats=json.loads(os.environ.get("TESTBED_CKPT_EXPORT_FORMATS", "[]")),
             new_metrics_at=json.loads(os.environ.get("TESTBED_CKPT_NEW_METRICS_AT", "[]")),
             workdir=_req("TESTBED_CKPT_WORKDIR"),
-            marker_path=os.environ.get("ASTROLABE_FIRST_CHECKPOINT_MARKER") or None,
+            marker_path=os.environ.get("ALIDADE_FIRST_CHECKPOINT_MARKER") or None,
             resume_from=os.environ.get("TESTBED_CKPT_RESUME_FROM") or None,
             stats_jsonl_container_path=_req("TESTBED_CKPT_STATS_JSONL_PATH"),
             driver_flags=json.loads(os.environ.get("TESTBED_CKPT_DRIVER_FLAGS", "{}")),
@@ -199,15 +199,15 @@ def config_to_env(config: CheckpointDriverConfig) -> dict[str, str]:
         "TESTBED_CKPT_DRIVER_FLAGS": json.dumps(config.driver_flags),
         # The callback library's own env contract — this is the identity
         # the checkpointers are supposed to propagate into the artifact.
-        "ASTROLABE_AIM_URL": config.aim_url,
-        "ASTROLABE_EXPERIMENT_NAME": config.experiment_name,
-        "ASTROLABE_SUBMIT_ID": config.submit_id,
-        "ASTROLABE_CALLBACK_STATS_PATH": config.stats_jsonl_container_path,
+        "ALIDADE_AIM_URL": config.aim_url,
+        "ALIDADE_EXPERIMENT_NAME": config.experiment_name,
+        "ALIDADE_SUBMIT_ID": config.submit_id,
+        "ALIDADE_CALLBACK_STATS_PATH": config.stats_jsonl_container_path,
     }
     if config.version:
         env["AIM_RUN_TAGS"] = f"astrolabe.version={config.version}"
     if config.marker_path:
-        env["ASTROLABE_FIRST_CHECKPOINT_MARKER"] = config.marker_path
+        env["ALIDADE_FIRST_CHECKPOINT_MARKER"] = config.marker_path
     if config.resume_from:
         env["TESTBED_CKPT_RESUME_FROM"] = config.resume_from
     return env

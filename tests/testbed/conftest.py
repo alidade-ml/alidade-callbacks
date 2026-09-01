@@ -64,11 +64,11 @@ __all__ = [
 TESTBED_DIR = Path(__file__).parent
 COMPOSE_FILE = TESTBED_DIR / "docker-compose.yml"
 
-_RUN_HASH_RE = re.compile(r"ASTROLABE_RUN_HASH=([a-f0-9]{24})")
-_EVAL_RUN_HASH_RE = re.compile(r"ASTROLABE_EVAL_RUN_HASH=([a-f0-9]{24})")
-_EVAL_LINKED_RE = re.compile(r"ASTROLABE_EVAL_LINKED=(true|false)")
-_SAMPLE_RUN_HASH_RE = re.compile(r"ASTROLABE_SAMPLE_RUN_HASH=([a-f0-9]{24})")
-_MARKER_TOUCHED_RE = re.compile(r"ASTROLABE_MARKER_TOUCHED=(true|false)")
+_RUN_HASH_RE = re.compile(r"ALIDADE_RUN_HASH=([a-f0-9]{24})")
+_EVAL_RUN_HASH_RE = re.compile(r"ALIDADE_EVAL_RUN_HASH=([a-f0-9]{24})")
+_EVAL_LINKED_RE = re.compile(r"ALIDADE_EVAL_LINKED=(true|false)")
+_SAMPLE_RUN_HASH_RE = re.compile(r"ALIDADE_SAMPLE_RUN_HASH=([a-f0-9]{24})")
+_MARKER_TOUCHED_RE = re.compile(r"ALIDADE_MARKER_TOUCHED=(true|false)")
 
 
 @pytest.fixture(scope="session")

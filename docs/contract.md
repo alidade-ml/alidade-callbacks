@@ -12,7 +12,7 @@ astrolabe submit picks up the same identity the trainer does, so its results are
 attributable to the submit that paid for them. Behavior 4 does not apply — an eval
 run has no training lifecycle to report a status for.
 
-### 1. Honors `ASTROLABE_EXPERIMENT_NAME`
+### 1. Honors `ALIDADE_EXPERIMENT_NAME`
 
 When the env var is set, it wins over any constructor argument. Astrolabe sets it on every orchestrated run; the callback picks it up automatically. Empty-string env values fall through to the constructor arg (so accidentally-empty shells don't break standalone use).
 
@@ -22,8 +22,8 @@ Format: `key1=val1,key2=val2,...`. Whitespace tolerated. Each key/value becomes 
 
 ### 3. Connects where the engine says, in one fixed order
 
-1. `ASTROLABE_AIM_REPO_PATH` — a filesystem path, set in local-aim mode
-2. `ASTROLABE_AIM_URL` — set by astrolabe on provisioned instances
+1. `ALIDADE_AIM_REPO_PATH` — a filesystem path, set in local-aim mode
+2. `ALIDADE_AIM_URL` — set by astrolabe on provisioned instances
 3. the `aim_url=` constructor argument
 4. `aim://localhost:43800`, the tunnel astrolabe opens
 
@@ -86,7 +86,7 @@ Examples: `aim` not installed, Aim server unreachable, network partition during 
 
 **Default behavior**: a single `WARNING` log line is emitted; the callback degrades to a no-op for the rest of the run. Subsequent metric writes silently skip; close is a no-op.
 
-**Strict mode (`ASTROLABE_CALLBACK_STRICT=1`)**: raises `RuntimeError`. Use this in CI pipelines where silent metric loss is a worse failure than a crash.
+**Strict mode (`ALIDADE_CALLBACK_STRICT=1`)**: raises `RuntimeError`. Use this in CI pipelines where silent metric loss is a worse failure than a crash.
 
 ### Per-metric track failures
 

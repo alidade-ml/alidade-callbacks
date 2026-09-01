@@ -20,14 +20,14 @@ Re-vendoring is a deliberate maintainer action. To pick up a newer
 contract from the engine repo:
 
     1. Edit ``tools/vendor-contract.json`` — bump ``vendored_from`` to
-       the new engine ref (e.g. ``astrolabe@v1.8.0``).
+       the new engine ref (e.g. ``alidade@v1.8.0``).
     2. Run ``GITHUB_TOKEN=$(gh auth token) python tools/vendor-contract.py``.
     3. Commit ``src/astrolabe_callbacks/contract.py`` + the updated
        ``tools/vendor-contract.json`` (the script rewrites the hash).
 
 CI never runs this script; it only verifies the recorded hash.
 
-See ``plans/version-contract.md`` in the astrolabe repo for the full
+See ``plans/version-contract.md`` in the alidade repo for the full
 operating model.
 """
 
@@ -51,7 +51,7 @@ DEST_PATH = REPO_ROOT / "src" / "astrolabe_callbacks" / "contract.py"
 # branch, or SHA). The path part is fixed because ``contract.py`` lives
 # at a known location in the engine repo.
 DEFAULT_URL_TEMPLATE = (
-    "https://raw.githubusercontent.com/naston/astrolabe/{ref}/astrolabe/contract.py"
+    "https://raw.githubusercontent.com/alidade-ml/alidade/{ref}/astrolabe/contract.py"
 )
 
 # Python 3.10+ stdlib module names — sourced from sys.stdlib_module_names
@@ -69,7 +69,7 @@ def _load_sidecar() -> tuple[str, str]:
     Sidecar shape::
 
         {
-          "vendored_from": "astrolabe@v1.7.0",
+          "vendored_from": "alidade@v1.7.0",
           "sha256": "<64-char hex>",       // rewritten by this script
           "url_template": "https://..."    // optional, has a default
         }
@@ -78,14 +78,14 @@ def _load_sidecar() -> tuple[str, str]:
         raise VendorError(
             f"sidecar {SIDECAR_PATH.relative_to(REPO_ROOT)} not found. "
             f"Create it with: "
-            f'{{"vendored_from": "astrolabe@<ref>", "sha256": ""}}'
+            f'{{"vendored_from": "alidade@<ref>", "sha256": ""}}'
         )
     data = json.loads(SIDECAR_PATH.read_text())
     vendored_from = data.get("vendored_from")
     if not isinstance(vendored_from, str) or "@" not in vendored_from:
         raise VendorError(
             f"sidecar 'vendored_from' must be a string of the form "
-            f"'astrolabe@<ref>'; got {vendored_from!r}"
+            f"'alidade@<ref>'; got {vendored_from!r}"
         )
     _, ref = vendored_from.split("@", 1)
     if not ref:
@@ -97,7 +97,7 @@ def _load_sidecar() -> tuple[str, str]:
 def _download(url: str) -> str:
     """Fetch the contract.py source at the given URL.
 
-    The astrolabe repo is private, so we attach a GitHub token from
+    The alidade repo is private, so we attach a GitHub token from
     ``$GITHUB_TOKEN`` (or ``$GH_TOKEN``) when present. Locally:
     ``export GITHUB_TOKEN=$(gh auth token)``.
 
@@ -118,8 +118,8 @@ def _download(url: str) -> str:
             raise VendorError(
                 f"404 from {url}.\n"
                 f"  - Confirm the ref exists at "
-                f"https://github.com/naston/astrolabe/tree/<ref>\n"
-                f"  - The astrolabe repo is private; export GITHUB_TOKEN "
+                f"https://github.com/alidade-ml/alidade/tree/<ref>\n"
+                f"  - The alidade repo is private; export GITHUB_TOKEN "
                 f"with repo:read scope (e.g. "
                 f"export GITHUB_TOKEN=$(gh auth token))"
             ) from exc
@@ -192,7 +192,7 @@ def main() -> int:
     # Rewrite the sidecar with the new hash. Preserve any other keys
     # (url_template, _comment, etc.) the maintainer set by hand.
     data = json.loads(SIDECAR_PATH.read_text())
-    data["vendored_from"] = f"astrolabe@{ref}"
+    data["vendored_from"] = f"alidade@{ref}"
     data["sha256"] = digest
     SIDECAR_PATH.write_text(json.dumps(data, indent=2) + "\n")
 

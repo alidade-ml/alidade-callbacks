@@ -99,7 +99,7 @@ class CheckpointMeta:
         orchestration (ad-hoc local training) — a stamped-but-unlinked
         checkpoint is a supported state, not an error.
     experiment : str | None
-        Experiment name from ``ASTROLABE_EXPERIMENT_NAME``.
+        Experiment name from ``ALIDADE_EXPERIMENT_NAME``.
     version : str | None
         Submit version label (``v1``, ``v2``, ...).
     aim_run_hash : str | None
@@ -475,7 +475,7 @@ def export_checkpoint(
 
 
 def write_first_checkpoint_marker_once() -> None:
-    """Touch ``$ASTROLABE_FIRST_CHECKPOINT_MARKER`` on first invocation.
+    """Touch ``$ALIDADE_FIRST_CHECKPOINT_MARKER`` on first invocation.
 
     Mirrors ``_core._write_first_metric_marker_once``. The engine sets
     this when a step's healing policy uses ``until: first_checkpoint``;

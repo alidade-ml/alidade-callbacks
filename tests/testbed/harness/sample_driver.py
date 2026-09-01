@@ -11,7 +11,7 @@ Invoked as::
                     cmd=["python", "-m", "tests.testbed.harness.sample_driver"],
                     env=sample_config_to_env(config))
 
-Prints ``ASTROLABE_SAMPLE_RUN_HASH=<hash>`` on success; exits 43 on
+Prints ``ALIDADE_SAMPLE_RUN_HASH=<hash>`` on success; exits 43 on
 ``MissingParentError``, matching the eval driver's convention so a scenario can
 assert "refused before writing anything" by exit code.
 """
@@ -96,7 +96,7 @@ def sample_config_to_env(config: SampleDriverConfig) -> dict[str, str]:
         "TESTBED_SAMPLE_AIM_URL": config.aim_url,
         "TESTBED_SAMPLE_SET": config.sample_set,
         "TESTBED_SAMPLE_SAMPLES": json.dumps(config.samples),
-        "ASTROLABE_AIM_URL": config.aim_url,
+        "ALIDADE_AIM_URL": config.aim_url,
     }
     if config.model_run_hash:
         env["TESTBED_SAMPLE_MODEL_RUN_HASH"] = config.model_run_hash
@@ -173,7 +173,7 @@ def main() -> None:
         if type(e).__name__ == "MissingParentError":
             raise SystemExit(43)
         raise
-    print(f"ASTROLABE_SAMPLE_RUN_HASH={run_hash}")
+    print(f"ALIDADE_SAMPLE_RUN_HASH={run_hash}")
 
 
 if __name__ == "__main__":

@@ -1,7 +1,7 @@
 """MosaicML Composer logger wired to astrolabe-callbacks ``_core``.
 
 Designed to pair with astrolabe's experiment orchestration: astrolabe
-sets ``ASTROLABE_EXPERIMENT_NAME`` and ``AIM_RUN_TAGS`` in the
+sets ``ALIDADE_EXPERIMENT_NAME`` and ``AIM_RUN_TAGS`` in the
 per-experiment env, and this logger reads them on init to tag the Aim
 run with version, submit-id, and any other astrolabe conventions.
 
@@ -58,7 +58,7 @@ Failure handling
 
 This logger never crashes training. If Aim is unreachable or
 misconfigured, a single ``WARNING`` is logged at init and every
-subsequent operation no-ops. Set ``ASTROLABE_CALLBACK_STRICT=1`` to
+subsequent operation no-ops. Set ``ALIDADE_CALLBACK_STRICT=1`` to
 flip warnings into raised exceptions for fail-fast CI behavior. See
 ``_core.py`` for the full failure-handling contract.
 """
@@ -108,18 +108,18 @@ __all__ = [
 class AstrolabeComposerLogger(LoggerDestination):
     """Composer LoggerDestination that streams all logged metrics to Aim.
 
-    Reads astrolabe env vars (``ASTROLABE_EXPERIMENT_NAME``,
-    ``AIM_RUN_TAGS``, ``ASTROLABE_AIM_URL``) on init; constructor
+    Reads astrolabe env vars (``ALIDADE_EXPERIMENT_NAME``,
+    ``AIM_RUN_TAGS``, ``ALIDADE_AIM_URL``) on init; constructor
     arguments are the standalone fallback. Attach via ``Trainer(...,
     loggers=[AstrolabeComposerLogger()])``.
 
     Parameters
     ----------
     aim_url : str | None
-        Aim tracking URL. Overridden by ``ASTROLABE_AIM_URL`` env;
+        Aim tracking URL. Overridden by ``ALIDADE_AIM_URL`` env;
         defaults to the astrolabe SSH-tunneled URL when neither is set.
     experiment_name : str | None
-        Aim experiment name. Overridden by ``ASTROLABE_EXPERIMENT_NAME``
+        Aim experiment name. Overridden by ``ALIDADE_EXPERIMENT_NAME``
         env.
     tags : dict[str, str] | None
         Tags applied to the Aim run on init. Overridden by
