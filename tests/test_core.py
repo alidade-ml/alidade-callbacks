@@ -1,4 +1,4 @@
-"""Tests for ``astrolabe_callbacks._core``.
+"""Tests for ``alidade_callbacks._core``.
 
 Order: unhappy + edge first, happy paths last (per project test guide).
 The contract is enforced here once; framework callback tests trust
@@ -12,8 +12,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from astrolabe_callbacks import contract
-from astrolabe_callbacks._core import (
+from alidade_callbacks import contract
+from alidade_callbacks._core import (
     DEFAULT_AIM_URL,
     EVAL_METRIC_PREFIX,
     RunConfig,
@@ -951,7 +951,7 @@ class TestSchemaPhaseStateDefaults:
 @pytest.fixture
 def _reset_first_metric_flag():
     """Reset the module-level ``_FIRST_METRIC_MARKER_WRITTEN`` flag."""
-    import astrolabe_callbacks._core as core
+    import alidade_callbacks._core as core
     core._FIRST_METRIC_MARKER_WRITTEN = False
     yield
     core._FIRST_METRIC_MARKER_WRITTEN = False

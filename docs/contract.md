@@ -1,6 +1,6 @@
 # Contract
 
-What every framework callback in `astrolabe-callbacks` guarantees, and what it deliberately doesn't.
+What every framework callback in `alidade-callbacks` guarantees, and what it deliberately doesn't.
 
 ## Required behavior
 

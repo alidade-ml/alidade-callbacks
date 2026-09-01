@@ -129,7 +129,7 @@ def _prepare_checkpoint(config: EvalDriverConfig) -> None:
     path = Path(config.checkpoint_path)
     path.parent.mkdir(parents=True, exist_ok=True)
 
-    from astrolabe_callbacks.checkpoint import CheckpointMeta, export_checkpoint
+    from alidade_callbacks.checkpoint import CheckpointMeta, export_checkpoint
 
     stamped_at = "2026-08-06T00:00:00Z"
     pt_hash = flags.get("TESTBED_CREATE_PT_CHECKPOINT_WITH_HASH")
@@ -155,7 +155,7 @@ def _prepare_checkpoint(config: EvalDriverConfig) -> None:
 
 def run_eval_driver(config: EvalDriverConfig) -> tuple[str | None, bool]:
     """Execute one eval-driver invocation. Returns (eval_run_hash, linked)."""
-    from astrolabe_callbacks.eval_results import log_eval_table, start_eval_run
+    from alidade_callbacks.eval_results import log_eval_table, start_eval_run
 
     _prepare_checkpoint(config)
 
@@ -163,7 +163,7 @@ def run_eval_driver(config: EvalDriverConfig) -> tuple[str | None, bool]:
         # eval-linkage M0/M1 wires this path; skipped via marker at scenario level
         # until it exists in src/.
         try:
-            from astrolabe_callbacks.eval_results import start_eval_run_from_checkpoint
+            from alidade_callbacks.eval_results import start_eval_run_from_checkpoint
         except ImportError:
             print("start_eval_run_from_checkpoint not available (eval-linkage M0 not yet landed)", file=sys.stderr)
             raise SystemExit(1)

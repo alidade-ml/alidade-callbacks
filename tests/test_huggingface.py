@@ -11,8 +11,8 @@ from __future__ import annotations
 
 import pytest
 
-from astrolabe_callbacks._core import EVAL_METRIC_PREFIX
-from astrolabe_callbacks.huggingface import (
+from alidade_callbacks._core import EVAL_METRIC_PREFIX
+from alidade_callbacks.huggingface import (
     AstrolabeHFTrainerCallback,
     _normalize_log_key,
 )

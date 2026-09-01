@@ -52,7 +52,7 @@ from typing import Any, Literal
 
 from loguru import logger
 
-from astrolabe_callbacks import _core, contract
+from alidade_callbacks import _core, contract
 
 __all__ = [
     "CheckpointMeta",
@@ -459,7 +459,7 @@ def export_checkpoint(
         from safetensors.torch import save_file
     except ImportError as exc:
         raise ImportError(
-            "safetensors export needs the extra: pip install 'astrolabe-callbacks[safetensors]'"
+            "safetensors export needs the extra: pip install 'alidade-callbacks[safetensors]'"
         ) from exc
 
     import torch

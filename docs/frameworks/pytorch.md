@@ -16,7 +16,7 @@ If you're using Composer, Lightning, or HF Trainer, use the matching `Astrolabe<
 ## Minimal example
 
 ```python
-from astrolabe_callbacks import Run
+from alidade_callbacks import Run
 
 with Run() as run:
     for batch_idx, batch in enumerate(dataloader):
@@ -32,7 +32,7 @@ with Run() as run:
 ## Full example
 
 ```python
-from astrolabe_callbacks import Run
+from alidade_callbacks import Run
 
 with Run(
     aim_url="aim://my-aim-server.example.com:43800",
@@ -103,7 +103,7 @@ JAX's training loop is Python; the callback works the same way as raw PyTorch. J
 
 ```python
 import jax
-from astrolabe_callbacks import Run
+from alidade_callbacks import Run
 
 with Run(experiment_name="flax-mnist") as run:
     for step in range(num_steps):
@@ -118,7 +118,7 @@ Most Accelerate users write the loop themselves. `Run` works unchanged:
 
 ```python
 from accelerate import Accelerator
-from astrolabe_callbacks import Run
+from alidade_callbacks import Run
 
 accelerator = Accelerator()
 model, optimizer, dataloader = accelerator.prepare(model, optimizer, dataloader)

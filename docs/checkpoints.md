@@ -20,7 +20,7 @@ Attach a checkpointer next to your logger. Every checkpoint the framework writes
 carries the live run's identity, with no call at the save site.
 
 ```python
-from astrolabe_callbacks import AstrolabeComposerLogger, AstrolabeComposerCheckpointer
+from alidade_callbacks import AstrolabeComposerLogger, AstrolabeComposerCheckpointer
 
 trainer = Trainer(
     model=...,
@@ -33,7 +33,7 @@ trainer = Trainer(
 Later, from an eval script:
 
 ```python
-from astrolabe_callbacks import start_eval_run_from_checkpoint
+from alidade_callbacks import start_eval_run_from_checkpoint
 
 run = start_eval_run_from_checkpoint(checkpoint="ckpt.pt", task_set="glue")
 ```
@@ -62,7 +62,7 @@ the one that matters, and it comes from the live Aim run, not from the environme
 Read it back with:
 
 ```python
-from astrolabe_callbacks import read_checkpoint_meta
+from alidade_callbacks import read_checkpoint_meta
 
 meta = read_checkpoint_meta("ckpt.pt")       # a path, or an already-loaded state dict
 meta.aim_run_hash if meta else None          # None when the file carries no provenance
@@ -75,19 +75,19 @@ meta.aim_run_hash if meta else None          # None when the file carries no pro
 ## Attaching a checkpointer
 
 ```python
-from astrolabe_callbacks import AstrolabeComposerCheckpointer
+from alidade_callbacks import AstrolabeComposerCheckpointer
 trainer = Trainer(..., loggers=[AstrolabeComposerLogger()],
                         callbacks=[AstrolabeComposerCheckpointer()])
 ```
 
 ```python
-from astrolabe_callbacks import AstrolabeLightningCheckpointer
+from alidade_callbacks import AstrolabeLightningCheckpointer
 trainer = Trainer(..., callbacks=[AstrolabeLightningLogger(),
                                   AstrolabeLightningCheckpointer()])
 ```
 
 ```python
-from astrolabe_callbacks import AstrolabeHFCheckpointer
+from alidade_callbacks import AstrolabeHFCheckpointer
 trainer.add_callback(AstrolabeHFTrainerCallback())
 trainer.add_callback(AstrolabeHFCheckpointer())
 ```
@@ -95,7 +95,7 @@ trainer.add_callback(AstrolabeHFCheckpointer())
 Raw PyTorch has no framework to hook, so you call the save yourself:
 
 ```python
-from astrolabe_callbacks import Run, save_checkpoint
+from alidade_callbacks import Run, save_checkpoint
 
 with Run(experiment_name="my-experiment") as run:
     for step in range(steps):
@@ -132,7 +132,7 @@ AstrolabeHFCheckpointer(*, embed_in_weights=True, export_formats=None)
 No framework, no callback — just a state dict and a destination:
 
 ```python
-from astrolabe_callbacks import export_checkpoint
+from alidade_callbacks import export_checkpoint
 
 export_checkpoint(state, "model.pt", fmt="pt")
 export_checkpoint(state, "model.safetensors", fmt="safetensors")
@@ -141,7 +141,7 @@ export_checkpoint(state, "model.safetensors", fmt="safetensors")
 `fmt` is `"pt"` or `"safetensors"`. It takes the live run's identity automatically; pass
 `meta=` only to override.
 
-> **safetensors needs an extra**: `pip install 'astrolabe-callbacks[safetensors]'`.
+> **safetensors needs an extra**: `pip install 'alidade-callbacks[safetensors]'`.
 > Without it, `export_checkpoint(..., fmt="safetensors")` raises `ImportError` naming the
 > extra. `"pt"` needs only torch.
 
@@ -158,7 +158,7 @@ from an old one. Use `save_derived_checkpoint` so the new file remembers where i
 from:
 
 ```python
-from astrolabe_callbacks import save_derived_checkpoint
+from alidade_callbacks import save_derived_checkpoint
 
 save_derived_checkpoint(quantized_state, "model-int8.pt", parent="model.pt")
 ```
@@ -181,7 +181,7 @@ that produced the model it came from, rather than to nothing.
 For a file written before any of this existed, or by code that did not use the library:
 
 ```python
-from astrolabe_callbacks import stamp_checkpoint
+from alidade_callbacks import stamp_checkpoint
 
 stamp_checkpoint("old-model.safetensors", aim_run_hash="abc123...")
 ```
@@ -209,7 +209,7 @@ re-serialization, sharding included.
 The cost is a small extra tensor in the state dict. To read or remove it:
 
 ```python
-from astrolabe_callbacks import read_meta_from_buffer, strip_meta_buffer
+from alidade_callbacks import read_meta_from_buffer, strip_meta_buffer
 
 meta = read_meta_from_buffer(state_dict)
 clean = strip_meta_buffer(state_dict)     # e.g. before publishing weights

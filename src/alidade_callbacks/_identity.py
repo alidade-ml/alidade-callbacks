@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import os
 
-from astrolabe_callbacks import contract
+from alidade_callbacks import contract
 
 __all__ = ["ambient_identity", "resolve_aim_url"]
 

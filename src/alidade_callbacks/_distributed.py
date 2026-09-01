@@ -1,6 +1,6 @@
 """Rank-zero detection for distributed training.
 
-Every astrolabe-callbacks callback gates Aim writes on rank-zero so a
+Every alidade-callbacks callback gates Aim writes on rank-zero so a
 distributed run with N processes produces one Aim run, not N. Without
 this we get N copies of every metric and the run-close handshake races.
 
@@ -36,7 +36,7 @@ def is_rank_zero() -> bool:
     """
     # torch.distributed first — it's the source of truth once initialized.
     # Wrapped in try/except because torch is not a hard dependency of
-    # astrolabe-callbacks; users on JAX or non-distributed PyTorch don't
+    # alidade-callbacks; users on JAX or non-distributed PyTorch don't
     # need it.
     try:
         import torch.distributed as dist

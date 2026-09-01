@@ -6,7 +6,7 @@ Cookbook for `AstrolabeComposerLogger` — MosaicML Composer integration.
 
 ```python
 from composer import Trainer
-from astrolabe_callbacks import AstrolabeComposerLogger
+from alidade_callbacks import AstrolabeComposerLogger
 
 trainer = Trainer(
     model=...,
@@ -24,7 +24,7 @@ That's it. The callback reads astrolabe env vars (`ALIDADE_EXPERIMENT_NAME`, `AI
 
 ```python
 from composer import Trainer
-from astrolabe_callbacks import AstrolabeComposerLogger
+from alidade_callbacks import AstrolabeComposerLogger
 
 logger_callback = AstrolabeComposerLogger(
     aim_url="aim://my-aim-server.example.com:43800",
@@ -149,8 +149,8 @@ The `train/loss` metric you'll see in Aim is Composer's per-batch loss with what
 
 Three changes:
 
-1. Package name: `pip uninstall astrolabe-composer-callback && pip install astrolabe-callbacks[composer]`
-2. Import: `from astrolabe_callbacks import AstrolabeComposerLogger` (was `from astrolabe_composer_callback import AstrolabeLogger`)
+1. Package name: `pip uninstall astrolabe-composer-callback && pip install alidade-callbacks[composer]`
+2. Import: `from alidade_callbacks import AstrolabeComposerLogger` (was `from astrolabe_composer_callback import AstrolabeLogger`)
 3. Placement: `Trainer(loggers=[...])` (was `Trainer(callbacks=[...])`)
 
 The behavior also changed — v0.1.x only logged `train/loss` and a few framework metrics. v0.2.0 passes through *every* `logger.log_metrics` call. If you were writing custom metrics via a separate callback to a separate Aim run, you can delete that and let `AstrolabeComposerLogger` capture them.

@@ -1,4 +1,4 @@
-"""Shared test fixtures for astrolabe-callbacks.
+"""Shared test fixtures for alidade-callbacks.
 
 Three jobs:
 
@@ -22,7 +22,7 @@ from typing import Any
 
 import pytest
 
-from astrolabe_callbacks._core import RunConfig
+from alidade_callbacks._core import RunConfig
 
 
 @pytest.fixture(autouse=True)
@@ -41,7 +41,7 @@ def synchronous_metric_buffer(monkeypatch):
     is exercised there; the rest of the suite trusts that submit
     eventually causes a track and tests the caller-visible behavior.
     """
-    from astrolabe_callbacks import _core
+    from alidade_callbacks import _core
 
     def sync_submit(self, name, value, step, context):
         self._submitted += 1
@@ -88,7 +88,7 @@ class FakeAimRun:
 
     Used in tests to verify what got tagged, tracked, and closed
     without spinning up a real Aim server. Mirrors the subset of the
-    Aim Run API that astrolabe-callbacks uses: ``__setitem__`` for
+    Aim Run API that alidade-callbacks uses: ``__setitem__`` for
     tags, ``track`` for metrics, ``close`` for finalization, and a
     writable ``name`` property.
     """

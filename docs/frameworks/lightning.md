@@ -6,7 +6,7 @@ Cookbook for `AstrolabeLightningLogger` — Lightning 2.x integration.
 
 ```python
 from lightning.pytorch import Trainer
-from astrolabe_callbacks import AstrolabeLightningLogger
+from alidade_callbacks import AstrolabeLightningLogger
 
 trainer = Trainer(
     callbacks=[AstrolabeLightningLogger()],
@@ -50,7 +50,7 @@ class MyModel(pl.LightningModule):
 
 ```python
 from lightning.pytorch import Trainer
-from astrolabe_callbacks import AstrolabeLightningLogger
+from alidade_callbacks import AstrolabeLightningLogger
 
 callback = AstrolabeLightningLogger(
     aim_url="aim://my-aim-server.example.com:43800",
@@ -145,4 +145,4 @@ The `on_exception` hook for marking runs as `failed` is available from Lightning
 
 ### Migrating from `astrolabe-composer-callback`
 
-If you were using `AstrolabeLogger` (a Composer callback), this is a different package. Lightning users were never targeted by `astrolabe-composer-callback`. Just install `astrolabe-callbacks[lightning]` fresh.
+If you were using `AstrolabeLogger` (a Composer callback), this is a different package. Lightning users were never targeted by `astrolabe-composer-callback`. Just install `alidade-callbacks[lightning]` fresh.

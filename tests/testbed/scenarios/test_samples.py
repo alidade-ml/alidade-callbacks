@@ -18,7 +18,7 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from astrolabe_callbacks import contract
+from alidade_callbacks import contract
 from tests.testbed.harness.assertions import (
     assert_run_closed,
     assert_run_experiment,

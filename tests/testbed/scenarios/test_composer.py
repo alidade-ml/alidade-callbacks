@@ -1,4 +1,4 @@
-"""Integration tests for ``src/astrolabe_callbacks/composer.py``.
+"""Integration tests for ``src/alidade_callbacks/composer.py``.
 
 Composer's ``AstrolabeComposerLogger`` translates the Composer trainer's
 lifecycle events (batch_end, epoch_end, close, etc.) into

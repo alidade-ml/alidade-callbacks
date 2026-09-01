@@ -22,11 +22,11 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-from astrolabe_callbacks import contract
+from alidade_callbacks import contract
 
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-CONTRACT_PATH = REPO_ROOT / "src" / "astrolabe_callbacks" / "contract.py"
+CONTRACT_PATH = REPO_ROOT / "src" / "alidade_callbacks" / "contract.py"
 
 
 def _callback_python_files() -> list[Path]:
@@ -101,7 +101,7 @@ def test_no_raw_contract_literals_outside_contract():
                     rel = path.relative_to(REPO_ROOT)
                     violations.append(f"{rel}:{lineno}: bare literal {literal!r}")
     assert not violations, (
-        "Found raw contract literals outside src/astrolabe_callbacks/"
+        "Found raw contract literals outside src/alidade_callbacks/"
         "contract.py:\n  "
         + "\n  ".join(violations)
         + "\n\nReplace each bare literal with the constant "

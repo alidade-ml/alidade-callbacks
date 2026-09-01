@@ -1,6 +1,6 @@
 import pytest
-from astrolabe_callbacks import _attribution
-from astrolabe_callbacks import contract
+from alidade_callbacks import _attribution
+from alidade_callbacks import contract
 from unittest.mock import MagicMock
 
 

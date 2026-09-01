@@ -23,7 +23,7 @@ Your own script does the inference. This stores the results and links them to th
 model that produced them.
 
 ```python
-from astrolabe_callbacks import Sample, log_samples
+from alidade_callbacks import Sample, log_samples
 
 log_samples(
     checkpoint="ckpt.pt",

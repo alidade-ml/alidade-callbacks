@@ -1,12 +1,12 @@
-"""astrolabe-callbacks — framework-agnostic Aim instrumentation for ML training.
+"""alidade-callbacks — framework-agnostic Aim instrumentation for ML training.
 
 Public API::
 
-    from astrolabe_callbacks import AstrolabeComposerLogger    # MosaicML Composer
-    from astrolabe_callbacks import AstrolabeLightningLogger   # PyTorch Lightning
-    from astrolabe_callbacks import AstrolabeHFTrainerCallback # HuggingFace Trainer
-    from astrolabe_callbacks import Run                        # raw PyTorch / JAX / custom loops
-    from astrolabe_callbacks import log_eval_table             # post-training benchmark results
+    from alidade_callbacks import AstrolabeComposerLogger    # MosaicML Composer
+    from alidade_callbacks import AstrolabeLightningLogger   # PyTorch Lightning
+    from alidade_callbacks import AstrolabeHFTrainerCallback # HuggingFace Trainer
+    from alidade_callbacks import Run                        # raw PyTorch / JAX / custom loops
+    from alidade_callbacks import log_eval_table             # post-training benchmark results
 
 The per-framework training callbacks (and the raw-loop ``Run`` context
 manager) stream ``train/`` and ``val/`` metrics as your model trains.
@@ -15,15 +15,15 @@ suites (GLUE, MMLU, …) under the ``eval/<task_set>/<metric>`` namespace
 on a separate Aim run — that's what populates astrolabe's dashboard
 Eval tab.
 
-Each per-framework class is imported lazily — `import astrolabe_callbacks`
+Each per-framework class is imported lazily — `import alidade_callbacks`
 only needs `aim` and `loguru`. Framework dependencies are pulled in on
 first reference, surfacing a clear `ImportError` if the matching extras
 aren't installed::
 
-    pip install astrolabe-callbacks[composer]
-    pip install astrolabe-callbacks[lightning]
-    pip install astrolabe-callbacks[hf]
-    pip install astrolabe-callbacks[all]
+    pip install alidade-callbacks[composer]
+    pip install alidade-callbacks[lightning]
+    pip install alidade-callbacks[hf]
+    pip install alidade-callbacks[all]
 
 The eval helpers need only the base install (`aim`) — no framework extra.
 """
@@ -39,7 +39,7 @@ from __future__ import annotations
 # (tests/testbed/RED_FLAGS.md — 2026-07-27).
 #
 # Import-time side effect is intentional: users importing
-# astrolabe_callbacks are opting into our reliability posture, which
+# alidade_callbacks are opting into our reliability posture, which
 # depends on Aim exceptions propagating.
 try:
     from aim.ext.exception_resistant import disable_safe_mode as _disable_aim_safe_mode
@@ -49,8 +49,8 @@ except ImportError:
     # Older Aim versions or aim not installed — nothing to disable.
     pass
 
-from astrolabe_callbacks.samples import Sample, SampleInputError, log_samples
-from astrolabe_callbacks.eval_results import (
+from alidade_callbacks.samples import Sample, SampleInputError, log_samples
+from alidade_callbacks.eval_results import (
     EvalInputError,
     MissingParentError,
     log_eval_table,
@@ -89,38 +89,38 @@ __all__ = [
 
 
 # PEP 562 module-level __getattr__ defers framework imports until a class
-# is actually referenced. Without this, `import astrolabe_callbacks` would
+# is actually referenced. Without this, `import alidade_callbacks` would
 # pull in Composer/Lightning/Transformers eagerly and the base install
 # (aim only) would fail.
 def __getattr__(name: str):
     if name == "AstrolabeComposerLogger":
-        from astrolabe_callbacks.composer import AstrolabeComposerLogger
+        from alidade_callbacks.composer import AstrolabeComposerLogger
         return AstrolabeComposerLogger
     if name == "AstrolabeComposerCheckpointer":
-        from astrolabe_callbacks.composer import AstrolabeComposerCheckpointer
+        from alidade_callbacks.composer import AstrolabeComposerCheckpointer
         return AstrolabeComposerCheckpointer
     if name == "AstrolabeLightningCheckpointer":
-        from astrolabe_callbacks.lightning import AstrolabeLightningCheckpointer
+        from alidade_callbacks.lightning import AstrolabeLightningCheckpointer
         return AstrolabeLightningCheckpointer
     if name == "AstrolabeHFCheckpointer":
-        from astrolabe_callbacks.huggingface import AstrolabeHFCheckpointer
+        from alidade_callbacks.huggingface import AstrolabeHFCheckpointer
         return AstrolabeHFCheckpointer
     if name in ("CheckpointMeta", "build_checkpoint_meta",
                 "read_checkpoint_meta", "export_checkpoint",
                 "save_derived_checkpoint", "stamp_checkpoint"):
         # checkpoint.py imports no framework — safe to load eagerly here.
-        from astrolabe_callbacks import checkpoint
+        from alidade_callbacks import checkpoint
         return getattr(checkpoint, name)
     if name == "save_checkpoint":
-        from astrolabe_callbacks.pytorch import save_checkpoint
+        from alidade_callbacks.pytorch import save_checkpoint
         return save_checkpoint
     if name == "AstrolabeLightningLogger":
-        from astrolabe_callbacks.lightning import AstrolabeLightningLogger
+        from alidade_callbacks.lightning import AstrolabeLightningLogger
         return AstrolabeLightningLogger
     if name == "AstrolabeHFTrainerCallback":
-        from astrolabe_callbacks.huggingface import AstrolabeHFTrainerCallback
+        from alidade_callbacks.huggingface import AstrolabeHFTrainerCallback
         return AstrolabeHFTrainerCallback
     if name in ("AstrolabeRun", "Run"):
-        from astrolabe_callbacks.pytorch import AstrolabeRun
+        from alidade_callbacks.pytorch import AstrolabeRun
         return AstrolabeRun
-    raise AttributeError(f"module 'astrolabe_callbacks' has no attribute {name!r}")
+    raise AttributeError(f"module 'alidade_callbacks' has no attribute {name!r}")

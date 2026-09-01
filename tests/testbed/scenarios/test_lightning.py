@@ -1,4 +1,4 @@
-"""Integration tests for ``src/astrolabe_callbacks/lightning.py``.
+"""Integration tests for ``src/alidade_callbacks/lightning.py``.
 
 Lightning's ``AstrolabeLightningLogger`` translates PyTorch
 Lightning's on_* hooks into AstrolabeLogger calls. This file verifies

@@ -1,6 +1,6 @@
 # Callback testbed
 
-Integration tests for `astrolabe-callbacks` against a **docker-compose environment**: two containers on a shared bridge network — `aim-server` (simulates the NUC's Aim endpoint) and `client` (simulates a compute host running the callback library). Scenarios exercise the callback across a real TCP hop into a real Aim server, in the shape that a customer's Lambda instance would see.
+Integration tests for `alidade-callbacks` against a **docker-compose environment**: two containers on a shared bridge network — `aim-server` (simulates the NUC's Aim endpoint) and `client` (simulates a compute host running the callback library). Scenarios exercise the callback across a real TCP hop into a real Aim server, in the shape that a customer's Lambda instance would see.
 
 Companion testbed: `astrolabe/tests/testbed/`. Same design pattern, different scope. Astrolabe testbed simulates the full NUC-plus-compute environment (SSH, sidecar, engine, dashboard). This one simulates only what the callback sees: bridge network + Aim server.
 

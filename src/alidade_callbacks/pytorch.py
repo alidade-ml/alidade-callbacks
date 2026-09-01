@@ -9,7 +9,7 @@ instead.
 
 Usage::
 
-    from astrolabe_callbacks import Run
+    from alidade_callbacks import Run
 
     with Run() as run:                              # reads env vars
         for batch_idx, batch in enumerate(dataloader):
@@ -51,9 +51,9 @@ from typing import Any
 
 from loguru import logger
 
-from astrolabe_callbacks import _core
-from astrolabe_callbacks._distributed import is_rank_zero
-from astrolabe_callbacks.checkpoint import (
+from alidade_callbacks import _core
+from alidade_callbacks._distributed import is_rank_zero
+from alidade_callbacks.checkpoint import (
     build_checkpoint_meta,
     export_checkpoint,
     read_checkpoint_meta,
@@ -315,7 +315,7 @@ class AstrolabeRun:
         self._wall_time.resume()
 
 
-# Convenience alias for the common case — `from astrolabe_callbacks
+# Convenience alias for the common case — `from alidade_callbacks
 # import Run` is shorter and reads as "open a run", which matches the
 # context manager idiom users already know from `wandb.init()` etc.
 Run = AstrolabeRun

@@ -1,4 +1,4 @@
-"""Tests for astrolabe_callbacks.eval_results — post-training eval helpers.
+"""Tests for alidade_callbacks.eval_results — post-training eval helpers.
 
 Contract being verified:
 
@@ -25,7 +25,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from astrolabe_callbacks.eval_results import (
+from alidade_callbacks.eval_results import (
     EvalInputError,
     log_eval_table,
     start_eval_run,
@@ -578,9 +578,9 @@ class TestHappyPath:
 
 from pathlib import Path  # noqa: E402
 
-from astrolabe_callbacks.checkpoint import export_checkpoint  # noqa: E402
-from astrolabe_callbacks.checkpoint import CheckpointMeta  # noqa: E402
-from astrolabe_callbacks.eval_results import (  # noqa: E402
+from alidade_callbacks.checkpoint import export_checkpoint  # noqa: E402
+from alidade_callbacks.checkpoint import CheckpointMeta  # noqa: E402
+from alidade_callbacks.eval_results import (  # noqa: E402
     MissingParentError,
     start_eval_run_from_checkpoint,
 )
@@ -751,7 +751,7 @@ class TestFromCheckpointHappyPath:
     def test_accepts_an_already_loaded_state_dict(self, tmp_path):
         """Script-level eval has usually already loaded the file to run
         the model; making it pay a second read would be a papercut."""
-        from astrolabe_callbacks.checkpoint import stamp_state_dict
+        from alidade_callbacks.checkpoint import stamp_state_dict
 
         state = stamp_state_dict({}, CheckpointMeta(aim_run_hash=ORIGIN))
         run = _make_run_mock()
@@ -1031,7 +1031,7 @@ class TestPublicExports:
     Written after a helper shipped in `eval_results.__all__` without a
     matching entry in the package's re-export list, so a documented
     import raised ImportError. Nothing caught it: this module's own
-    tests import from `astrolabe_callbacks.eval_results` directly, which
+    tests import from `alidade_callbacks.eval_results` directly, which
     worked fine. That helper is gone; the class of bug is not.
     """
 
@@ -1046,11 +1046,11 @@ class TestPublicExports:
         ],
     )
     def test_importable_from_package_root(self, name):
-        import astrolabe_callbacks
+        import alidade_callbacks
 
-        assert hasattr(astrolabe_callbacks, name), (
+        assert hasattr(alidade_callbacks, name), (
             f"{name} is in eval_results.__all__ but not re-exported from "
-            f"astrolabe_callbacks — the documented import fails"
+            f"alidade_callbacks — the documented import fails"
         )
-        assert name in astrolabe_callbacks.__all__
+        assert name in alidade_callbacks.__all__
 

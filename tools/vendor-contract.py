@@ -22,7 +22,7 @@ contract from the engine repo:
     1. Edit ``tools/vendor-contract.json`` — bump ``vendored_from`` to
        the new engine ref (e.g. ``alidade@v1.8.0``).
     2. Run ``GITHUB_TOKEN=$(gh auth token) python tools/vendor-contract.py``.
-    3. Commit ``src/astrolabe_callbacks/contract.py`` + the updated
+    3. Commit ``src/alidade_callbacks/contract.py`` + the updated
        ``tools/vendor-contract.json`` (the script rewrites the hash).
 
 CI never runs this script; it only verifies the recorded hash.
@@ -45,7 +45,7 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 SIDECAR_PATH = REPO_ROOT / "tools" / "vendor-contract.json"
-DEST_PATH = REPO_ROOT / "src" / "astrolabe_callbacks" / "contract.py"
+DEST_PATH = REPO_ROOT / "src" / "alidade_callbacks" / "contract.py"
 
 # Default GitHub raw URL template. ``{ref}`` is the engine ref (tag,
 # branch, or SHA). The path part is fixed because ``contract.py`` lives

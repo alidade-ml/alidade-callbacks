@@ -288,7 +288,7 @@ def _apply_fault_injection(config: DriverConfig, run) -> None:
     capacity = _int_flag(config, "TESTBED_BUFFER_CAPACITY")
     if capacity is not None:
         import queue as _q
-        from astrolabe_callbacks import _core as _cb_core
+        from alidade_callbacks import _core as _cb_core
 
         # Shrink the buffer already attached (the one the drainer is
         # already running against).
@@ -331,7 +331,7 @@ def _apply_fault_injection(config: DriverConfig, run) -> None:
     # loop catches ``Exception`` only, so BaseException propagates to
     # ``_drain_loop``'s outer handler which emits ``drainer_died``.
     # Requires ``disable_safe_mode`` to be in effect (the callback lib
-    # calls this on import in astrolabe_callbacks/__init__.py).
+    # calls this on import in alidade_callbacks/__init__.py).
     kill_at = _int_flag(config, "TESTBED_KILL_DRAINER_AT")
     if kill_at is not None:
         import aim as _aim_k
@@ -380,8 +380,8 @@ def _apply_fault_injection(config: DriverConfig, run) -> None:
 
 def _run_raw(config: DriverConfig) -> str | None:
     """Direct AstrolabeRun exerciser. No torch, no framework."""
-    from astrolabe_callbacks.pytorch import AstrolabeRun
-    from astrolabe_callbacks._distributed import is_rank_zero
+    from alidade_callbacks.pytorch import AstrolabeRun
+    from alidade_callbacks._distributed import is_rank_zero
 
     # Initialize torch.distributed if the scenario asked us to. Must
     # happen BEFORE is_rank_zero() — that's the whole point of
@@ -546,7 +546,7 @@ def _run_composer(config: DriverConfig) -> str | None:
     from composer import Trainer
     from composer.core import Callback
     from composer.models import ComposerModel
-    from astrolabe_callbacks.composer import AstrolabeComposerLogger
+    from alidade_callbacks.composer import AstrolabeComposerLogger
 
     class TinyComposer(ComposerModel):
         def __init__(self):
@@ -630,7 +630,7 @@ def _run_lightning(config: DriverConfig) -> str | None:
     import torch.nn as nn
     import lightning
     from torch.utils.data import DataLoader, TensorDataset
-    from astrolabe_callbacks.lightning import AstrolabeLightningLogger
+    from alidade_callbacks.lightning import AstrolabeLightningLogger
 
     metrics_per_step = config.metrics_per_step
     new_metrics_at = set(config.new_metrics_at)
@@ -724,7 +724,7 @@ def _run_hf(config: DriverConfig) -> str | None:
     import torch.nn as nn
     from transformers import Trainer, TrainingArguments, TrainerCallback
     from torch.utils.data import Dataset
-    from astrolabe_callbacks.huggingface import AstrolabeHFTrainerCallback
+    from alidade_callbacks.huggingface import AstrolabeHFTrainerCallback
 
     metrics_per_step = config.metrics_per_step
     new_metrics_at = set(config.new_metrics_at)

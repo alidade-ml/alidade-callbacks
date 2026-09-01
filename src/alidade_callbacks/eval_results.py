@@ -17,7 +17,7 @@ Metric path convention: ``eval/<task>/<metric>`` — the dashboard's table
 gives each model a row and each task a column, so a task carries exactly
 one metric and a second one is refused at the call site.
 
-This lives in ``astrolabe-callbacks`` rather than the main ``astrolabe``
+This lives in ``alidade-callbacks`` rather than the main ``astrolabe``
 package so training/eval repos depend on **one** lightweight library
 for all Aim instrumentation — they never pull in the orchestration
 framework. It uses the same ``aim_url`` / ``ALIDADE_AIM_URL``
@@ -39,14 +39,14 @@ from typing import Any
 
 from loguru import logger
 
-from astrolabe_callbacks import contract
-from astrolabe_callbacks._attribution import (
+from alidade_callbacks import contract
+from alidade_callbacks._attribution import (
     AttributionInputError,
     MissingParentError,
     mint_model_entry as _mint_model_entry,
     resolve_parent,
 )
-from astrolabe_callbacks._identity import ambient_identity, resolve_aim_url
+from alidade_callbacks._identity import ambient_identity, resolve_aim_url
 
 from ._core import DEFAULT_AIM_URL
 

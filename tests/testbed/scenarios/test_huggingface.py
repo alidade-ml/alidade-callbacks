@@ -1,4 +1,4 @@
-"""Integration tests for ``src/astrolabe_callbacks/huggingface.py``.
+"""Integration tests for ``src/alidade_callbacks/huggingface.py``.
 
 HF Trainer's ``AstrolabeHFTrainerCallback`` translates HuggingFace
 Trainer lifecycle events (on_log, on_evaluate, on_train_end, ...) into

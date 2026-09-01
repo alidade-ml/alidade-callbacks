@@ -1,4 +1,4 @@
-# astrolabe-callbacks
+# alidade-callbacks
 
 Framework-agnostic Aim logging for ML training. One install, four frameworks: **MosaicML Composer, PyTorch Lightning, HuggingFace Trainer, raw PyTorch.** Designed to pair with [astrolabe](https://github.com/naston/astrolabe) but works standalone.
 
@@ -14,10 +14,10 @@ of this page is the quick reference.
 ## Install
 
 ```bash
-pip install astrolabe-callbacks[composer]    # MosaicML Composer
-pip install astrolabe-callbacks[lightning]   # PyTorch Lightning
-pip install astrolabe-callbacks[hf]          # HuggingFace Trainer
-pip install astrolabe-callbacks[all]         # everything
+pip install alidade-callbacks[composer]    # MosaicML Composer
+pip install alidade-callbacks[lightning]   # PyTorch Lightning
+pip install alidade-callbacks[hf]          # HuggingFace Trainer
+pip install alidade-callbacks[all]         # everything
 ```
 
 Base install (no extras) pulls only `aim` and `loguru` — fine for the raw-PyTorch path.
@@ -29,7 +29,7 @@ Base install (no extras) pulls only `aim` and `loguru` — fine for the raw-PyTo
 
 ```python
 from composer import Trainer
-from astrolabe_callbacks import AstrolabeComposerLogger
+from alidade_callbacks import AstrolabeComposerLogger
 
 trainer = Trainer(
     model=...,
@@ -47,7 +47,7 @@ Composer's `Logger` broadcasts every `logger.log_metrics(...)` call to registere
 
 ```python
 from lightning.pytorch import Trainer
-from astrolabe_callbacks import AstrolabeLightningLogger
+from alidade_callbacks import AstrolabeLightningLogger
 
 trainer = Trainer(
     ...,
@@ -75,7 +75,7 @@ See [docs/frameworks/lightning.md](docs/frameworks/lightning.md).
 
 ```python
 from transformers import Trainer, TrainingArguments
-from astrolabe_callbacks import AstrolabeHFTrainerCallback
+from alidade_callbacks import AstrolabeHFTrainerCallback
 
 trainer = Trainer(
     model=model,
@@ -94,7 +94,7 @@ Works with TRL (`SFTTrainer`, `DPOTrainer`, `RewardTrainer`) unchanged. See [doc
 <summary><strong>Raw PyTorch / Accelerate / JAX / custom loops</strong></summary>
 
 ```python
-from astrolabe_callbacks import Run
+from alidade_callbacks import Run
 
 with Run() as run:
     for batch_idx, batch in enumerate(dataloader):
@@ -166,7 +166,7 @@ We **only** synthesize `wall_time` (training-only elapsed time, excluding setup 
 | HF Trainer | `loss` → `train/loss`, `learning_rate` → `train/lr`, `grad_norm`/`epoch` → `train/<x>`, `eval_<x>` → `val/<x>` | everything else |
 | Raw PyTorch | `log_train(**m)` → `train/<m>`, `log_eval(**m)` → `val/<m>`, `log(name, ...)` → `<name>` | (you control namespacing) |
 
-> **v1.0.0**: during-training validation metrics emit under `val/` (was `eval/` in v0.x). The `eval/` namespace is now reserved for **post-training benchmark suites** logged via `astrolabe_callbacks.log_eval_table(...)` on dedicated eval Aim runs. See [the eval guide](docs/eval-results.md) for the post-training side.
+> **v1.0.0**: during-training validation metrics emit under `val/` (was `eval/` in v0.x). The `eval/` namespace is now reserved for **post-training benchmark suites** logged via `alidade_callbacks.log_eval_table(...)` on dedicated eval Aim runs. See [the eval guide](docs/eval-results.md) for the post-training side.
 
 Renames are cosmetic, applied to framework-emitted names you didn't choose. **User-named metrics are never rewritten.** If you log a metric called `MaskedLanguagePerplexity`, it lands in Aim as `MaskedLanguagePerplexity`, not buried under any prefix.
 
@@ -180,7 +180,7 @@ This package replaces `astrolabe-composer-callback`. If you were using it:
 
 ```diff
 - from astrolabe_composer_callback import AstrolabeLogger
-+ from astrolabe_callbacks import AstrolabeComposerLogger
++ from alidade_callbacks import AstrolabeComposerLogger
 ```
 
 ```diff

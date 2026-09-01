@@ -1,4 +1,4 @@
-"""Tests for ``astrolabe_callbacks._distributed``.
+"""Tests for ``alidade_callbacks._distributed``.
 
 The rank-zero gate is small but load-bearing: every framework callback
 relies on it to avoid duplicating Aim writes across ranks. Unhappy
@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import pytest
 
-from astrolabe_callbacks._distributed import is_rank_zero
+from alidade_callbacks._distributed import is_rank_zero
 
 
 # ----------------------------------------------------------------------

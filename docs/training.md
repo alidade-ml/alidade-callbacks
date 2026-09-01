@@ -15,7 +15,7 @@ One line in most cases. The rest of this page is the things that surprise people
 **Composer**
 
 ```python
-from astrolabe_callbacks import AstrolabeComposerLogger
+from alidade_callbacks import AstrolabeComposerLogger
 
 trainer = Trainer(
     model=...,
@@ -30,7 +30,7 @@ trainer = Trainer(
 **Lightning**
 
 ```python
-from astrolabe_callbacks import AstrolabeLightningLogger
+from alidade_callbacks import AstrolabeLightningLogger
 
 trainer = Trainer(callbacks=[AstrolabeLightningLogger()])
 ```
@@ -41,7 +41,7 @@ trainer = Trainer(callbacks=[AstrolabeLightningLogger()])
 **HuggingFace Trainer**
 
 ```python
-from astrolabe_callbacks import AstrolabeHFTrainerCallback
+from alidade_callbacks import AstrolabeHFTrainerCallback
 
 trainer.add_callback(AstrolabeHFTrainerCallback())
 ```
@@ -52,7 +52,7 @@ trainer.add_callback(AstrolabeHFTrainerCallback())
 **Raw PyTorch / Accelerate / JAX / anything**
 
 ```python
-from astrolabe_callbacks import Run
+from alidade_callbacks import Run
 
 with Run(experiment_name="my-experiment") as run:
     for step in range(steps):
@@ -68,7 +68,7 @@ with Run(experiment_name="my-experiment") as run:
 > versions silently drop every metric. Note that the *checkpointer* is the opposite — it
 > is a `Callback` and goes in `callbacks=`. See [checkpoints](checkpoints.md).
 
-Install the matching extra: `pip install 'astrolabe-callbacks[composer]'` — or
+Install the matching extra: `pip install 'alidade-callbacks[composer]'` — or
 `[lightning]`, `[hf]`, `[all]`. Raw PyTorch needs no extra.
 
 ---
@@ -187,7 +187,7 @@ worse than a red build.
 ## Raw PyTorch in more detail
 
 ```python
-from astrolabe_callbacks import Run
+from alidade_callbacks import Run
 
 with Run(experiment_name="my-experiment", run_name="baseline") as run:
     for step in range(steps):

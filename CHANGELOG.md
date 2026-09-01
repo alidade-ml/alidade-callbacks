@@ -99,7 +99,7 @@ never shipped in any tag — and the eval linkage built on top of it.
 - **Local-aim transport mode** (opt-in via the NUC's engine, not the training repo). When the engine sets `ALIDADE_AIM_REPO_PATH=/path/to/local-repo` in the training environment, the callback spawns a local `aim server` subprocess on the compute host writing to that path. Training writes stay on localhost (~1900 writes/sec sustained vs. ~40/sec through the legacy SSH tunnel). The NUC-side `astrolabe-sync` sidecar pulls per-run RocksDB chunks every ~3s. Dashboard lag drops from minutes-to-hours under heavy emission to ~6-8s. See [astrolabe's `docs/aim-live-sync.md`](https://github.com/naston/astrolabe/blob/main/docs/aim-live-sync.md). Tunnel mode (no env var) remains the default; nothing changes for callers that don't opt in.
 - **Schema-phase finalize cycle.** At framework boundary hooks (Composer `batch_end`/`eval_end`, Lightning `on_train_batch_end`/`on_validation_end`, HuggingFace `on_log`/`on_evaluate`, raw PyTorch `log_train`/`log_eval`/`log`), the callback now observes metric names and — when new names appear since the last finalize — drains the buffer, closes the Aim Run, and reopens with `force_resume=True`. The close forces RocksDB memtable contents to flush to stable SST files, which is what makes new metric names visible to read-only readers like the sync sidecar's `RepoIndexManager.index()`. Typical Composer run: 1-2 finalize cycles. Optimizer handoffs (Muon→AdamW) trigger one additional cycle when the new optimizer's metrics first appear. Hard cap of 10 cycles per run prevents pathological churn. Each finalize emits a `schema_finalized` event with the new metric names (capped to 10) for post-mortem observability via the disk-stats jsonl.
 - **`AstrolabeRun.finalize_schema()`** on the raw-PyTorch helper for users who want to force a finalize at a specific point (e.g., after a hand-rolled warmup phase that registers every metric upfront). No-op when no new names have been observed.
-- New `astrolabe_callbacks._core.SchemaPhaseState` dataclass + `observe_name()` + `maybe_finalize_schema()` helpers. Public API; framework callbacks own the timing of `maybe_finalize_schema` calls.
+- New `alidade_callbacks._core.SchemaPhaseState` dataclass + `observe_name()` + `maybe_finalize_schema()` helpers. Public API; framework callbacks own the timing of `maybe_finalize_schema` calls.
 
 ### Changed
 
@@ -121,13 +121,13 @@ The local-aim mode adds a subprocess (`aim server`) and the schema-phase finaliz
 
 ### Added
 
-- **`log_eval_table` / `start_eval_run` — post-training eval logging.** Moved from the main `astrolabe` package into this library so training/eval repos depend on **one** lightweight package for all Aim instrumentation instead of also pulling in the orchestration framework. The helpers log benchmark-suite results (GLUE, MMLU, …) under the `eval/<task_set>/<metric>` namespace on a dedicated Aim run tagged `astrolabe.kind="eval"`, which populates astrolabe's dashboard Eval tab. Available from the base install (`pip install astrolabe-callbacks`) — no framework extra needed. See [`docs/eval-results.md`](docs/eval-results.md).
+- **`log_eval_table` / `start_eval_run` — post-training eval logging.** Moved from the main `astrolabe` package into this library so training/eval repos depend on **one** lightweight package for all Aim instrumentation instead of also pulling in the orchestration framework. The helpers log benchmark-suite results (GLUE, MMLU, …) under the `eval/<task_set>/<metric>` namespace on a dedicated Aim run tagged `astrolabe.kind="eval"`, which populates astrolabe's dashboard Eval tab. Available from the base install (`pip install alidade-callbacks`) — no framework extra needed. See [`docs/eval-results.md`](docs/eval-results.md).
   - Connection follows the library's standard convention: `aim_url` argument, overridden by `ALIDADE_AIM_URL`, defaulting to `aim://localhost:43800`. (The original `astrolabe.eval_results` took a filesystem `aim_repo` path; the parameter is renamed and now URL-first to match the framework callbacks. `aim.Run` still accepts a filesystem path if you pass one.)
   - `EvalInputError` is exported for callers that want to catch malformed-input rejections.
 
 ### Fixed
 
-- **`__version__` drift.** `astrolabe_callbacks.__version__` was stuck at `"0.2.0"` while `pyproject.toml` had moved to `1.0.0`. Both now read `1.1.0` from a single bump.
+- **`__version__` drift.** `alidade_callbacks.__version__` was stuck at `"0.2.0"` while `pyproject.toml` had moved to `1.0.0`. Both now read `1.1.0` from a single bump.
 
 ## v1.0.0 — 2026-05-30
 
@@ -145,15 +145,15 @@ The local-aim mode adds a subprocess (`aim server`) and the schema-phase finaliz
 
 ## v0.2.0 — 2026-05-04
 
-**Renamed**: `astrolabe-composer-callback` → `astrolabe-callbacks`. The new package supports four ML training frameworks instead of one.
+**Renamed**: `astrolabe-composer-callback` → `alidade-callbacks`. The new package supports four ML training frameworks instead of one.
 
 ### What's new
 
 - **Four framework callbacks** behind optional extras:
-  - `astrolabe-callbacks[composer]` — `AstrolabeComposerLogger` (was `AstrolabeLogger`)
-  - `astrolabe-callbacks[lightning]` — `AstrolabeLightningLogger` (new)
-  - `astrolabe-callbacks[hf]` — `AstrolabeHFTrainerCallback` (new)
-  - `astrolabe-callbacks[all]` — everything
+  - `alidade-callbacks[composer]` — `AstrolabeComposerLogger` (was `AstrolabeLogger`)
+  - `alidade-callbacks[lightning]` — `AstrolabeLightningLogger` (new)
+  - `alidade-callbacks[hf]` — `AstrolabeHFTrainerCallback` (new)
+  - `alidade-callbacks[all]` — everything
 - **`Run` context manager** for raw PyTorch / JAX / Accelerate / custom loops. Same env-var contract; `with Run() as run: run.log_train(loss=x, step=n)`.
 - **Pass-through philosophy**: every metric the user logs flows to Aim under the user's chosen name. The library only synthesizes `wall_time`. No metric whitelists, no surprise prefixes. Replaces the v0.1.x behavior where only `train/loss` and a few framework metrics were logged.
 - **Strict mode**: `ALIDADE_CALLBACK_STRICT=1` flips graceful-degrade warnings into raised exceptions for fail-fast CI behavior.
@@ -169,12 +169,12 @@ If you were using `astrolabe-composer-callback==0.1.x`:
 
 ```diff
 - pip install astrolabe-composer-callback
-+ pip install astrolabe-callbacks[composer]
++ pip install alidade-callbacks[composer]
 ```
 
 ```diff
 - from astrolabe_composer_callback import AstrolabeLogger
-+ from astrolabe_callbacks import AstrolabeComposerLogger
++ from alidade_callbacks import AstrolabeComposerLogger
 ```
 
 ```diff
@@ -187,7 +187,7 @@ If you were using `astrolabe-composer-callback==0.1.x`:
 
 Three changes to be aware of:
 
-1. **Package + class names changed.** No back-compat shim — the v0.1.4 release stays on PyPI under the old name as the migration anchor; the new package is `astrolabe-callbacks`.
+1. **Package + class names changed.** No back-compat shim — the v0.1.4 release stays on PyPI under the old name as the migration anchor; the new package is `alidade-callbacks`.
 2. **Attachment point changed for Composer.** `AstrolabeComposerLogger` is now a `LoggerDestination` (was a plain `Callback`). Composer 0.20+ rejects `LoggerDestination` instances passed to `callbacks=` with a clear error; older Composer versions silently dropped every `log_metrics` call. Move to `loggers=`.
 3. **Constructor parameter renamed.** `repo=` is now `aim_url=`. `log_interval=` is gone — `LoggerDestination.log_metrics` fires per Composer's own logging cadence (`console_log_interval` in your training YAML), not a separate per-callback throttle.
 

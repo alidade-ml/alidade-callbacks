@@ -11,8 +11,8 @@ from __future__ import annotations
 
 import pytest
 
-from astrolabe_callbacks._core import EVAL_METRIC_PREFIX
-from astrolabe_callbacks.lightning import (
+from alidade_callbacks._core import EVAL_METRIC_PREFIX
+from alidade_callbacks.lightning import (
     AstrolabeLightningLogger,
     _is_val_metric,
     _normalize_val_metric_name,

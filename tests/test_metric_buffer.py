@@ -15,7 +15,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from astrolabe_callbacks._core import (
+from alidade_callbacks._core import (
     _DEFAULT_DRAIN_TIMEOUT_S,
     _MetricBuffer,
     close_run,

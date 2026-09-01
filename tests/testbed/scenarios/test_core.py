@@ -1,4 +1,4 @@
-"""Integration tests for ``src/astrolabe_callbacks/_core.py``.
+"""Integration tests for ``src/alidade_callbacks/_core.py``.
 
 `_core.py` owns AstrolabeLogger: init/close, tag setting, name
 handling, buffer + drainer thread, schema-finalize invariants,

@@ -23,8 +23,8 @@ import os
 
 import pytest
 
-from astrolabe_callbacks import _core, contract
-from astrolabe_callbacks.checkpoint import (
+from alidade_callbacks import _core, contract
+from alidade_callbacks.checkpoint import (
     BUFFER_NAME,
     META_KEY,
     CheckpointMeta,

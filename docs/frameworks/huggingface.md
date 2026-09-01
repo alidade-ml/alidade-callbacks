@@ -6,7 +6,7 @@ Cookbook for `AstrolabeHFTrainerCallback` — `transformers.Trainer` and TRL.
 
 ```python
 from transformers import Trainer, TrainingArguments
-from astrolabe_callbacks import AstrolabeHFTrainerCallback
+from alidade_callbacks import AstrolabeHFTrainerCallback
 
 trainer = Trainer(
     model=model,
@@ -42,7 +42,7 @@ TRL's `SFTTrainer`, `DPOTrainer`, `RewardTrainer`, and `PPOTrainer` all inherit 
 
 ```python
 from trl import SFTTrainer
-from astrolabe_callbacks import AstrolabeHFTrainerCallback
+from alidade_callbacks import AstrolabeHFTrainerCallback
 
 trainer = SFTTrainer(
     model=model,
@@ -141,4 +141,4 @@ HF's `TrainerCallback` API doesn't expose an exception hook. If training raises,
 
 ### Migrating from `astrolabe-composer-callback`
 
-If you were using a Composer callback, this is a different package and a different framework. Just install `astrolabe-callbacks[hf]` fresh.
+If you were using a Composer callback, this is a different package and a different framework. Just install `alidade-callbacks[hf]` fresh.

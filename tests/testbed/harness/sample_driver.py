@@ -124,7 +124,7 @@ def _prepare_checkpoint(config: SampleDriverConfig) -> None:
     if not (config.create_pt_with_hash or config.create_safetensors_with_hash):
         return
 
-    from astrolabe_callbacks.checkpoint import CheckpointMeta, export_checkpoint
+    from alidade_callbacks.checkpoint import CheckpointMeta, export_checkpoint
 
     path = Path(config.checkpoint_path)
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -147,7 +147,7 @@ def _prepare_checkpoint(config: SampleDriverConfig) -> None:
 
 
 def run_sample_driver(config: SampleDriverConfig) -> str:
-    from astrolabe_callbacks import Sample, log_samples
+    from alidade_callbacks import Sample, log_samples
 
     _prepare_checkpoint(config)
 
