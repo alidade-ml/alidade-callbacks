@@ -51,7 +51,7 @@ DEST_PATH = REPO_ROOT / "src" / "astrolabe_callbacks" / "contract.py"
 # branch, or SHA). The path part is fixed because ``contract.py`` lives
 # at a known location in the engine repo.
 DEFAULT_URL_TEMPLATE = (
-    "https://raw.githubusercontent.com/alidade-ml/alidade/{ref}/astrolabe/contract.py"
+    "https://raw.githubusercontent.com/alidade-ml/alidade/{ref}/alidade/contract.py"
 )
 
 # Python 3.10+ stdlib module names — sourced from sys.stdlib_module_names
