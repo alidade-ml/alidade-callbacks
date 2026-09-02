@@ -7,7 +7,7 @@ entire orchestration stack — exactly the failure mode the three-package
 split exists to prevent.
 
 Allowed exception: nothing. Even the contract is named
-``astrolabe_callbacks.contract`` locally (the vendor script writes
+``alidade_callbacks.contract`` locally (the vendor script writes
 to that path), not ``astrolabe.contract``. There is no legitimate
 reason for callback code to ``import astrolabe.*``.
 
@@ -25,12 +25,12 @@ from pathlib import Path
 
 SKIP_PARTS = frozenset({"tests", "__pycache__", ".venv", "venv", "build", "dist"})
 
-CALLBACK_ROOT = Path("src/astrolabe_callbacks")
+CALLBACK_ROOT = Path("src/alidade_callbacks")
 
 
 def _find_engine_imports(path: Path) -> list[tuple[int, str]]:
     """Return [(lineno, statement), ...] for any astrolabe.* import in
-    ``path``. Distinguished from astrolabe_callbacks.* — only bare
+    ``path``. Distinguished from alidade_callbacks.* — only bare
     ``astrolabe`` and its submodules are flagged."""
     try:
         tree = ast.parse(path.read_text())
@@ -78,12 +78,12 @@ def main() -> int:
             "\nThe callback library cannot depend on the engine package — "
             "researcher training environments would have to install the "
             "entire orchestration stack. If you need a name from the "
-            "contract, use astrolabe_callbacks.contract (vendored locally).",
+            "contract, use alidade_callbacks.contract (vendored locally).",
             file=sys.stderr,
         )
         return 1
 
-    print(f"✓ src/astrolabe_callbacks/ contains no astrolabe.* imports")
+    print(f"✓ src/alidade_callbacks/ contains no astrolabe.* imports")
     return 0
 
 

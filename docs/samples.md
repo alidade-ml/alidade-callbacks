@@ -2,7 +2,7 @@
 
 Storing a few actual model outputs, so the run can show what it produces.
 
-Every other number astrolabe surfaces is a scalar: loss curves, eval scores, cost.
+Every other number alidade surfaces is a scalar: loss curves, eval scores, cost.
 None of them answers the question people ask first when a run finishes, and the only
 one a person outside the project understands: *what does it actually make?*
 
@@ -23,7 +23,7 @@ Your own script does the inference. This stores the results and links them to th
 model that produced them.
 
 ```python
-from astrolabe_callbacks import Sample, log_samples
+from alidade_callbacks import Sample, log_samples
 
 log_samples(
     checkpoint="ckpt.pt",

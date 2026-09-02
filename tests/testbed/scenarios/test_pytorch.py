@@ -1,4 +1,4 @@
-"""Integration tests for ``src/astrolabe_callbacks/pytorch.py``.
+"""Integration tests for ``src/alidade_callbacks/pytorch.py``.
 
 Raw PyTorch helper — no framework Trainer, users drive AstrolabeLogger
 directly via ``AstrolabeRun`` (aliased ``Run``). This file verifies

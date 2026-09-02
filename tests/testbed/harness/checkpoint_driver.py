@@ -226,7 +226,7 @@ def _inspect(path: Path, role: str) -> dict[str, Any]:
     so a scenario can tell "the framework put our block where we think
     it did" apart from "our reader found something somewhere".
     """
-    from astrolabe_callbacks.checkpoint import (
+    from alidade_callbacks.checkpoint import (
         BUFFER_NAME,
         read_checkpoint_meta,
         read_meta_from_buffer,
@@ -323,7 +323,7 @@ def _corrupt_meta_block(path: Path) -> None:
 
     import torch
 
-    from astrolabe_callbacks.checkpoint import META_KEY
+    from alidade_callbacks.checkpoint import META_KEY
 
     obj = _torch_load(path)
     if not isinstance(obj, dict):
@@ -347,7 +347,7 @@ def _corrupt_hf_checkpoint(directory: Path) -> None:
     import torch
     from safetensors.torch import load_file, save_file
 
-    from astrolabe_callbacks.checkpoint import BUFFER_NAME
+    from alidade_callbacks.checkpoint import BUFFER_NAME
 
     state_path = directory / "trainer_state.json"
     if state_path.exists():
@@ -412,7 +412,7 @@ def run_checkpoint_driver(config: CheckpointDriverConfig) -> dict[str, Any]:
     }[config.framework](config, workdir)
     phase(f"training: done, {len(written)} checkpoint(s) written")
 
-    from astrolabe_callbacks.checkpoint import write_first_checkpoint_marker_once
+    from alidade_callbacks.checkpoint import write_first_checkpoint_marker_once
 
     probe: dict[str, Any] = {
         "framework": config.framework,
@@ -462,8 +462,8 @@ def _derive_chain_probe(
     """
     import torch
 
-    from astrolabe_callbacks import _core
-    from astrolabe_callbacks.checkpoint import save_derived_checkpoint
+    from alidade_callbacks import _core
+    from alidade_callbacks.checkpoint import save_derived_checkpoint
 
     report: dict[str, Any] = {
         "live_run_at_derive": _core.current_run_hash(),
@@ -493,7 +493,7 @@ def _hf_load_probe(written: list[tuple[Path, str]]) -> dict[str, Any]:
     from safetensors.torch import load_file
     from transformers import AutoModelForSequenceClassification
 
-    from astrolabe_callbacks.checkpoint import strip_meta_buffer
+    from alidade_callbacks.checkpoint import strip_meta_buffer
 
     directories = sorted(
         {path.parent for path, role in written if path.suffix == ".safetensors"},
@@ -537,7 +537,7 @@ def _strict_load_error(state_dict: dict[str, Any]) -> str | None:
 
 def _hf_shard_probe(sharded_dir: Path) -> dict[str, Any]:
     """What HF's sharded save did with the provenance buffer."""
-    from astrolabe_callbacks.checkpoint import BUFFER_NAME, read_meta_from_buffer
+    from alidade_callbacks.checkpoint import BUFFER_NAME, read_meta_from_buffer
 
     index_path = sharded_dir / "model.safetensors.index.json"
     report: dict[str, Any] = {
@@ -624,7 +624,7 @@ def _run_pytorch(
     import torch
     import torch.nn as nn
 
-    from astrolabe_callbacks.pytorch import AstrolabeRun, save_checkpoint
+    from alidade_callbacks.pytorch import AstrolabeRun, save_checkpoint
 
     model = nn.Linear(4, 1)
     if config.resume_from:
@@ -692,7 +692,7 @@ def _run_composer(
     from composer.models import ComposerModel
     from torch.utils.data import DataLoader
 
-    from astrolabe_callbacks.composer import (
+    from alidade_callbacks.composer import (
         AstrolabeComposerCheckpointer,
         AstrolabeComposerLogger,
     )
@@ -774,7 +774,7 @@ def _run_lightning(
     from lightning.pytorch.callbacks import ModelCheckpoint
     from torch.utils.data import DataLoader
 
-    from astrolabe_callbacks.lightning import (
+    from alidade_callbacks.lightning import (
         AstrolabeLightningCheckpointer,
         AstrolabeLightningLogger,
     )
@@ -873,7 +873,7 @@ def _run_hf(config: CheckpointDriverConfig, workdir: Path) -> list[tuple[Path, s
     from torch.utils.data import Dataset
     from transformers import Trainer, TrainerCallback, TrainingArguments
 
-    from astrolabe_callbacks.huggingface import (
+    from alidade_callbacks.huggingface import (
         AstrolabeHFCheckpointer,
         AstrolabeHFTrainerCallback,
     )

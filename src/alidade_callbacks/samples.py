@@ -10,7 +10,7 @@ is why they are a distinct run kind rather than an eval with unusual values.
 
 The researcher's own script does inference; this stores and links the results:
 
-    from astrolabe_callbacks import Sample, log_samples
+    from alidade_callbacks import Sample, log_samples
 
     log_samples(
         checkpoint="ckpt.pt",
@@ -31,9 +31,9 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from astrolabe_callbacks import contract
-from astrolabe_callbacks._attribution import AttributionInputError, resolve_parent
-from astrolabe_callbacks._identity import ambient_identity, resolve_aim_url
+from alidade_callbacks import contract
+from alidade_callbacks._attribution import AttributionInputError, resolve_parent
+from alidade_callbacks._identity import ambient_identity, resolve_aim_url
 
 __all__ = ["Sample", "SampleInputError", "log_samples"]
 

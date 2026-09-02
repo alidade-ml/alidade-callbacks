@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import pytest
 
-from astrolabe_callbacks import Run
-from astrolabe_callbacks.pytorch import AstrolabeRun
+from alidade_callbacks import Run
+from alidade_callbacks.pytorch import AstrolabeRun
 
 
 # ----------------------------------------------------------------------
@@ -15,7 +15,7 @@ from astrolabe_callbacks.pytorch import AstrolabeRun
 
 class TestRunAlias:
     def test_run_is_alias_of_astrolabe_run(self):
-        # `from astrolabe_callbacks import Run` is the documented short
+        # `from alidade_callbacks import Run` is the documented short
         # form; if we ever rename or wrap AstrolabeRun, this guards
         # against silently breaking the alias.
         assert Run is AstrolabeRun
@@ -172,7 +172,7 @@ class TestLogTrain:
 
 class TestLogEval:
     def test_namespaces_under_eval_prefix(self, fake_aim_run):
-        from astrolabe_callbacks._core import EVAL_METRIC_PREFIX
+        from alidade_callbacks._core import EVAL_METRIC_PREFIX
         with AstrolabeRun() as run:
             run.log_eval(loss=0.4, accuracy=0.95, step=10)
         names = [t["name"] for t in fake_aim_run[-1].tracked]

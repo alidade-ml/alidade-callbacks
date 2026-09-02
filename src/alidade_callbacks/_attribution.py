@@ -62,7 +62,7 @@ def _parent_run_hash(checkpoint: str | Path | dict[str, Any] | None) -> str | No
     """
     if checkpoint is None:
         return None
-    from astrolabe_callbacks.checkpoint import read_checkpoint_meta
+    from alidade_callbacks.checkpoint import read_checkpoint_meta
 
     meta = read_checkpoint_meta(checkpoint)
     return meta.aim_run_hash if meta else None
@@ -168,8 +168,8 @@ def mint_model_entry(name: str, aim_url: str | None) -> str:
 
     from aim import Run
 
-    from astrolabe_callbacks import contract
-    from astrolabe_callbacks._identity import ambient_identity, resolve_aim_url
+    from alidade_callbacks import contract
+    from alidade_callbacks._identity import ambient_identity, resolve_aim_url
 
     recorded = _read_external_model(name)
     if recorded:
@@ -202,7 +202,7 @@ def _external_models_path() -> Path | None:
     scope an identity to and every call minting its own entry is the
     honest answer.
     """
-    from astrolabe_callbacks import contract
+    from alidade_callbacks import contract
 
     raw = os.environ.get(contract.ENV_EXTERNAL_MODELS)
     return Path(os.path.expanduser(raw)) if raw else None

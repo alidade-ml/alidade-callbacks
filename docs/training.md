@@ -1,6 +1,6 @@
 # Training
 
-Streaming metrics to Aim while your model trains, so they land on astrolabe's **Training
+Streaming metrics to Aim while your model trains, so they land on alidade's **Training
 tab**.
 
 One line in most cases. The rest of this page is the things that surprise people.
@@ -15,12 +15,12 @@ One line in most cases. The rest of this page is the things that surprise people
 **Composer**
 
 ```python
-from astrolabe_callbacks import AstrolabeComposerLogger
+from alidade_callbacks import AlidadeComposerLogger
 
 trainer = Trainer(
     model=...,
     train_dataloader=...,
-    loggers=[AstrolabeComposerLogger()],
+    loggers=[AlidadeComposerLogger()],
 )
 ```
 
@@ -30,9 +30,9 @@ trainer = Trainer(
 **Lightning**
 
 ```python
-from astrolabe_callbacks import AstrolabeLightningLogger
+from alidade_callbacks import AlidadeLightningLogger
 
-trainer = Trainer(callbacks=[AstrolabeLightningLogger()])
+trainer = Trainer(callbacks=[AlidadeLightningLogger()])
 ```
 
 </td></tr>
@@ -41,9 +41,9 @@ trainer = Trainer(callbacks=[AstrolabeLightningLogger()])
 **HuggingFace Trainer**
 
 ```python
-from astrolabe_callbacks import AstrolabeHFTrainerCallback
+from alidade_callbacks import AlidadeHFTrainerCallback
 
-trainer.add_callback(AstrolabeHFTrainerCallback())
+trainer.add_callback(AlidadeHFTrainerCallback())
 ```
 
 </td></tr>
@@ -52,7 +52,7 @@ trainer.add_callback(AstrolabeHFTrainerCallback())
 **Raw PyTorch / Accelerate / JAX / anything**
 
 ```python
-from astrolabe_callbacks import Run
+from alidade_callbacks import Run
 
 with Run(experiment_name="my-experiment") as run:
     for step in range(steps):
@@ -62,13 +62,13 @@ with Run(experiment_name="my-experiment") as run:
 </td></tr>
 </table>
 
-> **Composer takes `loggers=`, not `callbacks=`.** `AstrolabeComposerLogger` is a
+> **Composer takes `loggers=`, not `callbacks=`.** `AlidadeComposerLogger` is a
 > `LoggerDestination`, and Composer only broadcasts user metrics to destinations
 > registered there. Composer 0.20+ rejects it in `callbacks=` with a clear error; older
 > versions silently drop every metric. Note that the *checkpointer* is the opposite — it
 > is a `Callback` and goes in `callbacks=`. See [checkpoints](checkpoints.md).
 
-Install the matching extra: `pip install 'astrolabe-callbacks[composer]'` — or
+Install the matching extra: `pip install 'alidade-callbacks[composer]'` — or
 `[lightning]`, `[hf]`, `[all]`. Raw PyTorch needs no extra.
 
 ---
@@ -116,9 +116,9 @@ names the framework chose, not you. Yours are never touched. Full table in
 The run name is the label on your row in the dashboard. All four take `run_name`:
 
 ```python
-AstrolabeComposerLogger(run_name="LatentBERT-seed0")
-AstrolabeLightningLogger(run_name="LatentBERT-seed0")
-AstrolabeHFTrainerCallback(run_name="LatentBERT-seed0")
+AlidadeComposerLogger(run_name="LatentBERT-seed0")
+AlidadeLightningLogger(run_name="LatentBERT-seed0")
+AlidadeHFTrainerCallback(run_name="LatentBERT-seed0")
 Run(run_name="LatentBERT-seed0")
 ```
 
@@ -131,7 +131,7 @@ Leave it off and each framework falls back to something sensible:
 | HuggingFace | `args.run_name` |
 | raw PyTorch | none — pass `run_name` or the run is unnamed |
 
-> `run_name` has **no environment variable**. It is the one identity field astrolabe does
+> `run_name` has **no environment variable**. It is the one identity field alidade does
 > not override — see below.
 
 ---
@@ -147,8 +147,8 @@ This surprises people, so it is worth stating flatly.
 | `aim_url=` | `ALIDADE_AIM_URL` |
 | `run_name=` | *nothing — yours always wins* |
 
-**Inside an astrolabe submit, passing `experiment_name=` does nothing.** The engine sets
-the env, and the env is authoritative because astrolabe is the one driving the run — it
+**Inside an alidade submit, passing `experiment_name=` does nothing.** The engine sets
+the env, and the env is authoritative because alidade is the one driving the run — it
 has to be able to guarantee the experiment a submit's runs land in.
 
 That is why the same script works in both places: submitted, it inherits the submit's
@@ -187,7 +187,7 @@ worse than a red build.
 ## Raw PyTorch in more detail
 
 ```python
-from astrolabe_callbacks import Run
+from alidade_callbacks import Run
 
 with Run(experiment_name="my-experiment", run_name="baseline") as run:
     for step in range(steps):
@@ -216,8 +216,8 @@ a hash. See [checkpoints](checkpoints.md).
 
 ```python
 trainer = Trainer(
-    loggers=[AstrolabeComposerLogger()],
-    callbacks=[AstrolabeComposerCheckpointer()],
+    loggers=[AlidadeComposerLogger()],
+    callbacks=[AlidadeComposerCheckpointer()],
 )
 ```
 

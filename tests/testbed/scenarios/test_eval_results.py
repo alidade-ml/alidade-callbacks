@@ -1,4 +1,4 @@
-"""Integration tests for ``src/astrolabe_callbacks/eval_results.py``.
+"""Integration tests for ``src/alidade_callbacks/eval_results.py``.
 
 Module-level eval helpers against real Aim.
 

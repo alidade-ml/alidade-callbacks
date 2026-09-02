@@ -1,7 +1,7 @@
-# Getting your data into astrolabe
+# Getting your data into alidade
 
-`astrolabe-callbacks` is the one library your training and eval code imports. It streams
-metrics to Aim with astrolabe's conventions applied, so your runs show up on the
+`alidade-callbacks` is the one library your training and eval code imports. It streams
+metrics to Aim with alidade's conventions applied, so your runs show up on the
 dashboard attached to the right experiment, the right submit, and the right model.
 
 It is deliberately small. The base install pulls `aim` and `loguru` and nothing else —
@@ -33,11 +33,11 @@ right model without you passing identifiers around.
 ## Install
 
 ```bash
-pip install astrolabe-callbacks                 # raw PyTorch, and all eval helpers
-pip install 'astrolabe-callbacks[composer]'     # MosaicML Composer
-pip install 'astrolabe-callbacks[lightning]'    # PyTorch Lightning
-pip install 'astrolabe-callbacks[hf]'           # HuggingFace Trainer
-pip install 'astrolabe-callbacks[all]'          # everything
+pip install alidade-callbacks                 # raw PyTorch, and all eval helpers
+pip install 'alidade-callbacks[composer]'     # MosaicML Composer
+pip install 'alidade-callbacks[lightning]'    # PyTorch Lightning
+pip install 'alidade-callbacks[hf]'           # HuggingFace Trainer
+pip install 'alidade-callbacks[all]'          # everything
 ```
 
 Add `[safetensors]` if you export checkpoints in that format.
@@ -52,19 +52,19 @@ to a trainer.
 Training:
 
 ```python
-from astrolabe_callbacks import AstrolabeComposerLogger, AstrolabeComposerCheckpointer
+from alidade_callbacks import AlidadeComposerLogger, AlidadeComposerCheckpointer
 
 trainer = Trainer(
     model=...,
-    loggers=[AstrolabeComposerLogger()],        # metrics
-    callbacks=[AstrolabeComposerCheckpointer()],  # provenance on every save
+    loggers=[AlidadeComposerLogger()],        # metrics
+    callbacks=[AlidadeComposerCheckpointer()],  # provenance on every save
 )
 ```
 
 Eval, later, possibly in a different repo:
 
 ```python
-from astrolabe_callbacks import start_eval_run_from_checkpoint
+from alidade_callbacks import start_eval_run_from_checkpoint
 
 run = start_eval_run_from_checkpoint(checkpoint="ckpt.pt", task_set="glue")
 run.track(0.822, name="eval/cola/matthews", step=0)
@@ -77,7 +77,7 @@ Nothing was passed between them but the file.
 
 ## Two things worth knowing early
 
-**Inside an astrolabe submit, the environment wins.** The engine sets
+**Inside an alidade submit, the environment wins.** The engine sets
 `ALIDADE_EXPERIMENT_NAME` and `AIM_RUN_TAGS`, and those override the matching
 constructor arguments. That is what lets the same script work submitted and standalone —
 but it means `experiment_name=` silently does nothing inside a submit. Details in

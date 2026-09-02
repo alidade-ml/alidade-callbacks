@@ -11,11 +11,11 @@
 # from the same directory the aim server writes to.
 services:
   aim-server:
-    image: astrolabe-callbacks-testbed-aim:latest
+    image: alidade-callbacks-testbed-aim:latest
     build:
       context: ../..
       dockerfile: tests/testbed/Dockerfile.aim
-    container_name: astrolabe-callbacks-testbed-aim
+    container_name: alidade-callbacks-testbed-aim
     # Run as the host's uid/gid so files written to the bind-mounted
     # repo are readable by the pytest process on the host. Without
     # this, aim runs as root and produces root-owned files that the
@@ -36,11 +36,11 @@ services:
     restart: "no"
 
   client:
-    image: astrolabe-callbacks-testbed-client:latest
+    image: alidade-callbacks-testbed-client:latest
     build:
       context: ../..
       dockerfile: tests/testbed/Dockerfile.client
-    container_name: astrolabe-callbacks-testbed-client
+    container_name: alidade-callbacks-testbed-client
     depends_on:
       - aim-server
     volumes:

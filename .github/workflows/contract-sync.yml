@@ -1,6 +1,6 @@
 # Contract sync — Gate A guard per astrolabe/plans/version-contract.md
 #
-# Verifies that src/astrolabe_callbacks/contract.py matches the sha256
+# Verifies that src/alidade_callbacks/contract.py matches the sha256
 # recorded in tools/vendor-contract.json. The recorded hash IS the
 # integrity check: any hand-edit, corruption, or accidental drift fails
 # the check.
@@ -39,7 +39,7 @@ jobs:
           import hashlib, json, pathlib, sys
 
           sidecar = json.loads(pathlib.Path("tools/vendor-contract.json").read_text())
-          src = pathlib.Path("src/astrolabe_callbacks/contract.py").read_text()
+          src = pathlib.Path("src/alidade_callbacks/contract.py").read_text()
           actual = hashlib.sha256(src.encode("utf-8")).hexdigest()
           expected = sidecar.get("sha256", "")
           ref = sidecar.get("vendored_from", "?")
@@ -55,7 +55,7 @@ jobs:
               )
           if actual != expected:
               sys.exit(
-                  "\n✗ src/astrolabe_callbacks/contract.py does not match "
+                  "\n✗ src/alidade_callbacks/contract.py does not match "
                   "the sha256 recorded in tools/vendor-contract.json.\n\n"
                   "Either someone edited the vendored copy by hand (don't — "
                   "the engine is the source of truth), or the sidecar's "
@@ -76,7 +76,7 @@ jobs:
         run: |
           python - <<'PY'
           import ast, sys, pathlib
-          src = pathlib.Path("src/astrolabe_callbacks/contract.py").read_text()
+          src = pathlib.Path("src/alidade_callbacks/contract.py").read_text()
           tree = ast.parse(src)
           stdlib = set(sys.stdlib_module_names) | {"__future__"}
           bad = []

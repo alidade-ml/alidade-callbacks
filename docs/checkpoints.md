@@ -20,20 +20,20 @@ Attach a checkpointer next to your logger. Every checkpoint the framework writes
 carries the live run's identity, with no call at the save site.
 
 ```python
-from astrolabe_callbacks import AstrolabeComposerLogger, AstrolabeComposerCheckpointer
+from alidade_callbacks import AlidadeComposerLogger, AlidadeComposerCheckpointer
 
 trainer = Trainer(
     model=...,
     train_dataloader=...,
-    loggers=[AstrolabeComposerLogger()],
-    callbacks=[AstrolabeComposerCheckpointer()],   # callbacks=, not loggers=
+    loggers=[AlidadeComposerLogger()],
+    callbacks=[AlidadeComposerCheckpointer()],   # callbacks=, not loggers=
 )
 ```
 
 Later, from an eval script:
 
 ```python
-from astrolabe_callbacks import start_eval_run_from_checkpoint
+from alidade_callbacks import start_eval_run_from_checkpoint
 
 run = start_eval_run_from_checkpoint(checkpoint="ckpt.pt", task_set="glue")
 ```
@@ -49,20 +49,20 @@ A `CheckpointMeta` block:
 | field | what it is |
 |---|---|
 | `aim_run_hash` | the Aim run that was live when this was saved — **the field eval attributes on** |
-| `submit_id` | the astrolabe submit |
+| `submit_id` | the alidade submit |
 | `experiment` | experiment name |
 | `version` | `"v1"`, `"v2"`, … |
 | `created_at` | ISO timestamp |
 | `derived_from` | set when this came from another checkpoint (see [Transforms](#transforms)) |
 | `derivation_chain_length` | how many transforms deep |
 
-Outside an astrolabe submit most of these are `None`, which is fine — `aim_run_hash` is
+Outside an alidade submit most of these are `None`, which is fine — `aim_run_hash` is
 the one that matters, and it comes from the live Aim run, not from the environment.
 
 Read it back with:
 
 ```python
-from astrolabe_callbacks import read_checkpoint_meta
+from alidade_callbacks import read_checkpoint_meta
 
 meta = read_checkpoint_meta("ckpt.pt")       # a path, or an already-loaded state dict
 meta.aim_run_hash if meta else None          # None when the file carries no provenance
@@ -75,27 +75,27 @@ meta.aim_run_hash if meta else None          # None when the file carries no pro
 ## Attaching a checkpointer
 
 ```python
-from astrolabe_callbacks import AstrolabeComposerCheckpointer
-trainer = Trainer(..., loggers=[AstrolabeComposerLogger()],
-                        callbacks=[AstrolabeComposerCheckpointer()])
+from alidade_callbacks import AlidadeComposerCheckpointer
+trainer = Trainer(..., loggers=[AlidadeComposerLogger()],
+                        callbacks=[AlidadeComposerCheckpointer()])
 ```
 
 ```python
-from astrolabe_callbacks import AstrolabeLightningCheckpointer
-trainer = Trainer(..., callbacks=[AstrolabeLightningLogger(),
-                                  AstrolabeLightningCheckpointer()])
+from alidade_callbacks import AlidadeLightningCheckpointer
+trainer = Trainer(..., callbacks=[AlidadeLightningLogger(),
+                                  AlidadeLightningCheckpointer()])
 ```
 
 ```python
-from astrolabe_callbacks import AstrolabeHFCheckpointer
-trainer.add_callback(AstrolabeHFTrainerCallback())
-trainer.add_callback(AstrolabeHFCheckpointer())
+from alidade_callbacks import AlidadeHFCheckpointer
+trainer.add_callback(AlidadeHFTrainerCallback())
+trainer.add_callback(AlidadeHFCheckpointer())
 ```
 
 Raw PyTorch has no framework to hook, so you call the save yourself:
 
 ```python
-from astrolabe_callbacks import Run, save_checkpoint
+from alidade_callbacks import Run, save_checkpoint
 
 with Run(experiment_name="my-experiment") as run:
     for step in range(steps):
@@ -114,9 +114,9 @@ argument to pass.
 ### Constructor options
 
 ```python
-AstrolabeComposerCheckpointer(*, export_formats=None, export_dir=None)
-AstrolabeLightningCheckpointer(*, export_formats=None, export_dir=None)
-AstrolabeHFCheckpointer(*, embed_in_weights=True, export_formats=None)
+AlidadeComposerCheckpointer(*, export_formats=None, export_dir=None)
+AlidadeLightningCheckpointer(*, export_formats=None, export_dir=None)
+AlidadeHFCheckpointer(*, embed_in_weights=True, export_formats=None)
 ```
 
 - **`export_formats`** — additionally write a copy in `"pt"` and/or `"safetensors"`,
@@ -132,7 +132,7 @@ AstrolabeHFCheckpointer(*, embed_in_weights=True, export_formats=None)
 No framework, no callback — just a state dict and a destination:
 
 ```python
-from astrolabe_callbacks import export_checkpoint
+from alidade_callbacks import export_checkpoint
 
 export_checkpoint(state, "model.pt", fmt="pt")
 export_checkpoint(state, "model.safetensors", fmt="safetensors")
@@ -141,12 +141,12 @@ export_checkpoint(state, "model.safetensors", fmt="safetensors")
 `fmt` is `"pt"` or `"safetensors"`. It takes the live run's identity automatically; pass
 `meta=` only to override.
 
-> **safetensors needs an extra**: `pip install 'astrolabe-callbacks[safetensors]'`.
+> **safetensors needs an extra**: `pip install 'alidade-callbacks[safetensors]'`.
 > Without it, `export_checkpoint(..., fmt="safetensors")` raises `ImportError` naming the
 > extra. `"pt"` needs only torch.
 
 Where the block lives depends on the format. A `.pt` file gets a top-level
-`_astrolabe_meta` key; safetensors gets it in the header. Either way
+`_alidade_meta` key; safetensors gets it in the header. Either way
 `read_checkpoint_meta` finds it, and neither disturbs the tensors.
 
 ---
@@ -158,7 +158,7 @@ from an old one. Use `save_derived_checkpoint` so the new file remembers where i
 from:
 
 ```python
-from astrolabe_callbacks import save_derived_checkpoint
+from alidade_callbacks import save_derived_checkpoint
 
 save_derived_checkpoint(quantized_state, "model-int8.pt", parent="model.pt")
 ```
@@ -181,7 +181,7 @@ that produced the model it came from, rather than to nothing.
 For a file written before any of this existed, or by code that did not use the library:
 
 ```python
-from astrolabe_callbacks import stamp_checkpoint
+from alidade_callbacks import stamp_checkpoint
 
 stamp_checkpoint("old-model.safetensors", aim_run_hash="abc123...")
 ```
@@ -191,8 +191,8 @@ copied through as raw bytes. Only reach for it deliberately, on a file you own.
 
 > **Do not stamp a downloaded model.** A HuggingFace checkpoint usually lives in a shared
 > cache, possibly read-only, used by every project on the machine. To benchmark a model
-> astrolabe never trained, use `external_name=` — see
-> [the eval guide](eval-results.md#models-astrolabe-never-trained). It records the model
+> alidade never trained, use `external_name=` — see
+> [the eval guide](eval-results.md#models-alidade-never-trained). It records the model
 > in Aim and never touches the file.
 
 ---
@@ -202,14 +202,14 @@ copied through as raw bytes. Only reach for it deliberately, on a file you own.
 Some frameworks rebuild the state dict when they save, which drops a top-level metadata
 key. HuggingFace's `save_pretrained` is the common case, including its sharded path.
 
-`AstrolabeHFCheckpointer(embed_in_weights=True)` — the default — handles this by storing
+`AlidadeHFCheckpointer(embed_in_weights=True)` — the default — handles this by storing
 the block as a **tensor buffer on the model**, so it travels with the weights through any
 re-serialization, sharding included.
 
 The cost is a small extra tensor in the state dict. To read or remove it:
 
 ```python
-from astrolabe_callbacks import read_meta_from_buffer, strip_meta_buffer
+from alidade_callbacks import read_meta_from_buffer, strip_meta_buffer
 
 meta = read_meta_from_buffer(state_dict)
 clean = strip_meta_buffer(state_dict)     # e.g. before publishing weights

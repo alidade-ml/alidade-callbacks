@@ -1,7 +1,7 @@
 """Astrolabe contract between engine and callback.
 
 Source of truth: this file in the engine repo. Vendored verbatim into
-``astrolabe-callbacks`` (and any third-party callback library) via
+``alidade-callbacks`` (and any third-party callback library) via
 ``tools/vendor-contract.py``.
 
 This file holds the **names** (env vars, Aim tag keys, metric
@@ -88,7 +88,7 @@ ENV_CALLBACK_STATS_PATH = "ALIDADE_CALLBACK_STATS_PATH"
 # it. No callback reads this.
 ENV_RANK_LOGS_DIR = "ALIDADE_RANK_LOGS_DIR"
 
-# Filesystem path the astrolabe-callbacks library touches when the
+# Filesystem path the alidade-callbacks library touches when the
 # first Aim metric write lands.  The engine probes this path at
 # step-failure time to enforce ``until: first_metric`` healing bounds
 # (:class:`astrolabe.config.StepHealingConfig`).
@@ -322,7 +322,7 @@ def format_first_metric_marker_path(submit_id: str, step_num: int) -> str:
     """Construct the per-step first-metric marker path.
 
     Engine sets ``ALIDADE_FIRST_METRIC_MARKER`` to this value.  The
-    astrolabe-callbacks library touches this file on the first Aim
+    alidade-callbacks library touches this file on the first Aim
     metric write; the engine probes it to enforce
     ``until: first_metric`` healing bounds.
 
@@ -362,7 +362,7 @@ def format_first_checkpoint_marker_path(submit_id: str, step_num: int) -> str:
     """Construct the per-step first-checkpoint marker path.
 
     Engine sets ``ALIDADE_FIRST_CHECKPOINT_MARKER`` to this value.
-    The astrolabe-callbacks library touches this file when the first
+    The alidade-callbacks library touches this file when the first
     checkpoint of the step is written; the engine probes it to enforce
     ``until: first_checkpoint`` healing bounds.
     """

@@ -1,15 +1,15 @@
 # PyTorch Lightning
 
-Cookbook for `AstrolabeLightningLogger` — Lightning 2.x integration.
+Cookbook for `AlidadeLightningLogger` — Lightning 2.x integration.
 
 ## Minimal example
 
 ```python
 from lightning.pytorch import Trainer
-from astrolabe_callbacks import AstrolabeLightningLogger
+from alidade_callbacks import AlidadeLightningLogger
 
 trainer = Trainer(
-    callbacks=[AstrolabeLightningLogger()],
+    callbacks=[AlidadeLightningLogger()],
 )
 trainer.fit(model, train_loader, val_loader)
 ```
@@ -50,9 +50,9 @@ class MyModel(pl.LightningModule):
 
 ```python
 from lightning.pytorch import Trainer
-from astrolabe_callbacks import AstrolabeLightningLogger
+from alidade_callbacks import AlidadeLightningLogger
 
-callback = AstrolabeLightningLogger(
+callback = AlidadeLightningLogger(
     aim_url="aim://my-aim-server.example.com:43800",
     experiment_name="resnet50-imagenet",
     tags={"thesis": "vision-baselines", "model": "resnet50"},
@@ -85,7 +85,7 @@ If `run_name=` isn't passed at construction, the callback falls back through:
 1. `trainer.logger.name` if a Lightning logger is configured
 2. `pl_module.__class__.__name__` (e.g. `MyModel`)
 
-Astrolabe's dashboard groups by `astrolabe.experiment` (the experiment name) and shows individual runs by run name, so a meaningful run name helps comparison views.
+Alidade's dashboard groups by `astrolabe.experiment` (the experiment name) and shows individual runs by run name, so a meaningful run name helps comparison views.
 
 ## Common patterns
 
@@ -97,24 +97,24 @@ No special setup. Lightning's strategy initializes `torch.distributed`; the call
 trainer = Trainer(
     strategy="ddp",        # or "fsdp", "deepspeed_stage_3", etc.
     devices=8,
-    callbacks=[AstrolabeLightningLogger()],
+    callbacks=[AlidadeLightningLogger()],
 )
 ```
 
 ### Coexistence with Lightning's own loggers
 
-`AstrolabeLightningLogger` is a `Callback`, not a `Logger`. It runs alongside whatever loggers you configure (`trainer.loggers=[TensorBoardLogger(...)]`):
+`AlidadeLightningLogger` is a `Callback`, not a `Logger`. It runs alongside whatever loggers you configure (`trainer.loggers=[TensorBoardLogger(...)]`):
 
 ```python
 from lightning.pytorch.loggers import TensorBoardLogger
 
 trainer = Trainer(
     logger=TensorBoardLogger(save_dir="logs/"),    # primary logger
-    callbacks=[AstrolabeLightningLogger()],        # parallel Aim sink
+    callbacks=[AlidadeLightningLogger()],        # parallel Aim sink
 )
 ```
 
-Aim already ships `aim.pytorch_lightning.AimLogger` for the logger-side Aim integration. Don't combine it with `AstrolabeLightningLogger` — you'd double-write to Aim. Pick one based on which interface you prefer (this callback adds astrolabe tag conventions; `aim.pytorch_lightning.AimLogger` doesn't).
+Aim already ships `aim.pytorch_lightning.AimLogger` for the logger-side Aim integration. Don't combine it with `AlidadeLightningLogger` — you'd double-write to Aim. Pick one based on which interface you prefer (this callback adds alidade tag conventions; `aim.pytorch_lightning.AimLogger` doesn't).
 
 ### Manual optimization
 
@@ -143,6 +143,6 @@ Lightning users split: some prefix with underscore (`self.log("val_loss", ...)`)
 
 The `on_exception` hook for marking runs as `failed` is available from Lightning 1.9 onward. On older versions, the run still closes but with `astrolabe.status="completed"` regardless of how training ended.
 
-### Migrating from `astrolabe-composer-callback`
+### Migrating from `alidade-composer-callback`
 
-If you were using `AstrolabeLogger` (a Composer callback), this is a different package. Lightning users were never targeted by `astrolabe-composer-callback`. Just install `astrolabe-callbacks[lightning]` fresh.
+If you were using `AlidadeLogger` (a Composer callback), this is a different package. Lightning users were never targeted by `alidade-composer-callback`. Just install `alidade-callbacks[lightning]` fresh.

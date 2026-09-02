@@ -8,7 +8,7 @@ to every framework automatically.
 Failure handling contract
 -------------------------
 
-The default posture of every astrolabe-callbacks callback is **graceful
+The default posture of every alidade-callbacks callback is **graceful
 degradation, not training crashes.** A misconfigured Aim URL, a network
 blip, or a missing optional dependency must never take down a training
 job. The escape hatch is the ``ALIDADE_CALLBACK_STRICT=1`` env var,
@@ -43,8 +43,8 @@ from typing import Any
 
 from loguru import logger
 
-from astrolabe_callbacks import contract
-from astrolabe_callbacks._identity import resolve_aim_url
+from alidade_callbacks import contract
+from alidade_callbacks._identity import resolve_aim_url
 
 __all__ = [
     "EVAL_METRIC_PREFIX",
@@ -684,7 +684,7 @@ def open_aim_run(cfg: RunConfig, *, run_name: str | None = None) -> Any:
         from aim import Run
     except ImportError as exc:
         msg = (
-            "aim not installed — astrolabe-callbacks logging disabled. "
+            "aim not installed — alidade-callbacks logging disabled. "
             "Install with: pip install aim"
         )
         if is_strict():

@@ -1,4 +1,4 @@
-"""HuggingFace ``Trainer`` callback wired to astrolabe-callbacks ``_core``.
+"""HuggingFace ``Trainer`` callback wired to alidade-callbacks ``_core``.
 
 Same env-var contract as the other framework callbacks:
 ``ALIDADE_EXPERIMENT_NAME``, ``AIM_RUN_TAGS``, ``ALIDADE_AIM_URL``
@@ -6,7 +6,7 @@ all win over constructor arguments.
 
 Usage::
 
-    from astrolabe_callbacks import AstrolabeHFTrainerCallback
+    from alidade_callbacks import AstrolabeHFTrainerCallback
     from transformers import Trainer
 
     trainer = Trainer(
@@ -50,9 +50,9 @@ from typing import Any
 
 from loguru import logger
 
-from astrolabe_callbacks import _core
-from astrolabe_callbacks._distributed import is_rank_zero
-from astrolabe_callbacks.checkpoint import (
+from alidade_callbacks import _core
+from alidade_callbacks._distributed import is_rank_zero
+from alidade_callbacks.checkpoint import (
     CheckpointMeta,
     _meta_from_block,
     build_checkpoint_meta,

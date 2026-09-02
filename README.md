@@ -1,8 +1,8 @@
-# astrolabe-callbacks
+# alidade-callbacks
 
-Framework-agnostic Aim logging for ML training. One install, four frameworks: **MosaicML Composer, PyTorch Lightning, HuggingFace Trainer, raw PyTorch.** Designed to pair with [astrolabe](https://github.com/naston/astrolabe) but works standalone.
+Framework-agnostic Aim logging for ML training. One install, four frameworks: **MosaicML Composer, PyTorch Lightning, HuggingFace Trainer, raw PyTorch.** Designed to pair with [alidade](https://github.com/alidade-ml/alidade) but works standalone.
 
-### 📖 Start here: [Getting your data into astrolabe](docs/README.md)
+### 📖 Start here: [Getting your data into alidade](docs/README.md)
 
 Three guides — [training](docs/training.md), [checkpoints](docs/checkpoints.md),
 [eval](docs/eval-results.md) — covering metrics while you train, provenance that survives
@@ -14,10 +14,10 @@ of this page is the quick reference.
 ## Install
 
 ```bash
-pip install astrolabe-callbacks[composer]    # MosaicML Composer
-pip install astrolabe-callbacks[lightning]   # PyTorch Lightning
-pip install astrolabe-callbacks[hf]          # HuggingFace Trainer
-pip install astrolabe-callbacks[all]         # everything
+pip install alidade-callbacks[composer]    # MosaicML Composer
+pip install alidade-callbacks[lightning]   # PyTorch Lightning
+pip install alidade-callbacks[hf]          # HuggingFace Trainer
+pip install alidade-callbacks[all]         # everything
 ```
 
 Base install (no extras) pulls only `aim` and `loguru` — fine for the raw-PyTorch path.
@@ -29,12 +29,12 @@ Base install (no extras) pulls only `aim` and `loguru` — fine for the raw-PyTo
 
 ```python
 from composer import Trainer
-from astrolabe_callbacks import AstrolabeComposerLogger
+from alidade_callbacks import AlidadeComposerLogger
 
 trainer = Trainer(
     model=...,
     train_dataloader=...,
-    loggers=[AstrolabeComposerLogger()],   # NOTE: loggers=, not callbacks=
+    loggers=[AlidadeComposerLogger()],   # NOTE: loggers=, not callbacks=
 )
 trainer.fit()
 ```
@@ -47,11 +47,11 @@ Composer's `Logger` broadcasts every `logger.log_metrics(...)` call to registere
 
 ```python
 from lightning.pytorch import Trainer
-from astrolabe_callbacks import AstrolabeLightningLogger
+from alidade_callbacks import AlidadeLightningLogger
 
 trainer = Trainer(
     ...,
-    callbacks=[AstrolabeLightningLogger()],
+    callbacks=[AlidadeLightningLogger()],
 )
 trainer.fit(model, train_loader, val_loader)
 ```
@@ -75,7 +75,7 @@ See [docs/frameworks/lightning.md](docs/frameworks/lightning.md).
 
 ```python
 from transformers import Trainer, TrainingArguments
-from astrolabe_callbacks import AstrolabeHFTrainerCallback
+from alidade_callbacks import AlidadeHFTrainerCallback
 
 trainer = Trainer(
     model=model,
@@ -83,7 +83,7 @@ trainer = Trainer(
     train_dataset=train_ds,
     eval_dataset=val_ds,
 )
-trainer.add_callback(AstrolabeHFTrainerCallback())
+trainer.add_callback(AlidadeHFTrainerCallback())
 trainer.train()
 ```
 
@@ -94,7 +94,7 @@ Works with TRL (`SFTTrainer`, `DPOTrainer`, `RewardTrainer`) unchanged. See [doc
 <summary><strong>Raw PyTorch / Accelerate / JAX / custom loops</strong></summary>
 
 ```python
-from astrolabe_callbacks import Run
+from alidade_callbacks import Run
 
 with Run() as run:
     for batch_idx, batch in enumerate(dataloader):
@@ -113,29 +113,29 @@ with Run() as run:
 
 ## Configuration
 
-All four callbacks read the same environment variables. Astrolabe sets them automatically when orchestrating a run; you can also set them yourself for standalone use.
+All four callbacks read the same environment variables. Alidade sets them automatically when orchestrating a run; you can also set them yourself for standalone use.
 
 | Variable | Purpose | Default |
 |---|---|---|
 | `ALIDADE_EXPERIMENT_NAME` | Aim experiment name | constructor arg or `None` |
 | `ALIDADE_AIM_URL` | Aim tracking URL | `aim://localhost:43800` |
 | `AIM_RUN_TAGS` | Tags applied to the run, format `k1=v1,k2=v2` | constructor arg or empty |
-| `ALIDADE_AIM_REPO_PATH` | When set (v2.0+), callback starts a local `aim server` on the compute host writing to this path. NUC-side `astrolabe-sync` sidecar pulls chunks from here every ~3s. Unset = legacy reverse-SSH-tunnel mode. | unset (tunnel mode) |
+| `ALIDADE_AIM_REPO_PATH` | When set (v2.0+), callback starts a local `aim server` on the compute host writing to this path. NUC-side `alidade-sync` sidecar pulls chunks from here every ~3s. Unset = legacy reverse-SSH-tunnel mode. | unset (tunnel mode) |
 | `ALIDADE_CALLBACK_STRICT` | `1` to raise on Aim failures instead of degrading | unset (graceful degrade) |
 | `RANK` / `LOCAL_RANK` | Distributed rank (set by `torchrun`) | rank-zero |
 
-**Env wins over constructor args.** Astrolabe is the orchestrator — its identity is authoritative. Constructor args are the standalone fallback.
+**Env wins over constructor args.** Alidade is the orchestrator — its identity is authoritative. Constructor args are the standalone fallback.
 
 ### Transport modes (v2.0+)
 
 Two transport modes are supported:
 
 - **Tunnel mode (default)**: callback connects directly to the NUC's Aim server via the engine-managed reverse SSH tunnel at `aim://localhost:43800`. Simple, ~40 writes/sec ceiling under realistic emission patterns due to per-call SSH framing overhead.
-- **Local-aim mode (opt-in, NUC sets `ALIDADE_AIM_REPO_PATH`)**: callback starts a local `aim server` subprocess on the compute host. Writes stay on localhost (~1900 writes/sec). The NUC-side `astrolabe-sync` sidecar pulls per-run chunks every ~3s via SSH+rsync.
+- **Local-aim mode (opt-in, NUC sets `ALIDADE_AIM_REPO_PATH`)**: callback starts a local `aim server` subprocess on the compute host. Writes stay on localhost (~1900 writes/sec). The NUC-side `alidade-sync` sidecar pulls per-run chunks every ~3s via SSH+rsync.
 
 The mode is selected by the engine, not by the callback. Researchers don't change anything in training code — both modes use the same callback API.
 
-See [astrolabe's `docs/aim-live-sync.md`](https://github.com/naston/astrolabe/blob/main/docs/aim-live-sync.md) for operational details (NUC admin facing).
+See [alidade's `docs/aim-live-sync.md`](https://github.com/alidade-ml/alidade/blob/main/docs/aim-live-sync.md) for operational details (NUC admin facing).
 
 ### Schema-phase finalize (v2.0+, automatic)
 
@@ -166,7 +166,7 @@ We **only** synthesize `wall_time` (training-only elapsed time, excluding setup 
 | HF Trainer | `loss` → `train/loss`, `learning_rate` → `train/lr`, `grad_norm`/`epoch` → `train/<x>`, `eval_<x>` → `val/<x>` | everything else |
 | Raw PyTorch | `log_train(**m)` → `train/<m>`, `log_eval(**m)` → `val/<m>`, `log(name, ...)` → `<name>` | (you control namespacing) |
 
-> **v1.0.0**: during-training validation metrics emit under `val/` (was `eval/` in v0.x). The `eval/` namespace is now reserved for **post-training benchmark suites** logged via `astrolabe_callbacks.log_eval_table(...)` on dedicated eval Aim runs. See [the eval guide](docs/eval-results.md) for the post-training side.
+> **v1.0.0**: during-training validation metrics emit under `val/` (was `eval/` in v0.x). The `eval/` namespace is now reserved for **post-training benchmark suites** logged via `alidade_callbacks.log_eval_table(...)` on dedicated eval Aim runs. See [the eval guide](docs/eval-results.md) for the post-training side.
 
 Renames are cosmetic, applied to framework-emitted names you didn't choose. **User-named metrics are never rewritten.** If you log a metric called `MaskedLanguagePerplexity`, it lands in Aim as `MaskedLanguagePerplexity`, not buried under any prefix.
 
@@ -176,16 +176,16 @@ All four callbacks gate Aim writes on rank-zero (detected via `torch.distributed
 
 ## Versioning + back-compat
 
-This package replaces `astrolabe-composer-callback`. If you were using it:
+This package replaces `alidade-composer-callback`. If you were using it:
 
 ```diff
-- from astrolabe_composer_callback import AstrolabeLogger
-+ from astrolabe_callbacks import AstrolabeComposerLogger
+- from alidade_composer_callback import AlidadeLogger
++ from alidade_callbacks import AlidadeComposerLogger
 ```
 
 ```diff
-- callbacks=[AstrolabeLogger()]
-+ loggers=[AstrolabeComposerLogger()]
+- callbacks=[AlidadeLogger()]
++ loggers=[AlidadeComposerLogger()]
 ```
 
 The `loggers=` placement is the bigger change — Composer rejects `LoggerDestination` instances passed to `callbacks=` since 0.20+. See [CHANGELOG.md](CHANGELOG.md).

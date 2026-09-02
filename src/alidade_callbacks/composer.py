@@ -1,4 +1,4 @@
-"""MosaicML Composer logger wired to astrolabe-callbacks ``_core``.
+"""MosaicML Composer logger wired to alidade-callbacks ``_core``.
 
 Designed to pair with astrolabe's experiment orchestration: astrolabe
 sets ``ALIDADE_EXPERIMENT_NAME`` and ``AIM_RUN_TAGS`` in the
@@ -16,7 +16,7 @@ Usage
 
 ::
 
-    from astrolabe_callbacks import AstrolabeComposerLogger
+    from alidade_callbacks import AstrolabeComposerLogger
     from composer import Trainer
 
     trainer = Trainer(
@@ -70,9 +70,9 @@ from typing import Any
 
 from loguru import logger
 
-from astrolabe_callbacks import _core
-from astrolabe_callbacks._distributed import is_rank_zero
-from astrolabe_callbacks.checkpoint import (
+from alidade_callbacks import _core
+from alidade_callbacks._distributed import is_rank_zero
+from alidade_callbacks.checkpoint import (
     CheckpointMeta,
     _meta_from_block,
     build_checkpoint_meta,
@@ -542,7 +542,7 @@ class AstrolabeComposerCheckpointer(Callback):
         """Provenance block written into the checkpoint by Composer.
 
         Composer calls this on every save. Returns the ``to_dict()``
-        form of a freshly-built :class:`~astrolabe_callbacks.checkpoint.CheckpointMeta`
+        form of a freshly-built :class:`~alidade_callbacks.checkpoint.CheckpointMeta`
         so the embedded hash reflects the run live at save time, not at
         callback construction.
         """

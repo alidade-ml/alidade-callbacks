@@ -10,13 +10,13 @@ from __future__ import annotations
 
 import pytest
 
-from astrolabe_callbacks.composer import (
+from alidade_callbacks.composer import (
     AstrolabeComposerLogger,
     parse_aim_run_tags,
     _normalize_composer_metric_name,
     _to_scalar,
 )
-from astrolabe_callbacks._core import open_aim_run, track_safely
+from alidade_callbacks._core import open_aim_run, track_safely
 from tests.conftest import FakeAimRun, make_run_config
 
 
@@ -32,7 +32,7 @@ class TestParseAimRunTagsReExport:
         assert parse_aim_run_tags("k=v") == {"k": "v"}
 
     def test_re_export_matches_core(self):
-        from astrolabe_callbacks._core import parse_aim_run_tags as core_parse
+        from alidade_callbacks._core import parse_aim_run_tags as core_parse
         assert parse_aim_run_tags is core_parse
 
 

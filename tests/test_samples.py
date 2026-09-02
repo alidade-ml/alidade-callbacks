@@ -18,9 +18,9 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from astrolabe_callbacks import contract
-from astrolabe_callbacks._attribution import MissingParentError
-from astrolabe_callbacks.samples import Sample, SampleInputError, log_samples
+from alidade_callbacks import contract
+from alidade_callbacks._attribution import MissingParentError
+from alidade_callbacks.samples import Sample, SampleInputError, log_samples
 
 
 def _run_mock(run_hash: str = "s-hash") -> MagicMock:
@@ -175,7 +175,7 @@ class TestAttributionIsEvals:
 
     def test_a_checkpoint_resolves_without_a_hash_at_the_call_site(self):
         with patch(
-            "astrolabe_callbacks._attribution._parent_run_hash",
+            "alidade_callbacks._attribution._parent_run_hash",
             return_value="from-ckpt",
         ):
             _, run = _log(

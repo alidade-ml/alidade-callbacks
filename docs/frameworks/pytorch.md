@@ -1,6 +1,6 @@
 # Raw PyTorch / JAX / Custom Loops
 
-Cookbook for `Run` (a.k.a. `AstrolabeRun`) — the context manager for code that doesn't have a callback system.
+Cookbook for `Run` (a.k.a. `AlidadeRun`) — the context manager for code that doesn't have a callback system.
 
 ## When to use this
 
@@ -11,12 +11,12 @@ Use this path when:
 - You're using JAX/Flax and writing a Python-side loop around `jax.jit`'d functions.
 - You have a custom training framework with no exposed hooks.
 
-If you're using Composer, Lightning, or HF Trainer, use the matching `Astrolabe<Framework>Logger` instead — those handle lifecycle hooks for you.
+If you're using Composer, Lightning, or HF Trainer, use the matching `Alidade<Framework>Logger` instead — those handle lifecycle hooks for you.
 
 ## Minimal example
 
 ```python
-from astrolabe_callbacks import Run
+from alidade_callbacks import Run
 
 with Run() as run:
     for batch_idx, batch in enumerate(dataloader):
@@ -27,12 +27,12 @@ with Run() as run:
         run.log_train(loss=loss.item(), step=batch_idx)
 ```
 
-`Run` reads astrolabe env vars on `__enter__` and opens an Aim run. On exit (clean or exception), it closes the run with the appropriate `astrolabe.status`.
+`Run` reads alidade env vars on `__enter__` and opens an Aim run. On exit (clean or exception), it closes the run with the appropriate `astrolabe.status`.
 
 ## Full example
 
 ```python
-from astrolabe_callbacks import Run
+from alidade_callbacks import Run
 
 with Run(
     aim_url="aim://my-aim-server.example.com:43800",
@@ -103,7 +103,7 @@ JAX's training loop is Python; the callback works the same way as raw PyTorch. J
 
 ```python
 import jax
-from astrolabe_callbacks import Run
+from alidade_callbacks import Run
 
 with Run(experiment_name="flax-mnist") as run:
     for step in range(num_steps):
@@ -118,7 +118,7 @@ Most Accelerate users write the loop themselves. `Run` works unchanged:
 
 ```python
 from accelerate import Accelerator
-from astrolabe_callbacks import Run
+from alidade_callbacks import Run
 
 accelerator = Accelerator()
 model, optimizer, dataloader = accelerator.prepare(model, optimizer, dataloader)
@@ -202,6 +202,6 @@ run.log_train(loss=loss.item(), step=step)        # writes train/loss + wall_tim
 run.log("custom/special_name", x, step=step)      # writes only custom/special_name
 ```
 
-### Migrating from `astrolabe-composer-callback`
+### Migrating from `alidade-composer-callback`
 
-If you were using a Composer callback, this is a different path entirely. The Composer-specific code lives in `AstrolabeComposerLogger`; `Run` is for code without a callback system.
+If you were using a Composer callback, this is a different path entirely. The Composer-specific code lives in `AlidadeComposerLogger`; `Run` is for code without a callback system.

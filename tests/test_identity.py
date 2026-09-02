@@ -9,8 +9,8 @@ from __future__ import annotations
 
 import pytest
 
-from astrolabe_callbacks import contract
-from astrolabe_callbacks._identity import resolve_aim_url
+from alidade_callbacks import contract
+from alidade_callbacks._identity import resolve_aim_url
 
 
 class TestTheEngineDecidesTheTransport:
@@ -60,6 +60,6 @@ def test_the_default_has_exactly_one_definition():
     A contract literal with two homes is the drift the contract file exists to
     prevent, and the copy `_identity` imported was the non-contract one.
     """
-    from astrolabe_callbacks import _core
+    from alidade_callbacks import _core
 
     assert _core.DEFAULT_AIM_URL is contract.DEFAULT_AIM_URL

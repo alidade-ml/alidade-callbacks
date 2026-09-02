@@ -1,4 +1,4 @@
-"""Integration tests for ``src/astrolabe_callbacks/_distributed.py``.
+"""Integration tests for ``src/alidade_callbacks/_distributed.py``.
 
 Rank-zero gating: distributed training with N processes must produce
 ONE Aim run, not N. `_distributed.py` handles the detection order

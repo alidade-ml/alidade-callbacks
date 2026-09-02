@@ -21,7 +21,7 @@ jobs:
         with:
           context: .
           file: tests/testbed/Dockerfile.aim
-          tags: astrolabe-callbacks-testbed-aim:latest
+          tags: alidade-callbacks-testbed-aim:latest
           load: true
           cache-from: type=gha,scope=testbed-aim
           cache-to: type=gha,mode=max,scope=testbed-aim
@@ -31,7 +31,7 @@ jobs:
         with:
           context: .
           file: tests/testbed/Dockerfile.client
-          tags: astrolabe-callbacks-testbed-client:latest
+          tags: alidade-callbacks-testbed-client:latest
           load: true
           cache-from: type=gha,scope=testbed-client
           cache-to: type=gha,mode=max,scope=testbed-client

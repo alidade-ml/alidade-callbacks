@@ -1,32 +1,32 @@
 # Composer
 
-Cookbook for `AstrolabeComposerLogger` — MosaicML Composer integration.
+Cookbook for `AlidadeComposerLogger` — MosaicML Composer integration.
 
 ## Minimal example
 
 ```python
 from composer import Trainer
-from astrolabe_callbacks import AstrolabeComposerLogger
+from alidade_callbacks import AlidadeComposerLogger
 
 trainer = Trainer(
     model=...,
     train_dataloader=...,
-    loggers=[AstrolabeComposerLogger()],
+    loggers=[AlidadeComposerLogger()],
 )
 trainer.fit()
 ```
 
-That's it. The callback reads astrolabe env vars (`ALIDADE_EXPERIMENT_NAME`, `AIM_RUN_TAGS`, `ALIDADE_AIM_URL`), opens an Aim run, and forwards every `logger.log_metrics(...)` call from Composer's training loop to Aim under the run's name.
+That's it. The callback reads alidade env vars (`ALIDADE_EXPERIMENT_NAME`, `AIM_RUN_TAGS`, `ALIDADE_AIM_URL`), opens an Aim run, and forwards every `logger.log_metrics(...)` call from Composer's training loop to Aim under the run's name.
 
-> **Critical:** attach via `loggers=`, not `callbacks=`. `AstrolabeComposerLogger` is a `LoggerDestination`, and Composer's `Logger` only broadcasts user metrics to destinations registered there. Composer 0.20+ rejects `LoggerDestination` instances passed to `callbacks=` with a clear error; older versions silently drop every `log_metrics` call. The class still implements all `Callback` lifecycle hooks (it inherits from `Callback` via `LoggerDestination`), so you get `wall_time` tracking, eval-pause correction, and clean close — but only if you place it in `loggers=`.
+> **Critical:** attach via `loggers=`, not `callbacks=`. `AlidadeComposerLogger` is a `LoggerDestination`, and Composer's `Logger` only broadcasts user metrics to destinations registered there. Composer 0.20+ rejects `LoggerDestination` instances passed to `callbacks=` with a clear error; older versions silently drop every `log_metrics` call. The class still implements all `Callback` lifecycle hooks (it inherits from `Callback` via `LoggerDestination`), so you get `wall_time` tracking, eval-pause correction, and clean close — but only if you place it in `loggers=`.
 
 ## Full example with explicit config
 
 ```python
 from composer import Trainer
-from astrolabe_callbacks import AstrolabeComposerLogger
+from alidade_callbacks import AlidadeComposerLogger
 
-logger_callback = AstrolabeComposerLogger(
+logger_callback = AlidadeComposerLogger(
     aim_url="aim://my-aim-server.example.com:43800",
     experiment_name="bert-pretrain",
     run_name="bert-base-seed0",
@@ -49,7 +49,7 @@ trainer = Trainer(
 trainer.fit()
 ```
 
-When `astrolabe submit` orchestrates the run, env vars override the constructor args:
+When `alidade submit` orchestrates the run, env vars override the constructor args:
 
 ```bash
 ALIDADE_EXPERIMENT_NAME=bert-pretrain \
@@ -86,11 +86,11 @@ class MyCustomCallback(Callback):
         logger.log_metrics({"my_custom/metric": custom_value})
 ```
 
-That metric flows through `AstrolabeComposerLogger.log_metrics` and lands in Aim as `my_custom/metric`.
+That metric flows through `AlidadeComposerLogger.log_metrics` and lands in Aim as `my_custom/metric`.
 
 ## Hyperparameters
 
-`AstrolabeComposerLogger.log_hyperparameters(...)` writes to Aim's `hparams` field. Composer calls it automatically at the start of training with whatever you've configured. To log additional hparams from your own code:
+`AlidadeComposerLogger.log_hyperparameters(...)` writes to Aim's `hparams` field. Composer calls it automatically at the start of training with whatever you've configured. To log additional hparams from your own code:
 
 ```python
 class MyHparamsLogger(Callback):
@@ -114,27 +114,27 @@ If you have multiple eval suites (e.g. `glue_mnli`, `glue_sst2`), Composer emits
 ```python
 # Named suite "glue_mnli" with metric "Accuracy"
 # → Composer emits: metrics/glue_mnli/Accuracy
-# → AstrolabeComposerLogger writes to Aim: metrics/glue_mnli/Accuracy
+# → AlidadeComposerLogger writes to Aim: metrics/glue_mnli/Accuracy
 
 # Default suite "eval" with metric "MaskedLanguagePerplexity"
 # → Composer emits: metrics/eval/MaskedLanguagePerplexity
-# → AstrolabeComposerLogger writes to Aim: val/MaskedLanguagePerplexity
+# → AlidadeComposerLogger writes to Aim: val/MaskedLanguagePerplexity
 ```
 
 ### Combining with other loggers
 
-`loggers=[AstrolabeComposerLogger(), TensorboardLogger(), WandBLogger()]` — they coexist. Each is an independent destination. Aim gets the astrolabe-tagged copy; TB and W&B get untagged copies.
+`loggers=[AlidadeComposerLogger(), TensorboardLogger(), WandBLogger()]` — they coexist. Each is an independent destination. Aim gets the alidade-tagged copy; TB and W&B get untagged copies.
 
 ## Gotchas
 
-### Don't pass `AstrolabeComposerLogger` to `callbacks=`
+### Don't pass `AlidadeComposerLogger` to `callbacks=`
 
 ```python
 # WRONG — Composer 0.20+ raises; older silently drops user metrics
-trainer = Trainer(callbacks=[AstrolabeComposerLogger()])
+trainer = Trainer(callbacks=[AlidadeComposerLogger()])
 
 # RIGHT
-trainer = Trainer(loggers=[AstrolabeComposerLogger()])
+trainer = Trainer(loggers=[AlidadeComposerLogger()])
 ```
 
 ### `mlm_probability=0.3` etc. are model hparams, not metrics
@@ -145,12 +145,12 @@ If you want them in the run's metadata, log via `logger.log_hyperparameters`, no
 
 The `train/loss` metric you'll see in Aim is Composer's per-batch loss with whatever smoothing/aggregation Composer applies (typically EMA over `console_log_interval`). If you want a raw per-step loss, log it explicitly: `logger.log_metrics({"train/raw_loss": state.loss.item()})` in your callback.
 
-### Migrating from `astrolabe-composer-callback==0.1.x`
+### Migrating from `alidade-composer-callback==0.1.x`
 
 Three changes:
 
-1. Package name: `pip uninstall astrolabe-composer-callback && pip install astrolabe-callbacks[composer]`
-2. Import: `from astrolabe_callbacks import AstrolabeComposerLogger` (was `from astrolabe_composer_callback import AstrolabeLogger`)
+1. Package name: `pip uninstall alidade-composer-callback && pip install alidade-callbacks[composer]`
+2. Import: `from alidade_callbacks import AlidadeComposerLogger` (was `from alidade_composer_callback import AlidadeLogger`)
 3. Placement: `Trainer(loggers=[...])` (was `Trainer(callbacks=[...])`)
 
-The behavior also changed — v0.1.x only logged `train/loss` and a few framework metrics. v0.2.0 passes through *every* `logger.log_metrics` call. If you were writing custom metrics via a separate callback to a separate Aim run, you can delete that and let `AstrolabeComposerLogger` capture them.
+The behavior also changed — v0.1.x only logged `train/loss` and a few framework metrics. v0.2.0 passes through *every* `logger.log_metrics` call. If you were writing custom metrics via a separate callback to a separate Aim run, you can delete that and let `AlidadeComposerLogger` capture them.

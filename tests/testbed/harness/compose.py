@@ -38,8 +38,8 @@ __all__ = [
 ]
 
 
-AIM_CONTAINER = "astrolabe-callbacks-testbed-aim"
-CLIENT_CONTAINER = "astrolabe-callbacks-testbed-client"
+AIM_CONTAINER = "alidade-callbacks-testbed-aim"
+CLIENT_CONTAINER = "alidade-callbacks-testbed-client"
 AIM_HOST_PORT = 43810  # host-published port (matches docker-compose.yml)
 AIM_CLIENT_URL = "aim://aim-server:43800"  # bridge-network URL
 

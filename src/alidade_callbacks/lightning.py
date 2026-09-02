@@ -1,4 +1,4 @@
-"""PyTorch Lightning callback wired to astrolabe-callbacks ``_core``.
+"""PyTorch Lightning callback wired to alidade-callbacks ``_core``.
 
 Same env-var contract as the other framework callbacks:
 ``ALIDADE_EXPERIMENT_NAME``, ``AIM_RUN_TAGS``, ``ALIDADE_AIM_URL``
@@ -24,7 +24,7 @@ other keys pass through unchanged.
 
 Usage::
 
-    from astrolabe_callbacks import AstrolabeLightningLogger
+    from alidade_callbacks import AstrolabeLightningLogger
     from lightning.pytorch import Trainer
 
     trainer = Trainer(
@@ -66,9 +66,9 @@ from typing import Any
 
 from loguru import logger
 
-from astrolabe_callbacks import _core
-from astrolabe_callbacks._distributed import is_rank_zero
-from astrolabe_callbacks.checkpoint import (
+from alidade_callbacks import _core
+from alidade_callbacks._distributed import is_rank_zero
+from alidade_callbacks.checkpoint import (
     CheckpointMeta,
     build_checkpoint_meta,
     export_checkpoint,
