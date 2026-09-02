@@ -1,9 +1,9 @@
 """MosaicML Composer logger wired to alidade-callbacks ``_core``.
 
-Designed to pair with astrolabe's experiment orchestration: astrolabe
+Designed to pair with alidade's experiment orchestration: alidade
 sets ``ALIDADE_EXPERIMENT_NAME`` and ``AIM_RUN_TAGS`` in the
 per-experiment env, and this logger reads them on init to tag the Aim
-run with version, submit-id, and any other astrolabe conventions.
+run with version, submit-id, and any other alidade conventions.
 
 This is a Composer ``LoggerDestination`` (not a plain ``Callback``) so
 **every** metric the user logs via ``logger.log_metrics(...)`` flows
@@ -16,12 +16,12 @@ Usage
 
 ::
 
-    from alidade_callbacks import AstrolabeComposerLogger
+    from alidade_callbacks import AlidadeComposerLogger
     from composer import Trainer
 
     trainer = Trainer(
         ...,
-        loggers=[AstrolabeComposerLogger()],   # NOTE: loggers=, not callbacks=
+        loggers=[AlidadeComposerLogger()],   # NOTE: loggers=, not callbacks=
     )
 
 The ``loggers=`` slot is required because Composer's ``Logger`` only
@@ -31,9 +31,9 @@ there. Attaching via ``callbacks=`` will still get lifecycle hooks
 ``log_metrics`` call — losing all the user-named metrics. Composer
 typically rejects this attachment with a clear error since v0.20+.
 
-Standalone usage (no astrolabe)::
+Standalone usage (no alidade)::
 
-    AstrolabeComposerLogger(
+    AlidadeComposerLogger(
         aim_url="aim://localhost:43800",
         experiment_name="my-exp",
         tags={"thesis": "scale-laws"},
@@ -99,25 +99,25 @@ except ImportError:  # pragma: no cover — Composer is an optional extra
 parse_aim_run_tags = _core.parse_aim_run_tags
 
 __all__ = [
-    "AstrolabeComposerLogger",
-    "AstrolabeComposerCheckpointer",
+    "AlidadeComposerLogger",
+    "AlidadeComposerCheckpointer",
     "parse_aim_run_tags",
 ]
 
 
-class AstrolabeComposerLogger(LoggerDestination):
+class AlidadeComposerLogger(LoggerDestination):
     """Composer LoggerDestination that streams all logged metrics to Aim.
 
-    Reads astrolabe env vars (``ALIDADE_EXPERIMENT_NAME``,
+    Reads alidade env vars (``ALIDADE_EXPERIMENT_NAME``,
     ``AIM_RUN_TAGS``, ``ALIDADE_AIM_URL``) on init; constructor
     arguments are the standalone fallback. Attach via ``Trainer(...,
-    loggers=[AstrolabeComposerLogger()])``.
+    loggers=[AlidadeComposerLogger()])``.
 
     Parameters
     ----------
     aim_url : str | None
         Aim tracking URL. Overridden by ``ALIDADE_AIM_URL`` env;
-        defaults to the astrolabe SSH-tunneled URL when neither is set.
+        defaults to the alidade SSH-tunneled URL when neither is set.
     experiment_name : str | None
         Aim experiment name. Overridden by ``ALIDADE_EXPERIMENT_NAME``
         env.
@@ -295,7 +295,7 @@ class AstrolabeComposerLogger(LoggerDestination):
     # ------------------------------------------------------------------
 
     def init(self, state: Any, logger_obj: Any) -> None:
-        """Open the Aim run and apply astrolabe tags."""
+        """Open the Aim run and apply alidade tags."""
         _core._append_stats_line(kind="lifecycle", hook="init", run_hash=None)
         if not self._rank_zero:
             return
@@ -460,7 +460,7 @@ def _to_scalar(value: Any) -> float | None:
 
 
 def _normalize_composer_metric_name(name: str) -> str:
-    """Re-namespace Composer's automatic emissions to astrolabe convention.
+    """Re-namespace Composer's automatic emissions to alidade convention.
 
     Cosmetic only — user-named metrics pass through unchanged. The
     full mapping:
@@ -494,17 +494,17 @@ def _composer_checkpoint_dir(state) -> str:
     raise ValueError("no Composer CheckpointSaver output found — pass export_dir=")
 
 
-class AstrolabeComposerCheckpointer(Callback):
-    """Stamps astrolabe provenance into Composer checkpoints.
+class AlidadeComposerCheckpointer(Callback):
+    """Stamps alidade provenance into Composer checkpoints.
 
     Attach via ``callbacks=`` (not ``loggers=``) alongside your
-    existing ``AstrolabeComposerLogger``::
+    existing ``AlidadeComposerLogger``::
 
         trainer = Trainer(
             ...,
             save_folder="checkpoints",
-            loggers=[AstrolabeComposerLogger()],
-            callbacks=[AstrolabeComposerCheckpointer()],
+            loggers=[AlidadeComposerLogger()],
+            callbacks=[AlidadeComposerCheckpointer()],
         )
 
     **This does not save checkpoints.** Composer's own

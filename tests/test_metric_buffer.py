@@ -60,12 +60,12 @@ class TestBufferRetry:
         monkeypatch.setattr("aim.Run", FlakyTrack)
         run = open_aim_run(make_run_config())
         # Use a fast retry backoff so the test doesn't wait 30s.
-        run._astrolabe_buffer._retry_initial = 0.01
-        run._astrolabe_buffer._retry_max = 0.05
+        run._alidade_buffer._retry_initial = 0.01
+        run._alidade_buffer._retry_max = 0.05
 
         track_safely(run, name="train/loss", value=0.5, step=1)
         # Wait for retries to converge. 5 attempts × 50ms max + slack.
-        assert run._astrolabe_buffer.flush(timeout_s=2.0)
+        assert run._alidade_buffer.flush(timeout_s=2.0)
 
         assert attempts["count"] == 4
         # The final successful track landed.
@@ -85,13 +85,13 @@ class TestBufferRetry:
 
         monkeypatch.setattr("aim.Run", FlakyTrack)
         run = open_aim_run(make_run_config())
-        run._astrolabe_buffer._retry_initial = 0.01
-        run._astrolabe_buffer._retry_max = 0.05
+        run._alidade_buffer._retry_initial = 0.01
+        run._alidade_buffer._retry_max = 0.05
 
         track_safely(run, name="x", value=1.0, step=0)
-        run._astrolabe_buffer.flush(timeout_s=2.0)
+        run._alidade_buffer.flush(timeout_s=2.0)
 
-        stats = run._astrolabe_buffer.stats()
+        stats = run._alidade_buffer.stats()
         # Two failed attempts before success → retried = 2.
         assert stats["retried"] == 2
         assert stats["drained"] == 1
@@ -117,8 +117,8 @@ class TestBufferDropOnOverflow:
         run = open_aim_run(make_run_config())
         # Tiny queue so we can fill it without writing 100k items.
         # Replace the buffer entirely so the size sticks.
-        run._astrolabe_buffer.close(timeout_s=0.5)
-        run._astrolabe_buffer = _MetricBuffer(run, max_size=4)
+        run._alidade_buffer.close(timeout_s=0.5)
+        run._alidade_buffer = _MetricBuffer(run, max_size=4)
 
         try:
             # The drainer pulls one item immediately and starts to
@@ -129,12 +129,12 @@ class TestBufferDropOnOverflow:
                 # Tiny pause so each submit is observed in order.
                 time.sleep(0.005)
 
-            stats = run._astrolabe_buffer.stats()
+            stats = run._alidade_buffer.stats()
             assert stats["dropped_oldest"] >= 1
             assert stats["submitted"] == 8
         finally:
             blocking_track.set()
-            run._astrolabe_buffer.close(timeout_s=2.0)
+            run._alidade_buffer.close(timeout_s=2.0)
 
 
 class TestBufferClose:
@@ -147,7 +147,7 @@ class TestBufferClose:
         for i in range(50):
             track_safely(run, name="x", value=float(i), step=i)
 
-        unflushed = run._astrolabe_buffer.close(timeout_s=5.0)
+        unflushed = run._alidade_buffer.close(timeout_s=5.0)
         assert unflushed == 0
         # All 50 items landed.
         assert len(run.tracked) == 50
@@ -166,7 +166,7 @@ class TestBufferClose:
         try:
             for i in range(10):
                 track_safely(run, name="x", value=float(i), step=i)
-            unflushed = run._astrolabe_buffer.close(timeout_s=0.3)
+            unflushed = run._alidade_buffer.close(timeout_s=0.3)
             # Drainer is stuck on item 0; items 1..9 are still queued.
             assert unflushed >= 1
         finally:
@@ -185,7 +185,7 @@ class TestBufferClose:
         names = [t["name"] for t in fake_aim_run[-1].tracked]
         assert names.count("x") == 10
         # Status tag set + run closed cleanly.
-        assert fake_aim_run[-1].tags["astrolabe.status"] == "completed"
+        assert fake_aim_run[-1].tags["alidade.status"] == "completed"
         assert fake_aim_run[-1].closed is True
 
 
@@ -204,7 +204,7 @@ class TestStrictModeBypass:
             {"name": "x", "value": 1.0, "step": 0, "context": {}}
         ]
         # Buffer counters didn't move.
-        assert run._astrolabe_buffer.stats()["submitted"] == 0
+        assert run._alidade_buffer.stats()["submitted"] == 0
 
     def test_strict_mode_raises_on_track_failure(self, monkeypatch):
         class FailingTrack(FakeAimRun):
@@ -254,7 +254,7 @@ class TestBufferHeartbeat:
         try:
             # Tiny heartbeat interval so the test doesn't sleep 5 min.
             run = open_aim_run(make_run_config())
-            run._astrolabe_buffer._heartbeat_interval_s = 0.05
+            run._alidade_buffer._heartbeat_interval_s = 0.05
 
             track_safely(run, name="x", value=1.0, step=1)
             track_safely(run, name="x", value=2.0, step=2)
@@ -277,7 +277,7 @@ class TestBufferHeartbeat:
         captured, sink_id = self._capture_loguru()
         try:
             run = open_aim_run(make_run_config())
-            run._astrolabe_buffer._heartbeat_interval_s = 0.05
+            run._alidade_buffer._heartbeat_interval_s = 0.05
             # Drainer is alive but idle — interval elapses many times
             # without any submit/drain/retry. Should NOT spam logs.
             time.sleep(0.3)
@@ -295,7 +295,7 @@ class TestBufferHeartbeat:
         try:
             run = open_aim_run(make_run_config())
             # Generous interval so it can't fire during the test.
-            run._astrolabe_buffer._heartbeat_interval_s = 60.0
+            run._alidade_buffer._heartbeat_interval_s = 60.0
 
             for i in range(10):
                 track_safely(run, name="x", value=float(i), step=i)
@@ -314,7 +314,7 @@ class TestStatsToDisk:
     """The ``ALIDADE_CALLBACK_STATS_PATH`` env var is the
     survivability story for buffer diagnostics. Without it,
     heartbeats and the close summary only land in the training
-    process's stdout — which dies with the Lambda instance. Astrolabe
+    process's stdout — which dies with the Lambda instance. Alidade
     sets this env var on Lambda so the file rsyncs back at step end.
 
     Contract:
@@ -328,7 +328,7 @@ class TestStatsToDisk:
     def test_no_env_var_means_no_file(self, fake_aim_run, monkeypatch, tmp_path):
         monkeypatch.delenv("ALIDADE_CALLBACK_STATS_PATH", raising=False)
         run = open_aim_run(make_run_config())
-        run._astrolabe_buffer._heartbeat_interval_s = 0.05
+        run._alidade_buffer._heartbeat_interval_s = 0.05
         track_safely(run, name="x", value=1.0, step=1)
         time.sleep(0.15)
         # No file was created (we'd see it in tmp_path if it had been).
@@ -341,7 +341,7 @@ class TestStatsToDisk:
         monkeypatch.setenv("ALIDADE_CALLBACK_STATS_PATH", str(stats_file))
 
         run = open_aim_run(make_run_config())
-        run._astrolabe_buffer._heartbeat_interval_s = 0.05
+        run._alidade_buffer._heartbeat_interval_s = 0.05
         track_safely(run, name="x", value=1.0, step=1)
         track_safely(run, name="x", value=2.0, step=2)
         time.sleep(0.2)
@@ -389,7 +389,7 @@ class TestStatsToDisk:
         monkeypatch.setenv("ALIDADE_CALLBACK_STATS_PATH", "~/stats.jsonl")
 
         run = open_aim_run(make_run_config())
-        run._astrolabe_buffer._heartbeat_interval_s = 0.05
+        run._alidade_buffer._heartbeat_interval_s = 0.05
         track_safely(run, name="x", value=1.0, step=1)
         time.sleep(0.15)
 
@@ -404,13 +404,13 @@ class TestStatsToDisk:
         monkeypatch.setenv("ALIDADE_CALLBACK_STATS_PATH", str(bad_path))
 
         run = open_aim_run(make_run_config())
-        run._astrolabe_buffer._heartbeat_interval_s = 0.05
+        run._alidade_buffer._heartbeat_interval_s = 0.05
         # If write failure raised, this would propagate and fail the test.
         for i in range(3):
             track_safely(run, name="x", value=float(i), step=i)
         time.sleep(0.15)
         # Buffer still functioning — values landed in the run.
-        run._astrolabe_buffer.flush(timeout_s=2.0)
+        run._alidade_buffer.flush(timeout_s=2.0)
         assert len(run.tracked) == 3
 
 
@@ -418,22 +418,22 @@ class TestBufferHappyPath:
     def test_submit_then_flush_lands_value(self, fake_aim_run):
         run = open_aim_run(make_run_config())
         track_safely(run, name="train/loss", value=0.5, step=10)
-        assert run._astrolabe_buffer.flush(timeout_s=2.0)
+        assert run._alidade_buffer.flush(timeout_s=2.0)
         assert run.tracked == [
             {"name": "train/loss", "value": 0.5, "step": 10, "context": {}}
         ]
 
     def test_buffer_attached_at_open(self, fake_aim_run):
         run = open_aim_run(make_run_config())
-        assert hasattr(run, "_astrolabe_buffer")
-        assert isinstance(run._astrolabe_buffer, _MetricBuffer)
+        assert hasattr(run, "_alidade_buffer")
+        assert isinstance(run._alidade_buffer, _MetricBuffer)
 
     def test_stats_match_traffic(self, fake_aim_run):
         run = open_aim_run(make_run_config())
         for i in range(20):
             track_safely(run, name="x", value=float(i), step=i)
-        run._astrolabe_buffer.flush(timeout_s=2.0)
-        stats = run._astrolabe_buffer.stats()
+        run._alidade_buffer.flush(timeout_s=2.0)
+        stats = run._alidade_buffer.stats()
         assert stats["submitted"] == 20
         assert stats["drained"] == 20
         assert stats["retried"] == 0
@@ -462,7 +462,7 @@ class TestBoundedRetry:
 
         monkeypatch.setattr("aim.Run", AlwaysFails)
         run = open_aim_run(make_run_config())
-        buf = run._astrolabe_buffer
+        buf = run._alidade_buffer
         # Fast retries + tight cap so the test doesn't wait minutes.
         buf._retry_initial = 0.001
         buf._retry_max = 0.005
@@ -496,7 +496,7 @@ class TestBoundedRetry:
 
         monkeypatch.setattr("aim.Run", SelectiveFail)
         run = open_aim_run(make_run_config())
-        buf = run._astrolabe_buffer
+        buf = run._alidade_buffer
         buf._retry_initial = 0.001
         buf._retry_max = 0.005
         buf._max_retries = 3
@@ -528,7 +528,7 @@ class TestBoundedRetry:
 
         monkeypatch.setattr("aim.Run", AlwaysFails)
         run = open_aim_run(make_run_config())
-        buf = run._astrolabe_buffer
+        buf = run._alidade_buffer
         buf._retry_initial = 0.001
         buf._retry_max = 0.005
         buf._max_retries = 2
@@ -562,7 +562,7 @@ class TestBoundedRetry:
 
         monkeypatch.setattr("aim.Run", AlwaysFails)
         run = open_aim_run(make_run_config())
-        buf = run._astrolabe_buffer
+        buf = run._alidade_buffer
         buf._retry_initial = 0.001
         buf._retry_max = 0.005
         buf._max_retries = 2
@@ -597,7 +597,7 @@ class TestBoundedRetry:
 
         monkeypatch.setattr("aim.Run", AlwaysFails)
         run = open_aim_run(make_run_config())
-        buf = run._astrolabe_buffer
+        buf = run._alidade_buffer
         buf._retry_initial = 0.001
         buf._retry_max = 0.005
         buf._max_retries = 2
@@ -627,7 +627,7 @@ class TestSubmitSample:
         monkeypatch.setenv("ALIDADE_CALLBACK_STATS_PATH", str(stats_file))
 
         run = open_aim_run(make_run_config())
-        buf: _MetricBuffer = run._astrolabe_buffer
+        buf: _MetricBuffer = run._alidade_buffer
 
         for i in range(2050):
             buf.submit(name="x", value=float(i), step=i, context=None)

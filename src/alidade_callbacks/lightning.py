@@ -24,12 +24,12 @@ other keys pass through unchanged.
 
 Usage::
 
-    from alidade_callbacks import AstrolabeLightningLogger
+    from alidade_callbacks import AlidadeLightningLogger
     from lightning.pytorch import Trainer
 
     trainer = Trainer(
         ...,
-        callbacks=[AstrolabeLightningLogger()],
+        callbacks=[AlidadeLightningLogger()],
     )
     trainer.fit(model, train_loader, val_loader)
 
@@ -44,11 +44,11 @@ class. We deliberately implement this as a Callback because:
 2. Users typically already have a TB or W&B Logger and we don't want
    to compete with their primary logger.
 3. Aim already ships ``aim.pytorch_lightning.AimLogger`` for the
-   logger-side integration; our value-add is the astrolabe tag
+   logger-side integration; our value-add is the alidade tag
    conventions, which are orthogonal to whichever logger the user has.
 
 So this callback runs alongside whatever logger setup the user has,
-adding astrolabe tags to a parallel Aim run.
+adding alidade tags to a parallel Aim run.
 
 Failure handling
 ----------------
@@ -84,10 +84,10 @@ try:
 except ImportError:  # pragma: no cover — Lightning is an optional extra
     Callback = object  # type: ignore[misc,assignment]
 
-__all__ = ["AstrolabeLightningLogger", "AstrolabeLightningCheckpointer"]
+__all__ = ["AlidadeLightningLogger", "AlidadeLightningCheckpointer"]
 
 
-class AstrolabeLightningLogger(Callback):
+class AlidadeLightningLogger(Callback):
     """Lightning callback that streams every user-logged metric to Aim.
 
     Reads ``trainer.callback_metrics`` on each batch- and validation-end
@@ -325,14 +325,14 @@ def _lightning_checkpoint_dir(trainer) -> str:
     return str(dirpath)
 
 
-class AstrolabeLightningCheckpointer(Callback):
-    """Stamps astrolabe provenance into Lightning checkpoints.
+class AlidadeLightningCheckpointer(Callback):
+    """Stamps alidade provenance into Lightning checkpoints.
 
     Attach alongside your existing logger::
 
         trainer = Trainer(
-            callbacks=[AstrolabeLightningLogger(),
-                       AstrolabeLightningCheckpointer()],
+            callbacks=[AlidadeLightningLogger(),
+                       AlidadeLightningCheckpointer()],
         )
 
     **This does not save checkpoints.** Lightning's ``ModelCheckpoint``

@@ -13,7 +13,7 @@ license = { text = "MIT" }
 keywords = [
     "aim",
     "ml-tracking",
-    "astrolabe",
+    "alidade",
     "composer",
     "mosaicml",
     "pytorch-lightning",
@@ -44,7 +44,7 @@ dependencies = [
 composer = ["mosaicml>=0.20"]
 lightning = ["lightning>=2.0"]
 # transformers>=4.42 requires accelerate for the PyTorch Trainer
-# backend. Anyone instantiating a Trainer with our AstrolabeHFTrainerCallback
+# backend. Anyone instantiating a Trainer with our AlidadeHFTrainerCallback
 # hits ImportError without it; testbed caught the gap.
 hf = ["transformers>=4.30", "accelerate>=1.1.0"]
 # Checkpoint export only. The stamping path (metadata into a framework
@@ -80,7 +80,7 @@ dev = [
 [project.urls]
 Homepage = "https://github.com/naston/alidade-callbacks"
 Issues = "https://github.com/naston/alidade-callbacks/issues"
-"Astrolabe" = "https://github.com/naston/astrolabe"
+"Alidade" = "https://github.com/naston/alidade"
 
 [tool.setuptools.packages.find]
 where = ["src"]

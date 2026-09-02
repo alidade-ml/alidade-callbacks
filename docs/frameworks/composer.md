@@ -54,7 +54,7 @@ When `alidade submit` orchestrates the run, env vars override the constructor ar
 ```bash
 ALIDADE_EXPERIMENT_NAME=bert-pretrain \
 ALIDADE_AIM_URL=aim://localhost:43800 \
-AIM_RUN_TAGS="astrolabe.version=v3,astrolabe.submit_id=abc-123" \
+AIM_RUN_TAGS="alidade.version=v3,alidade.submit_id=abc-123" \
 python train.py
 ```
 

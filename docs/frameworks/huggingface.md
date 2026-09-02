@@ -137,7 +137,7 @@ If you set `eval_strategy="no"` (no automatic eval during training), `on_evaluat
 
 ### No `on_exception` hook in TrainerCallback
 
-HF's `TrainerCallback` API doesn't expose an exception hook. If training raises, the run closes via Python's normal cleanup — but `astrolabe.status` ends up `completed` because `on_train_end` fired during cleanup, not the failure path. The Aim run will still have all metrics streamed up to the crash. For accurate failure marking, use the `ALIDADE_CALLBACK_STRICT=1` env var in CI environments where you want training failures to be loud.
+HF's `TrainerCallback` API doesn't expose an exception hook. If training raises, the run closes via Python's normal cleanup — but `alidade.status` ends up `completed` because `on_train_end` fired during cleanup, not the failure path. The Aim run will still have all metrics streamed up to the crash. For accurate failure marking, use the `ALIDADE_CALLBACK_STRICT=1` env var in CI environments where you want training failures to be loud.
 
 ### Migrating from `alidade-composer-callback`
 

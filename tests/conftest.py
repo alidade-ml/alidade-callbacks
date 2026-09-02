@@ -2,7 +2,7 @@
 
 Three jobs:
 
-1. ``clean_astrolabe_env`` (autouse) — every test starts from a known
+1. ``clean_alidade_env`` (autouse) — every test starts from a known
    env state so leftover env vars from a previous test don't leak into
    the next one. Tests that need a specific env var explicitly
    ``monkeypatch.setenv``.
@@ -64,8 +64,8 @@ def synchronous_metric_buffer(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
-def clean_astrolabe_env(monkeypatch):
-    """Reset all astrolabe-related env vars before each test.
+def clean_alidade_env(monkeypatch):
+    """Reset all alidade-related env vars before each test.
 
     Without this, a test that sets ``AIM_RUN_TAGS`` could leak into
     the next test's resolve_run_config and produce nondeterministic
@@ -147,7 +147,7 @@ def drain_buffer(run: Any, timeout_s: float = 5.0) -> None:
     only ever calls ``close_run`` (which has its own drain) so this
     helper is test-only.
     """
-    buffer = getattr(run, "_astrolabe_buffer", None)
+    buffer = getattr(run, "_alidade_buffer", None)
     if buffer is None:
         return
     if not buffer.flush(timeout_s=timeout_s):

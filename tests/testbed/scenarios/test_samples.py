@@ -155,8 +155,8 @@ class TestSubmitIdentity:
     SUBMIT_ENV = {
         "ALIDADE_EXPERIMENT_NAME": "latent-bert",
         "AIM_RUN_TAGS": (
-            "astrolabe.submit_id=s-testbed-1,astrolabe.version=v3,"
-            "astrolabe.user=nathan,astrolabe.experiment=latent-bert"
+            "alidade.submit_id=s-testbed-1,alidade.version=v3,"
+            "alidade.user=nathan,alidade.experiment=latent-bert"
         ),
     }
 
@@ -190,9 +190,9 @@ class TestSubmitIdentity:
         )
         assert result.exit_code == 0, result.stderr
         tags = get_run_tags(aim_repo, result.sample_run_hash)
-        assert tags.get("astrolabe.submit_id") == "s-testbed-1"
-        assert tags.get("astrolabe.version") == "v3"
-        assert tags.get("astrolabe.user") == "nathan"
+        assert tags.get("alidade.submit_id") == "s-testbed-1"
+        assert tags.get("alidade.version") == "v3"
+        assert tags.get("alidade.user") == "nathan"
 
     def test_identity_does_not_shadow_the_discovery_tags(
         self, testbed: "TestbedHandle", aim_repo: Path, run_sample_driver
@@ -204,7 +204,7 @@ class TestSubmitIdentity:
         visible at all.
         """
         hostile = dict(self.SUBMIT_ENV)
-        hostile["AIM_RUN_TAGS"] += ",astrolabe.kind=training"
+        hostile["AIM_RUN_TAGS"] += ",alidade.kind=training"
         result = run_sample_driver(
             replace(
                 _config(testbed, samples=[["in", "out"]]), submit_env=hostile

@@ -1,6 +1,6 @@
 """Integration tests for ``src/alidade_callbacks/_core.py``.
 
-`_core.py` owns AstrolabeLogger: init/close, tag setting, name
+`_core.py` owns AlidadeLogger: init/close, tag setting, name
 handling, buffer + drainer thread, schema-finalize invariants,
 first_metric marker, hash-fidelity in the stats jsonl. Every behavior
 implemented in that module gets exercised here against a real Aim
@@ -215,32 +215,32 @@ class TestNameFidelity:
 class TestTagFidelity:
     """Tags set at init survive schema-finalize + close-reopen cycles."""
 
-    def test_astrolabe_tags_survive_finalize(
+    def test_alidade_tags_survive_finalize(
         self,
         testbed: "TestbedHandle",
         aim_repo: Path,
         stats_jsonl_path: Path,
         run_driver: RunFixture,
     ) -> None:
-        """astrolabe.experiment, astrolabe.submit_id, astrolabe.version all preserved."""
+        """alidade.experiment, alidade.submit_id, alidade.version all preserved."""
         result = run_driver(
             _base_config(
                 testbed,
                 stats_jsonl_path,
-                run_name="astrolabe-tags-probe",
+                run_name="alidade-tags-probe",
                 new_metrics_at=[2],
                 tags={
-                    "astrolabe.experiment": "test-exp",
-                    "astrolabe.submit_id": "sub-abc-123",
-                    "astrolabe.version": "v1",
+                    "alidade.experiment": "test-exp",
+                    "alidade.submit_id": "sub-abc-123",
+                    "alidade.version": "v1",
                 },
             )
         )
         assert result.exit_code == 0, result.stderr
         assert result.run_hash is not None
-        assert_run_tag(aim_repo, result.run_hash, "astrolabe.experiment", "test-exp")
-        assert_run_tag(aim_repo, result.run_hash, "astrolabe.submit_id", "sub-abc-123")
-        assert_run_tag(aim_repo, result.run_hash, "astrolabe.version", "v1")
+        assert_run_tag(aim_repo, result.run_hash, "alidade.experiment", "test-exp")
+        assert_run_tag(aim_repo, result.run_hash, "alidade.submit_id", "sub-abc-123")
+        assert_run_tag(aim_repo, result.run_hash, "alidade.version", "v1")
 
     def test_custom_tags_survive_finalize(
         self,
@@ -249,7 +249,7 @@ class TestTagFidelity:
         stats_jsonl_path: Path,
         run_driver: RunFixture,
     ) -> None:
-        """User-set tags (non-astrolabe.*) also preserved."""
+        """User-set tags (non-alidade.*) also preserved."""
         result = run_driver(
             _base_config(
                 testbed,
@@ -606,7 +606,7 @@ class TestBufferDrainer:
 class TestFirstMetricMarker:
     """ALIDADE_FIRST_METRIC_MARKER fires exactly once, on first track_safely.
 
-    Feeds astrolabe's healing/failure hook system — a run that never
+    Feeds alidade's healing/failure hook system — a run that never
     produces a first metric is treated differently from one that made
     progress and then died.
     """
@@ -691,7 +691,7 @@ class TestFrameworkParityInvariants:
     """All frameworks produce equivalent Aim state for equivalent inputs.
 
     Lives here (not in per-framework files) because the property being
-    asserted is a _core.py invariant: the same AstrolabeLogger produces
+    asserted is a _core.py invariant: the same AlidadeLogger produces
     the same series regardless of what framework calls it.
     """
 

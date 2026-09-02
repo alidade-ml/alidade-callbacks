@@ -12,7 +12,7 @@ one step closer to production than subprocess-on-loopback would give.
 The aim repo is bind-mounted from a per-session host directory so
 host-side assertions can read what the server wrote directly.
 
-Same design shape as ``astrolabe/tests/testbed/harness/compose.py``;
+Same design shape as ``alidade/tests/testbed/harness/compose.py``;
 scenarios that graduate from one testbed to the other should feel
 familiar.
 """

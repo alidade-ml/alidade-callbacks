@@ -1,4 +1,4 @@
-"""Tests for ``AstrolabeHFTrainerCallback``.
+"""Tests for ``AlidadeHFTrainerCallback``.
 
 HF Trainer's ``on_log`` hook receives a pre-aggregated metrics dict.
 We pass through everything; specific keys (``loss``, ``learning_rate``,
@@ -13,7 +13,7 @@ import pytest
 
 from alidade_callbacks._core import EVAL_METRIC_PREFIX
 from alidade_callbacks.huggingface import (
-    AstrolabeHFTrainerCallback,
+    AlidadeHFTrainerCallback,
     _normalize_log_key,
 )
 
@@ -95,12 +95,12 @@ class TestNormalizeLogKeyHappyPath:
 
 class TestOnTrainBegin:
     def test_opens_run_with_explicit_name(self, fake_aim_run):
-        cb = AstrolabeHFTrainerCallback(run_name="my-run")
+        cb = AlidadeHFTrainerCallback(run_name="my-run")
         cb.on_train_begin(_FakeTrainerArgs(), _FakeState(), _FakeControl())
         assert fake_aim_run[-1].name == "my-run"
 
     def test_run_name_from_args(self, fake_aim_run):
-        cb = AstrolabeHFTrainerCallback()
+        cb = AlidadeHFTrainerCallback()
         cb.on_train_begin(
             _FakeTrainerArgs(run_name="hf-args-run-name"),
             _FakeState(),
@@ -109,7 +109,7 @@ class TestOnTrainBegin:
         assert fake_aim_run[-1].name == "hf-args-run-name"
 
     def test_run_name_from_output_dir(self, fake_aim_run):
-        cb = AstrolabeHFTrainerCallback()
+        cb = AlidadeHFTrainerCallback()
         cb.on_train_begin(
             _FakeTrainerArgs(output_dir="/tmp/checkpoints/bert-v3"),
             _FakeState(),
@@ -119,7 +119,7 @@ class TestOnTrainBegin:
         assert fake_aim_run[-1].name == "bert-v3"
 
     def test_run_name_chain_explicit_wins(self, fake_aim_run):
-        cb = AstrolabeHFTrainerCallback(run_name="explicit")
+        cb = AlidadeHFTrainerCallback(run_name="explicit")
         cb.on_train_begin(
             _FakeTrainerArgs(run_name="from-args", output_dir="/tmp/from-dir"),
             _FakeState(),
@@ -128,7 +128,7 @@ class TestOnTrainBegin:
         assert fake_aim_run[-1].name == "explicit"
 
     def test_double_on_train_begin_no_op(self, fake_aim_run):
-        cb = AstrolabeHFTrainerCallback()
+        cb = AlidadeHFTrainerCallback()
         cb.on_train_begin(_FakeTrainerArgs(), _FakeState(), _FakeControl())
         first_run = cb._run
         cb.on_train_begin(_FakeTrainerArgs(), _FakeState(), _FakeControl())
@@ -137,7 +137,7 @@ class TestOnTrainBegin:
 
     def test_rank_nonzero_no_run(self, monkeypatch, fake_aim_run):
         monkeypatch.setenv("RANK", "3")
-        cb = AstrolabeHFTrainerCallback()
+        cb = AlidadeHFTrainerCallback()
         cb.on_train_begin(_FakeTrainerArgs(), _FakeState(), _FakeControl())
         assert fake_aim_run == []
         assert cb._run is None
@@ -150,7 +150,7 @@ class TestOnTrainBegin:
 
 class TestOnLogEdgeCases:
     def test_no_logs_no_op(self, fake_aim_run):
-        cb = AstrolabeHFTrainerCallback()
+        cb = AlidadeHFTrainerCallback()
         cb.on_train_begin(_FakeTrainerArgs(), _FakeState(), _FakeControl())
         cb.on_log(_FakeTrainerArgs(), _FakeState(), _FakeControl(), logs=None)
         cb.on_log(_FakeTrainerArgs(), _FakeState(), _FakeControl(), logs={})
@@ -159,7 +159,7 @@ class TestOnLogEdgeCases:
         assert fake_aim_run[-1].tracked == []
 
     def test_skips_non_numeric_values(self, fake_aim_run):
-        cb = AstrolabeHFTrainerCallback()
+        cb = AlidadeHFTrainerCallback()
         cb.on_train_begin(_FakeTrainerArgs(), _FakeState(global_step=10), _FakeControl())
         cb.on_log(
             _FakeTrainerArgs(),
@@ -173,7 +173,7 @@ class TestOnLogEdgeCases:
         assert "tag" not in names
 
     def test_no_run_is_noop(self):
-        cb = AstrolabeHFTrainerCallback()
+        cb = AlidadeHFTrainerCallback()
         # on_train_begin not called → _run stays None
         cb.on_log(
             _FakeTrainerArgs(),
@@ -184,7 +184,7 @@ class TestOnLogEdgeCases:
 
     def test_rank_nonzero_is_noop(self, monkeypatch, fake_aim_run):
         monkeypatch.setenv("RANK", "1")
-        cb = AstrolabeHFTrainerCallback()
+        cb = AlidadeHFTrainerCallback()
         cb.on_train_begin(_FakeTrainerArgs(), _FakeState(), _FakeControl())
         cb.on_log(
             _FakeTrainerArgs(),
@@ -197,7 +197,7 @@ class TestOnLogEdgeCases:
 
 class TestOnLogHappyPath:
     def test_passes_through_user_metrics(self, fake_aim_run):
-        cb = AstrolabeHFTrainerCallback()
+        cb = AlidadeHFTrainerCallback()
         cb.on_train_begin(_FakeTrainerArgs(), _FakeState(global_step=0), _FakeControl())
         cb.on_step_end(_FakeTrainerArgs(), _FakeState(), _FakeControl())
         cb.on_log(
@@ -217,7 +217,7 @@ class TestOnLogHappyPath:
         assert "wall_time" in names
 
     def test_step_carries_through(self, fake_aim_run):
-        cb = AstrolabeHFTrainerCallback()
+        cb = AlidadeHFTrainerCallback()
         cb.on_train_begin(_FakeTrainerArgs(), _FakeState(), _FakeControl())
         cb.on_log(
             _FakeTrainerArgs(),
@@ -238,7 +238,7 @@ class TestOnLogHappyPath:
 
 class TestOnEvaluate:
     def test_eval_keys_renamed(self, fake_aim_run):
-        cb = AstrolabeHFTrainerCallback()
+        cb = AlidadeHFTrainerCallback()
         cb.on_train_begin(_FakeTrainerArgs(), _FakeState(), _FakeControl())
         cb.on_evaluate(
             _FakeTrainerArgs(),
@@ -251,7 +251,7 @@ class TestOnEvaluate:
         assert f"{EVAL_METRIC_PREFIX}/accuracy" in names
 
     def test_no_metrics_is_noop(self, fake_aim_run):
-        cb = AstrolabeHFTrainerCallback()
+        cb = AlidadeHFTrainerCallback()
         cb.on_train_begin(_FakeTrainerArgs(), _FakeState(), _FakeControl())
         cb.on_evaluate(
             _FakeTrainerArgs(), _FakeState(), _FakeControl(), metrics=None
@@ -266,16 +266,16 @@ class TestOnEvaluate:
 
 class TestOnTrainEnd:
     def test_closes_with_completed(self, fake_aim_run):
-        cb = AstrolabeHFTrainerCallback()
+        cb = AlidadeHFTrainerCallback()
         cb.on_train_begin(_FakeTrainerArgs(), _FakeState(), _FakeControl())
         run = cb._run
         cb.on_train_end(_FakeTrainerArgs(), _FakeState(), _FakeControl())
-        assert run.tags["astrolabe.status"] == "completed"
+        assert run.tags["alidade.status"] == "completed"
         assert run.closed is True
         assert cb._run is None
 
     def test_no_run_is_noop(self):
-        cb = AstrolabeHFTrainerCallback()
+        cb = AlidadeHFTrainerCallback()
         cb.on_train_end(
             _FakeTrainerArgs(), _FakeState(), _FakeControl()
         )  # must not raise

@@ -1,4 +1,4 @@
-"""Astrolabe contract between engine and callback.
+"""Alidade contract between engine and callback.
 
 Source of truth: this file in the engine repo. Vendored verbatim into
 ``alidade-callbacks`` (and any third-party callback library) via
@@ -19,12 +19,12 @@ Rules enforced by CI:
 - Modifying this file requires bumping ``CONTRACT_VERSION``;
   ``tools/check-contract-bump.py`` blocks merge.
 - Every ``ALIDADE_*``/``AIM_*`` env var the engine sets and every
-  ``astrolabe.*`` Aim tag the engine reads must appear as a constant
+  ``alidade.*`` Aim tag the engine reads must appear as a constant
   here; ``tests/test_contract_completeness.py`` enforces.
 - Bare contract-literal strings outside this file are a violation;
   the engine must route through ``contract.ENV_*``/``contract.TAG_*``
   + the format/parse helpers (no inline ``json.dumps`` of contract
-  values, no inline ``"astrolabe.user"`` keys).
+  values, no inline ``"alidade.user"`` keys).
 """
 
 from __future__ import annotations
@@ -42,7 +42,7 @@ from __future__ import annotations
 # vendored from; the engine refuses submits whose pinned callback was
 # vendored against a contract older than what this engine version
 # requires.
-CONTRACT_VERSION = "2.0.0"
+CONTRACT_VERSION = "3.0.0"
 
 # --- Env vars: ENGINE sets in the training process -------------------------
 #
@@ -50,8 +50,8 @@ CONTRACT_VERSION = "2.0.0"
 # the training command runs. A contract-compliant callback reads them
 # (directly or via helpers) to wire itself to the orchestration.
 
-# Unique identifier for one submit (one `astrolabe submit` invocation).
-# The Aim run carries it as ``astrolabe.submit_id``, which arrives through
+# Unique identifier for one submit (one `alidade submit` invocation).
+# The Aim run carries it as ``alidade.submit_id``, which arrives through
 # AIM_RUN_TAGS rather than from this variable; the callback reads this one
 # directly only for checkpoint provenance.
 ENV_SUBMIT_ID = "ALIDADE_SUBMIT_ID"
@@ -91,7 +91,7 @@ ENV_RANK_LOGS_DIR = "ALIDADE_RANK_LOGS_DIR"
 # Filesystem path the alidade-callbacks library touches when the
 # first Aim metric write lands.  The engine probes this path at
 # step-failure time to enforce ``until: first_metric`` healing bounds
-# (:class:`astrolabe.config.StepHealingConfig`).
+# (:class:`alidade.config.StepHealingConfig`).
 ENV_FIRST_METRIC_MARKER = "ALIDADE_FIRST_METRIC_MARKER"
 
 # Same mechanism for ``until: first_checkpoint``.  Separate marker
@@ -100,7 +100,7 @@ ENV_FIRST_METRIC_MARKER = "ALIDADE_FIRST_METRIC_MARKER"
 ENV_FIRST_CHECKPOINT_MARKER = "ALIDADE_FIRST_CHECKPOINT_MARKER"
 
 # Where the callback records the model entries it minted for models
-# astrolabe never trained, so every step of one submit attributes to the
+# alidade never trained, so every step of one submit attributes to the
 # same entry instead of forking one per call.
 ENV_EXTERNAL_MODELS = "ALIDADE_EXTERNAL_MODELS"
 
@@ -111,40 +111,40 @@ ENV_EXTERNAL_MODELS = "ALIDADE_EXTERNAL_MODELS"
 # Linear report generation, etc.). Renaming any of these is a MAJOR
 # contract bump.
 
-TAG_SUBMIT_ID = "astrolabe.submit_id"
-TAG_USER = "astrolabe.user"
-TAG_VERSION = "astrolabe.version"
-TAG_EXPERIMENT = "astrolabe.experiment"
-TAG_GPU_TYPE = "astrolabe.gpu_type"
-TAG_GPU_RATE_CENTS_PER_HOUR = "astrolabe.gpu_rate_cents_per_hour"
+TAG_SUBMIT_ID = "alidade.submit_id"
+TAG_USER = "alidade.user"
+TAG_VERSION = "alidade.version"
+TAG_EXPERIMENT = "alidade.experiment"
+TAG_GPU_TYPE = "alidade.gpu_type"
+TAG_GPU_RATE_CENTS_PER_HOUR = "alidade.gpu_rate_cents_per_hour"
 
 # Final outcome — set by the engine on terminal state ("success" /
 # "failure" / "cancelled"). Callbacks don't write this; it's listed
 # here so engine code that reads it goes through the constant.
-TAG_OUTCOME = "astrolabe.outcome"
+TAG_OUTCOME = "alidade.outcome"
 
 # Eval-run identity. Written by the callback library, read by the
 # dashboard; the engine touches neither. Declared here because this
-# file is the registry for the ``astrolabe.*`` namespace, not only for
+# file is the registry for the ``alidade.*`` namespace, not only for
 # the keys the engine itself handles — same reason NAMESPACE_EVAL is
 # here. Nothing enforces the dashboard half of this contract: the hub
 # types these strings into Go source and no check would fail if they
 # drifted apart.
-TAG_KIND = "astrolabe.kind"
-TAG_TASK_SET = "astrolabe.task_set"
-TAG_MODEL_RUN_HASH = "astrolabe.model_run_hash"
+TAG_KIND = "alidade.kind"
+TAG_TASK_SET = "alidade.task_set"
+TAG_MODEL_RUN_HASH = "alidade.model_run_hash"
 
 # Sample-run identity. Same ownership as the eval keys above: written by
 # the callback library, read by the dashboard, untouched by the engine.
 # ``sample_set`` groups one batch of outputs the way ``task_set`` groups
 # one benchmark suite.
-TAG_SAMPLE_SET = "astrolabe.sample_set"
+TAG_SAMPLE_SET = "alidade.sample_set"
 
 # Value for TAG_KIND on a post-training benchmark run. The dashboard's
 # eval discovery matches on this exact string.
 KIND_EVAL = "eval"
 
-# Value for TAG_KIND on a model astrolabe did not train — a downloaded
+# Value for TAG_KIND on a model alidade did not train — a downloaded
 # checkpoint an eval scored. The run carries no metrics; it exists so
 # the eval has a model to attribute to and the dashboard has a row to
 # put in a leaderboard. The dashboard keys its "is this a training run"
@@ -199,7 +199,7 @@ SAMPLE_ROLE_OUTPUT = "output"
 # Aim tracking-server URL for tunnel transport, which a NUC selects with
 # ``aim_local_mode: false``. The engine then opens a reverse SSH tunnel
 # from the compute host to the NUC's Aim server on port 43800 (see
-# ``astrolabe.engine._setup``). Both sides MUST agree on the port so the
+# ``alidade.engine._setup``). Both sides MUST agree on the port so the
 # tunnel and client pair line up. Under the default local-aim transport
 # nothing listens here — callbacks use ALIDADE_AIM_REPO_PATH instead.
 DEFAULT_AIM_URL = "aim://localhost:43800"
@@ -223,8 +223,8 @@ def format_aim_run_tags(tags: dict[str, str]) -> str:
 
     Wire format is ``key1=val1,key2=val2``. Keys and values are
     inserted literally — callers must not include ``=`` or ``,`` in
-    keys or values. In practice astrolabe's tag keys are all
-    ``astrolabe.*`` literals (no ``=`` or ``,``) and values are
+    keys or values. In practice alidade's tag keys are all
+    ``alidade.*`` literals (no ``=`` or ``,``) and values are
     submit_ids / version labels / GPU types / integer rates (none of
     which contain those characters either).
 
@@ -331,7 +331,7 @@ def format_first_metric_marker_path(submit_id: str, step_num: int) -> str:
     and step 2's ``until: first_metric`` window is judged already
     closed by step 1's evidence.
     """
-    return f"astrolabe-first-metric-{submit_id}-step{step_num}.marker"
+    return f"alidade-first-metric-{submit_id}-step{step_num}.marker"
 
 
 def format_external_models_path(submit_id: str) -> str:
@@ -355,7 +355,7 @@ def format_external_models_path(submit_id: str) -> str:
     and mint a duplicate anyway, silently. A submit is exactly the scope
     that can be answered from a local file.
     """
-    return f"astrolabe-external-models-{submit_id}.json"
+    return f"alidade-external-models-{submit_id}.json"
 
 
 def format_first_checkpoint_marker_path(submit_id: str, step_num: int) -> str:
@@ -366,4 +366,4 @@ def format_first_checkpoint_marker_path(submit_id: str, step_num: int) -> str:
     checkpoint of the step is written; the engine probes it to enforce
     ``until: first_checkpoint`` healing bounds.
     """
-    return f"astrolabe-first-checkpoint-{submit_id}-step{step_num}.marker"
+    return f"alidade-first-checkpoint-{submit_id}-step{step_num}.marker"

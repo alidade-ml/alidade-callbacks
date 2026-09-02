@@ -1,8 +1,8 @@
 """Integration tests for ``src/alidade_callbacks/huggingface.py``.
 
-HF Trainer's ``AstrolabeHFTrainerCallback`` translates HuggingFace
+HF Trainer's ``AlidadeHFTrainerCallback`` translates HuggingFace
 Trainer lifecycle events (on_log, on_evaluate, on_train_end, ...) into
-AstrolabeLogger calls. This file verifies the adapter drives the
+AlidadeLogger calls. This file verifies the adapter drives the
 underlying Logger correctly against a real Aim server.
 
 Class names (`TestTraining` / `TestValidation` / `TestTeardown`) are

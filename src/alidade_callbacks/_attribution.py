@@ -124,8 +124,8 @@ def resolve_parent(
     if on_missing_parent == "raise":
         raise MissingParentError(
             f"nothing to attribute this {what} to: the checkpoint carries no "
-            "astrolabe provenance, and neither model_run_hash= nor "
-            f"external_name= was given. If astrolabe trained this model, stamp "
+            "alidade provenance, and neither model_run_hash= nor "
+            f"external_name= was given. If alidade trained this model, stamp "
             "the checkpoint or pass model_run_hash=. If you downloaded it, "
             'pass external_name= to name it — e.g. external_name="roberta-base".'
         )
@@ -133,7 +133,7 @@ def resolve_parent(
 
 
 def mint_model_entry(name: str, aim_url: str | None) -> str:
-    """Record a model astrolabe never trained, and return its run hash.
+    """Record a model alidade never trained, and return its run hash.
 
     Only reachable through ``external_name=``. A downloaded checkpoint has no
     training run, so a result scoring it has nothing to attribute to and the
@@ -198,7 +198,7 @@ def mint_model_entry(name: str, aim_url: str | None) -> str:
 def _external_models_path() -> Path | None:
     """The per-submit registry path, or None outside a submit.
 
-    Absent outside astrolabe orchestration, where there is no submit to
+    Absent outside alidade orchestration, where there is no submit to
     scope an identity to and every call minting its own entry is the
     honest answer.
     """

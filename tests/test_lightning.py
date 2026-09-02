@@ -1,4 +1,4 @@
-"""Tests for ``AstrolabeLightningLogger``.
+"""Tests for ``AlidadeLightningLogger``.
 
 Lightning-specific contract: every metric the user logs via
 ``self.log(...)`` lands in ``trainer.callback_metrics`` and flows
@@ -13,7 +13,7 @@ import pytest
 
 from alidade_callbacks._core import EVAL_METRIC_PREFIX
 from alidade_callbacks.lightning import (
-    AstrolabeLightningLogger,
+    AlidadeLightningLogger,
     _is_val_metric,
     _normalize_val_metric_name,
     _to_scalar,
@@ -98,7 +98,7 @@ class TestValMetricHelpers:
 
 class TestSetup:
     def test_setup_only_runs_for_fit_stage(self, fake_aim_run):
-        cb = AstrolabeLightningLogger()
+        cb = AlidadeLightningLogger()
         # validate / test / predict stages should not open a run.
         cb.setup(_FakeTrainer(), _FakeModule(), stage="validate")
         cb.setup(_FakeTrainer(), _FakeModule(), stage="test")
@@ -107,12 +107,12 @@ class TestSetup:
         assert cb._run is None
 
     def test_setup_opens_run_for_fit(self, fake_aim_run):
-        cb = AstrolabeLightningLogger()
+        cb = AlidadeLightningLogger()
         cb.setup(_FakeTrainer(), _FakeModule(), stage="fit")
         assert cb._run is not None
 
     def test_double_setup_does_not_re_open(self, fake_aim_run):
-        cb = AstrolabeLightningLogger()
+        cb = AlidadeLightningLogger()
         cb.setup(_FakeTrainer(), _FakeModule(), stage="fit")
         first_run = cb._run
         cb.setup(_FakeTrainer(), _FakeModule(), stage="fit")
@@ -120,7 +120,7 @@ class TestSetup:
         assert len(fake_aim_run) == 1
 
     def test_run_name_explicit_wins(self, fake_aim_run):
-        cb = AstrolabeLightningLogger(run_name="my-explicit-name")
+        cb = AlidadeLightningLogger(run_name="my-explicit-name")
         cb.setup(
             _FakeTrainer(logger=_FakeLogger("logger-name")),
             _FakeModule(),
@@ -129,7 +129,7 @@ class TestSetup:
         assert fake_aim_run[-1].name == "my-explicit-name"
 
     def test_run_name_falls_back_to_trainer_logger(self, fake_aim_run):
-        cb = AstrolabeLightningLogger()
+        cb = AlidadeLightningLogger()
         cb.setup(
             _FakeTrainer(logger=_FakeLogger("from-trainer-logger")),
             _FakeModule(),
@@ -138,13 +138,13 @@ class TestSetup:
         assert fake_aim_run[-1].name == "from-trainer-logger"
 
     def test_run_name_falls_back_to_module_class(self, fake_aim_run):
-        cb = AstrolabeLightningLogger()
+        cb = AlidadeLightningLogger()
         cb.setup(_FakeTrainer(logger=None), _FakeModule(), stage="fit")
         assert fake_aim_run[-1].name == "_FakeModule"
 
     def test_rank_nonzero_no_setup(self, monkeypatch, fake_aim_run):
         monkeypatch.setenv("RANK", "1")
-        cb = AstrolabeLightningLogger()
+        cb = AlidadeLightningLogger()
         cb.setup(_FakeTrainer(), _FakeModule(), stage="fit")
         assert fake_aim_run == []
         assert cb._run is None
@@ -160,7 +160,7 @@ class TestOnTrainBatchEnd:
         # Critical for the user contract: any metric the user
         # ``self.log()`` ed in their training_step lands in callback_metrics
         # and flows through unchanged.
-        cb = AstrolabeLightningLogger()
+        cb = AlidadeLightningLogger()
         cb.setup(_FakeTrainer(), _FakeModule(), stage="fit")
         import torch
         trainer = _FakeTrainer(
@@ -179,7 +179,7 @@ class TestOnTrainBatchEnd:
     def test_skips_val_metrics(self, fake_aim_run):
         # val_loss / val/accuracy are eval-side; on_train_batch_end
         # must not log them (would double-write with on_validation_end).
-        cb = AstrolabeLightningLogger()
+        cb = AlidadeLightningLogger()
         cb.setup(_FakeTrainer(), _FakeModule(), stage="fit")
         import torch
         trainer = _FakeTrainer(
@@ -196,14 +196,14 @@ class TestOnTrainBatchEnd:
         assert "val/accuracy" not in names
 
     def test_logs_wall_time(self, fake_aim_run):
-        cb = AstrolabeLightningLogger()
+        cb = AlidadeLightningLogger()
         cb.setup(_FakeTrainer(), _FakeModule(), stage="fit")
         cb.on_train_batch_end(_FakeTrainer(), _FakeModule(), outputs=None, batch=None, batch_idx=0)
         names = [t["name"] for t in fake_aim_run[-1].tracked]
         assert "wall_time" in names
 
     def test_skips_non_numeric_values(self, fake_aim_run):
-        cb = AstrolabeLightningLogger()
+        cb = AlidadeLightningLogger()
         cb.setup(_FakeTrainer(), _FakeModule(), stage="fit")
         trainer = _FakeTrainer(
             callback_metrics={"good": 1.0, "bad_str": "nope"}
@@ -214,7 +214,7 @@ class TestOnTrainBatchEnd:
         assert "bad_str" not in names
 
     def test_no_run_is_noop(self):
-        cb = AstrolabeLightningLogger()
+        cb = AlidadeLightningLogger()
         # setup never called → _run stays None
         cb.on_train_batch_end(
             _FakeTrainer(), _FakeModule(), outputs=None, batch=None, batch_idx=0
@@ -222,7 +222,7 @@ class TestOnTrainBatchEnd:
 
     def test_rank_nonzero_is_noop(self, monkeypatch, fake_aim_run):
         monkeypatch.setenv("RANK", "1")
-        cb = AstrolabeLightningLogger()
+        cb = AlidadeLightningLogger()
         cb.setup(_FakeTrainer(), _FakeModule(), stage="fit")
         trainer = _FakeTrainer(callback_metrics={"loss": 0.5})
         cb.on_train_batch_end(trainer, _FakeModule(), outputs=None, batch=None, batch_idx=0)
@@ -236,7 +236,7 @@ class TestOnTrainBatchEnd:
 
 class TestOnValidationEnd:
     def test_namespaces_val_metrics_under_eval_prefix(self, fake_aim_run):
-        cb = AstrolabeLightningLogger()
+        cb = AlidadeLightningLogger()
         cb.setup(_FakeTrainer(), _FakeModule(), stage="fit")
         import torch
         trainer = _FakeTrainer(
@@ -253,7 +253,7 @@ class TestOnValidationEnd:
         assert f"{EVAL_METRIC_PREFIX}/perplexity" in names
 
     def test_skips_train_metrics(self, fake_aim_run):
-        cb = AstrolabeLightningLogger()
+        cb = AlidadeLightningLogger()
         cb.setup(_FakeTrainer(), _FakeModule(), stage="fit")
         import torch
         trainer = _FakeTrainer(
@@ -270,7 +270,7 @@ class TestOnValidationEnd:
         assert "train_loss" not in names
 
     def test_resumes_wall_time_on_validation_end(self, fake_aim_run):
-        cb = AstrolabeLightningLogger()
+        cb = AlidadeLightningLogger()
         cb.setup(_FakeTrainer(), _FakeModule(), stage="fit")
         cb.on_validation_start(_FakeTrainer(), _FakeModule())
         # _eval_start is now > 0
@@ -280,7 +280,7 @@ class TestOnValidationEnd:
         assert cb._wall_time._eval_start == 0
 
     def test_no_run_is_noop(self):
-        cb = AstrolabeLightningLogger()
+        cb = AlidadeLightningLogger()
         cb.on_validation_end(_FakeTrainer(), _FakeModule())  # must not raise
 
 
@@ -291,19 +291,19 @@ class TestOnValidationEnd:
 
 class TestLifecycleClose:
     def test_train_end_closes_with_completed(self, fake_aim_run):
-        cb = AstrolabeLightningLogger()
+        cb = AlidadeLightningLogger()
         cb.setup(_FakeTrainer(), _FakeModule(), stage="fit")
         run = cb._run
         cb.on_train_end(_FakeTrainer(), _FakeModule())
-        assert run.tags["astrolabe.status"] == "completed"
+        assert run.tags["alidade.status"] == "completed"
         assert run.closed is True
         assert cb._run is None
 
     def test_on_exception_closes_with_failed(self, fake_aim_run):
-        cb = AstrolabeLightningLogger()
+        cb = AlidadeLightningLogger()
         cb.setup(_FakeTrainer(), _FakeModule(), stage="fit")
         run = cb._run
         cb.on_exception(_FakeTrainer(), _FakeModule(), RuntimeError("OOM"))
-        assert run.tags["astrolabe.status"] == "failed"
+        assert run.tags["alidade.status"] == "failed"
         assert run.closed is True
         assert cb._run is None

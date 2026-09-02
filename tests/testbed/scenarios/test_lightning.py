@@ -1,7 +1,7 @@
 """Integration tests for ``src/alidade_callbacks/lightning.py``.
 
-Lightning's ``AstrolabeLightningLogger`` translates PyTorch
-Lightning's on_* hooks into AstrolabeLogger calls. This file verifies
+Lightning's ``AlidadeLightningLogger`` translates PyTorch
+Lightning's on_* hooks into AlidadeLogger calls. This file verifies
 the adapter drives the underlying Logger correctly against a real Aim
 server.
 

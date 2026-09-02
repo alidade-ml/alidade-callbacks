@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Vendor ``astrolabe/contract.py`` from the engine repo.
+"""Vendor ``alidade/contract.py`` from the engine repo.
 
 The engine↔callback contract lives in the engine repo as the source of
 truth. Every callback library — first-party (this one) and any
@@ -197,14 +197,14 @@ def main() -> int:
     SIDECAR_PATH.write_text(json.dumps(data, indent=2) + "\n")
 
     rel = DEST_PATH.relative_to(REPO_ROOT)
-    print(f"✓ Vendored astrolabe/contract.py from astrolabe@{ref}")
+    print(f"✓ Vendored alidade/contract.py from alidade@{ref}")
     print(f"  → {rel}")
     print(f"  CONTRACT_VERSION: {version}")
     print(f"  sha256: {digest}")
     print("")
     print("Commit both files:")
     print(f"  git add {rel} tools/vendor-contract.json")
-    print(f"  git commit -m 'chore: re-vendor contract.py from astrolabe@{ref}'")
+    print(f"  git commit -m 'chore: re-vendor contract.py from alidade@{ref}'")
     return 0
 
 

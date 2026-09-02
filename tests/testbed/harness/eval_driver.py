@@ -44,7 +44,7 @@ class EvalDriverConfig:
     checkpoint_path: str | None
     on_missing_parent: str
     driver_flags: dict[str, str]
-    # Env the astrolabe engine would have exported into an eval step
+    # Env the alidade engine would have exported into an eval step
     # (ALIDADE_EXPERIMENT_NAME, AIM_RUN_TAGS). Passed through to the
     # container verbatim rather than serialized: the helpers read the
     # real env var names, so anything else would test a stand-in.
@@ -146,7 +146,7 @@ def _prepare_checkpoint(config: EvalDriverConfig) -> None:
         )
     if flags.get("TESTBED_CREATE_PT_CHECKPOINT_WITHOUT_META"):
         # Raw torch.save, not export_checkpoint: this has to be a valid
-        # checkpoint carrying no astrolabe block at all, which is what a
+        # checkpoint carrying no alidade block at all, which is what a
         # file predating the feature looks like.
         import torch
 
@@ -179,7 +179,7 @@ def run_eval_driver(config: EvalDriverConfig) -> tuple[str | None, bool]:
         for name, points in config.streaming_metrics:
             for step, value in points:
                 run.track(value, name=name, step=step)
-        linked = getattr(run, "astrolabe_linked", False)
+        linked = getattr(run, "alidade_linked", False)
         run_hash = run.hash
         run.close()
         return run_hash, linked

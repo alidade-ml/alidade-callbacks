@@ -8,7 +8,7 @@ Contract being verified:
 * :func:`start_eval_run` returns an *open* run with the three tags set;
   the caller owns ``close()``.
 * Both reject malformed inputs at the call site BEFORE creating any
-  Aim run — half-tagged runs would silently confuse astrolabe's
+  Aim run — half-tagged runs would silently confuse alidade's
   dashboard.
 * The metric path convention ``eval/<task>/<metric>`` must be exact —
   slashes in the task or metric label scramble the dashboard's column
@@ -262,9 +262,9 @@ class TestTagContract:
                 rows={"cola": ("matthews", 0.5)},
                 aim_url="aim://test",
             )
-        run.__setitem__.assert_any_call("astrolabe.kind", "eval")
-        run.__setitem__.assert_any_call("astrolabe.task_set", "glue")
-        run.__setitem__.assert_any_call("astrolabe.model_run_hash", "model-hash-123")
+        run.__setitem__.assert_any_call("alidade.kind", "eval")
+        run.__setitem__.assert_any_call("alidade.task_set", "glue")
+        run.__setitem__.assert_any_call("alidade.model_run_hash", "model-hash-123")
 
     def test_start_eval_run_sets_all_three_tags(self, tmp_path):
         run = _make_run_mock()
@@ -274,12 +274,12 @@ class TestTagContract:
                 task_set="mmlu",
                 aim_url="aim://test",
             )
-        run.__setitem__.assert_any_call("astrolabe.kind", "eval")
-        run.__setitem__.assert_any_call("astrolabe.task_set", "mmlu")
-        run.__setitem__.assert_any_call("astrolabe.model_run_hash", "xyz")
+        run.__setitem__.assert_any_call("alidade.kind", "eval")
+        run.__setitem__.assert_any_call("alidade.task_set", "mmlu")
+        run.__setitem__.assert_any_call("alidade.model_run_hash", "xyz")
 
     def test_falls_back_to_eval_task_set_outside_a_submit(self, tmp_path):
-        # Ad-hoc use with no astrolabe env around it: there is no
+        # Ad-hoc use with no alidade env around it: there is no
         # experiment to inherit, so the benchmark label is all we have.
         run = _make_run_mock()
         mock_run_factory = MagicMock(return_value=run)
@@ -545,9 +545,9 @@ class TestHappyPath:
             )
         assert got == "eval-abc"
         # All three identity tags set
-        run.__setitem__.assert_any_call("astrolabe.kind", "eval")
-        run.__setitem__.assert_any_call("astrolabe.task_set", "glue")
-        run.__setitem__.assert_any_call("astrolabe.model_run_hash", "model-hash-123")
+        run.__setitem__.assert_any_call("alidade.kind", "eval")
+        run.__setitem__.assert_any_call("alidade.task_set", "glue")
+        run.__setitem__.assert_any_call("alidade.model_run_hash", "model-hash-123")
         # All four rows tracked under the convention path
         run.track.assert_any_call(0.822, name="eval/cola/matthews", step=0)
         run.track.assert_any_call(0.943, name="eval/sst2/accuracy", step=0)
@@ -564,7 +564,7 @@ class TestHappyPath:
 # off the implementation):
 #
 # - The eval author names a FILE. The training run comes out of that
-#   file. No hash, no tag key, no astrolabe internals at the call site.
+#   file. No hash, no tag key, no alidade internals at the call site.
 # - Resolution order: explicit model_run_hash > the checkpoint's
 #   aim_run_hash > on_missing_parent.
 # - Resolution is OFFLINE. Aim is never queried to find a parent. A
@@ -660,7 +660,7 @@ class TestUnresolvedParent:
             result = start_eval_run_from_checkpoint(
                 checkpoint=plain, task_set="glue", on_missing_parent="warn"
             )
-        assert result.astrolabe_linked is False
+        assert result.alidade_linked is False
 
     def test_unlinked_run_carries_no_model_run_hash_tag(self, tmp_path):
         """A blank or placeholder hash would be worse than none — the
@@ -672,7 +672,7 @@ class TestUnresolvedParent:
                 checkpoint=plain, task_set="glue", on_missing_parent="warn"
             )
         tags = [c.args[0] for c in run.__setitem__.call_args_list]
-        assert "astrolabe.model_run_hash" not in tags
+        assert "alidade.model_run_hash" not in tags
 
     def test_unlinked_run_is_still_recognizable_as_an_eval(self, tmp_path):
         """Stamping it later only works if kind and task_set are set."""
@@ -682,8 +682,8 @@ class TestUnresolvedParent:
             start_eval_run_from_checkpoint(
                 checkpoint=plain, task_set="glue", on_missing_parent="warn"
             )
-        run.__setitem__.assert_any_call("astrolabe.kind", "eval")
-        run.__setitem__.assert_any_call("astrolabe.task_set", "glue")
+        run.__setitem__.assert_any_call("alidade.kind", "eval")
+        run.__setitem__.assert_any_call("alidade.task_set", "glue")
 
     def test_submit_without_a_run_hash_stays_unresolved(self, tmp_path):
         """The offline rule. Env gave this checkpoint an identity but no
@@ -696,7 +696,7 @@ class TestUnresolvedParent:
             result = start_eval_run_from_checkpoint(
                 checkpoint=ckpt, task_set="glue", on_missing_parent="warn"
             )
-        assert result.astrolabe_linked is False
+        assert result.alidade_linked is False
 
 
 class TestResolutionOrder:
@@ -707,7 +707,7 @@ class TestResolutionOrder:
             start_eval_run_from_checkpoint(
                 checkpoint=ckpt, task_set="glue", model_run_hash="override-me"
             )
-        run.__setitem__.assert_any_call("astrolabe.model_run_hash", "override-me")
+        run.__setitem__.assert_any_call("alidade.model_run_hash", "override-me")
 
     def test_explicit_hash_used_when_checkpoint_has_none(self, tmp_path):
         plain = export_checkpoint({}, tmp_path / "plain.pt", fmt="pt")
@@ -716,8 +716,8 @@ class TestResolutionOrder:
             result = start_eval_run_from_checkpoint(
                 checkpoint=plain, task_set="glue", model_run_hash=ORIGIN
             )
-        run.__setitem__.assert_any_call("astrolabe.model_run_hash", ORIGIN)
-        assert result.astrolabe_linked is True
+        run.__setitem__.assert_any_call("alidade.model_run_hash", ORIGIN)
+        assert result.alidade_linked is True
 
 
 class TestFromCheckpointHappyPath:
@@ -726,10 +726,10 @@ class TestFromCheckpointHappyPath:
         run = _make_run_mock()
         with patch("aim.Run", return_value=run):
             result = start_eval_run_from_checkpoint(checkpoint=ckpt, task_set="cola")
-        run.__setitem__.assert_any_call("astrolabe.model_run_hash", ORIGIN)
-        run.__setitem__.assert_any_call("astrolabe.kind", "eval")
-        run.__setitem__.assert_any_call("astrolabe.task_set", "cola")
-        assert result.astrolabe_linked is True
+        run.__setitem__.assert_any_call("alidade.model_run_hash", ORIGIN)
+        run.__setitem__.assert_any_call("alidade.kind", "eval")
+        run.__setitem__.assert_any_call("alidade.task_set", "cola")
+        assert result.alidade_linked is True
 
     def test_a_derived_checkpoint_attributes_to_the_original_training(self, tmp_path):
         """The GLUE-probe shape. Surgery copies the origin run forward
@@ -745,8 +745,8 @@ class TestFromCheckpointHappyPath:
         run = _make_run_mock()
         with patch("aim.Run", return_value=run):
             result = start_eval_run_from_checkpoint(checkpoint=derived, task_set="cola")
-        run.__setitem__.assert_any_call("astrolabe.model_run_hash", ORIGIN)
-        assert result.astrolabe_linked is True
+        run.__setitem__.assert_any_call("alidade.model_run_hash", ORIGIN)
+        assert result.alidade_linked is True
 
     def test_accepts_an_already_loaded_state_dict(self, tmp_path):
         """Script-level eval has usually already loaded the file to run
@@ -757,8 +757,8 @@ class TestFromCheckpointHappyPath:
         run = _make_run_mock()
         with patch("aim.Run", return_value=run):
             result = start_eval_run_from_checkpoint(checkpoint=state, task_set="glue")
-        run.__setitem__.assert_any_call("astrolabe.model_run_hash", ORIGIN)
-        assert result.astrolabe_linked is True
+        run.__setitem__.assert_any_call("alidade.model_run_hash", ORIGIN)
+        assert result.alidade_linked is True
 
     def test_falls_back_to_eval_task_set_outside_a_submit(self, tmp_path):
         ckpt = _ckpt(tmp_path, aim_run_hash=ORIGIN)
@@ -769,7 +769,7 @@ class TestFromCheckpointHappyPath:
 
 
 class TestSubmitIdentity:
-    """An eval script launched as an astrolabe step inherits the submit's
+    """An eval script launched as an alidade step inherits the submit's
     identity from the environment. Before this, that identity was in the
     process and thrown away: evals could not be filtered by submitter or
     repo, and the GPU time they burned billed to nothing.
@@ -793,7 +793,7 @@ class TestSubmitIdentity:
         the dedicated env var as authoritative. Matching it keeps one
         answer to 'which experiment am I in' across the library."""
         monkeypatch.setenv("ALIDADE_EXPERIMENT_NAME", "authoritative")
-        monkeypatch.setenv("AIM_RUN_TAGS", "astrolabe.experiment=stale")
+        monkeypatch.setenv("AIM_RUN_TAGS", "alidade.experiment=stale")
         run = _make_run_mock()
         factory = MagicMock(return_value=run)
         with patch("aim.Run", factory):
@@ -801,14 +801,14 @@ class TestSubmitIdentity:
                 model_run_hash="abc", task_set="glue", aim_url="aim://test"
             )
         assert factory.call_args.kwargs["experiment"] == "authoritative"
-        run.__setitem__.assert_any_call("astrolabe.experiment", "authoritative")
+        run.__setitem__.assert_any_call("alidade.experiment", "authoritative")
 
     def test_blank_tag_values_are_not_written(self, monkeypatch):
         """A tag present but empty is worse than absent — the dashboard
         renders it as a real value, so an empty submitter reads as a
         submitter named nothing rather than an unattributed run."""
         monkeypatch.setenv(
-            "AIM_RUN_TAGS", "astrolabe.user=,astrolabe.submit_id=s-1"
+            "AIM_RUN_TAGS", "alidade.user=,alidade.submit_id=s-1"
         )
         run = _make_run_mock()
         with patch("aim.Run", return_value=run):
@@ -816,8 +816,8 @@ class TestSubmitIdentity:
                 model_run_hash="abc", task_set="glue", aim_url="aim://test"
             )
         written = [c.args[0] for c in run.__setitem__.call_args_list]
-        assert "astrolabe.user" not in written
-        assert "astrolabe.submit_id" in written
+        assert "alidade.user" not in written
+        assert "alidade.submit_id" in written
 
     def test_malformed_tag_payload_does_not_break_the_eval(self, monkeypatch):
         """parse_aim_run_tags is deliberately forgiving. An eval that has
@@ -830,24 +830,24 @@ class TestSubmitIdentity:
                 model_run_hash="abc", task_set="glue", aim_url="aim://test"
             )
         assert factory.call_args.kwargs["experiment"] == "eval/glue"
-        run.__setitem__.assert_any_call("astrolabe.model_run_hash", "abc")
+        run.__setitem__.assert_any_call("alidade.model_run_hash", "abc")
 
     def test_identity_tags_land_on_the_run(self, monkeypatch):
         monkeypatch.setenv(
             "AIM_RUN_TAGS",
-            "astrolabe.submit_id=s-9,astrolabe.version=v2,"
-            "astrolabe.user=nathan,astrolabe.gpu_rate_cents_per_hour=250",
+            "alidade.submit_id=s-9,alidade.version=v2,"
+            "alidade.user=nathan,alidade.gpu_rate_cents_per_hour=250",
         )
         run = _make_run_mock()
         with patch("aim.Run", return_value=run):
             start_eval_run(
                 model_run_hash="abc", task_set="glue", aim_url="aim://test"
             )
-        run.__setitem__.assert_any_call("astrolabe.submit_id", "s-9")
-        run.__setitem__.assert_any_call("astrolabe.version", "v2")
-        run.__setitem__.assert_any_call("astrolabe.user", "nathan")
+        run.__setitem__.assert_any_call("alidade.submit_id", "s-9")
+        run.__setitem__.assert_any_call("alidade.version", "v2")
+        run.__setitem__.assert_any_call("alidade.user", "nathan")
         run.__setitem__.assert_any_call(
-            "astrolabe.gpu_rate_cents_per_hour", "250"
+            "alidade.gpu_rate_cents_per_hour", "250"
         )
 
     def test_the_contract_tags_survive_a_colliding_identity(self, monkeypatch):
@@ -857,8 +857,8 @@ class TestSubmitIdentity:
         contract tags overwrite it."""
         monkeypatch.setenv(
             "AIM_RUN_TAGS",
-            "astrolabe.kind=metadata,astrolabe.task_set=wrong,"
-            "astrolabe.model_run_hash=hijacked",
+            "alidade.kind=metadata,alidade.task_set=wrong,"
+            "alidade.model_run_hash=hijacked",
         )
         run = _make_run_mock()
         with patch("aim.Run", return_value=run):
@@ -866,9 +866,9 @@ class TestSubmitIdentity:
                 model_run_hash="real-model", task_set="glue", aim_url="aim://test"
             )
         final = dict(c.args for c in run.__setitem__.call_args_list)
-        assert final["astrolabe.kind"] == "eval"
-        assert final["astrolabe.task_set"] == "glue"
-        assert final["astrolabe.model_run_hash"] == "real-model"
+        assert final["alidade.kind"] == "eval"
+        assert final["alidade.task_set"] == "glue"
+        assert final["alidade.model_run_hash"] == "real-model"
 
     def test_an_unlinked_run_gets_the_same_filing_and_identity(
         self, tmp_path, monkeypatch
@@ -876,7 +876,7 @@ class TestSubmitIdentity:
         """A run stamped with its model later must be indistinguishable
         from one that resolved on the first try."""
         monkeypatch.setenv("ALIDADE_EXPERIMENT_NAME", "latent-bert")
-        monkeypatch.setenv("AIM_RUN_TAGS", "astrolabe.submit_id=s-3")
+        monkeypatch.setenv("AIM_RUN_TAGS", "alidade.submit_id=s-3")
         ckpt = _ckpt(tmp_path)
         run = _make_run_mock()
         factory = MagicMock(return_value=run)
@@ -885,11 +885,11 @@ class TestSubmitIdentity:
                 checkpoint=ckpt, task_set="glue", on_missing_parent="warn"
             )
         assert factory.call_args.kwargs["experiment"] == "latent-bert"
-        run.__setitem__.assert_any_call("astrolabe.submit_id", "s-3")
+        run.__setitem__.assert_any_call("alidade.submit_id", "s-3")
 
     def test_log_eval_table_inherits_it(self, monkeypatch):
         monkeypatch.setenv("ALIDADE_EXPERIMENT_NAME", "latent-bert")
-        monkeypatch.setenv("AIM_RUN_TAGS", "astrolabe.user=nathan")
+        monkeypatch.setenv("AIM_RUN_TAGS", "alidade.user=nathan")
         run = _make_run_mock()
         factory = MagicMock(return_value=run)
         with patch("aim.Run", factory):
@@ -900,7 +900,7 @@ class TestSubmitIdentity:
                 aim_url="aim://test",
             )
         assert factory.call_args.kwargs["experiment"] == "latent-bert"
-        run.__setitem__.assert_any_call("astrolabe.user", "nathan")
+        run.__setitem__.assert_any_call("alidade.user", "nathan")
 
 
 class TestRaisesByDefault:
@@ -930,7 +930,7 @@ class TestRaisesByDefault:
 
 
 class TestExternalName:
-    """Scoring a model astrolabe never trained."""
+    """Scoring a model alidade never trained."""
 
     def test_registers_the_model_and_links_the_eval_to_it(self, tmp_path):
         plain = export_checkpoint({}, tmp_path / "plain.pt", fmt="pt")
@@ -940,13 +940,13 @@ class TestExternalName:
                 checkpoint=plain, task_set="glue", external_name="roberta-base"
             )
         entry.__setitem__.assert_any_call(
-            "astrolabe.kind", "external_checkpoint"
+            "alidade.kind", "external_checkpoint"
         )
         assert entry.name == "roberta-base"
         evalrun.__setitem__.assert_any_call(
-            "astrolabe.model_run_hash", "entry-hash"
+            "alidade.model_run_hash", "entry-hash"
         )
-        assert result.astrolabe_linked is True
+        assert result.alidade_linked is True
 
     def test_the_entry_is_closed_so_it_does_not_read_as_in_flight(self, tmp_path):
         plain = export_checkpoint({}, tmp_path / "plain.pt", fmt="pt")
@@ -968,7 +968,7 @@ class TestExternalName:
             start_eval_run_from_checkpoint(
                 checkpoint=ckpt, task_set="glue", external_name="roberta-base"
             )
-        run.__setitem__.assert_any_call("astrolabe.model_run_hash", ORIGIN)
+        run.__setitem__.assert_any_call("alidade.model_run_hash", ORIGIN)
         # One run: the eval. No entry was registered.
         assert factory.call_count == 1
 
@@ -981,7 +981,7 @@ class TestExternalName:
                 checkpoint=plain, task_set="glue",
                 model_run_hash="explicit", external_name="roberta-base",
             )
-        run.__setitem__.assert_any_call("astrolabe.model_run_hash", "explicit")
+        run.__setitem__.assert_any_call("alidade.model_run_hash", "explicit")
         assert factory.call_count == 1
 
     @pytest.mark.parametrize("bad", ["", "   ", 7])
@@ -1012,7 +1012,7 @@ class TestExternalName:
         experiment's own rows — a row with no version would sit outside
         every version group and vanish from the page."""
         monkeypatch.setenv("ALIDADE_EXPERIMENT_NAME", "latent-bert")
-        monkeypatch.setenv("AIM_RUN_TAGS", "astrolabe.version=v3")
+        monkeypatch.setenv("AIM_RUN_TAGS", "alidade.version=v3")
         plain = export_checkpoint({}, tmp_path / "plain.pt", fmt="pt")
         entry = _make_run_mock("entry")
         factory = MagicMock(side_effect=[entry, _make_run_mock("eval")])
@@ -1021,7 +1021,7 @@ class TestExternalName:
                 checkpoint=plain, task_set="glue", external_name="roberta-base"
             )
         assert factory.call_args_list[0].kwargs["experiment"] == "latent-bert"
-        entry.__setitem__.assert_any_call("astrolabe.version", "v3")
+        entry.__setitem__.assert_any_call("alidade.version", "v3")
 
 
 class TestPublicExports:

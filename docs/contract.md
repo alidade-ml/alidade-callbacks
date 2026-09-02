@@ -18,7 +18,7 @@ When the env var is set, it wins over any constructor argument. Alidade sets it 
 
 ### 2. Honors `AIM_RUN_TAGS`
 
-Format: `key1=val1,key2=val2,...`. Whitespace tolerated. Each key/value becomes a tag on the Aim run. Alidade writes `astrolabe.experiment`, `astrolabe.version`, `astrolabe.submit_id`, `astrolabe.user` here on every orchestrated run. Standalone users can write whatever they want.
+Format: `key1=val1,key2=val2,...`. Whitespace tolerated. Each key/value becomes a tag on the Aim run. Alidade writes `alidade.experiment`, `alidade.version`, `alidade.submit_id`, `alidade.user` here on every orchestrated run. Standalone users can write whatever they want.
 
 ### 3. Connects where the engine says, in one fixed order
 
@@ -37,7 +37,7 @@ as a URL, so the path is a destination, not a special case.
 
 ### 4. Closes the run cleanly at end of training
 
-`astrolabe.status` tag is written before the Aim run is closed:
+`alidade.status` tag is written before the Aim run is closed:
 
 - `completed` — training finished cleanly (the framework's "fit end" hook fired)
 - `failed` — training raised an exception (the framework's exception hook fired)

@@ -3,20 +3,20 @@
 Dispatches by ``config.framework`` to one of four drivers:
 
 - ``raw``: no framework, no model, no torch. Directly opens
-  ``AstrolabeRun`` (from ``pytorch.py``) and drives ``track()`` /
+  ``AlidadeRun`` (from ``pytorch.py``) and drives ``track()`` /
   ``close()`` in a loop. Used by ``test_core.py``, ``test_pytorch.py``,
   ``test_distributed.py`` — those tests are about the callback's
   internal behavior (buffer, drainer, schema-finalize, rank gating),
   not about how a framework calls into it.
 - ``composer``: **real** Composer ``Trainer`` fitting a single
   ``nn.Linear(4, 1)`` model on deterministic fake data. The Composer
-  event loop drives ``AstrolabeComposerLogger`` for real; batch_end,
+  event loop drives ``AlidadeComposerLogger`` for real; batch_end,
   epoch_end, close fire the way they do in production.
 - ``lightning``: real Lightning ``Trainer`` with a tiny
-  ``LightningModule``. Drives ``AstrolabeLightningLogger`` via the
+  ``LightningModule``. Drives ``AlidadeLightningLogger`` via the
   actual Lightning event loop.
 - ``hf``: real HuggingFace ``Trainer`` with a tiny model and a toy
-  dataset. Drives ``AstrolabeHFTrainerCallback`` via the real HF
+  dataset. Drives ``AlidadeHFTrainerCallback`` via the real HF
   event loop.
 
 Why real training for framework paths: the callback contracts are
@@ -27,7 +27,7 @@ integration would catch. Real training is ~15 lines per framework and
 fully deterministic (seeded torch, fixed tiny data, CPU only).
 
 Why the raw path stays exerciser-shaped: there's no framework to
-drive. The tests are exercising ``AstrolabeRun.track()`` directly.
+drive. The tests are exercising ``AlidadeRun.track()`` directly.
 Adding a tiny linear layer would be theater — it wouldn't test
 anything the direct call doesn't already.
 
@@ -262,16 +262,16 @@ def _metric_name(step: int, index: int, new_metrics_at: list[int]) -> str:
 
 
 def _apply_fault_injection(config: DriverConfig, run) -> None:
-    """Wire fault-injection hooks onto the just-opened AstrolabeRun.
+    """Wire fault-injection hooks onto the just-opened AlidadeRun.
 
     Reads driver_flags and modifies the buffer / drainer as directed.
-    Called AFTER ``run.__enter__`` — at that point ``run._run._astrolabe_buffer``
+    Called AFTER ``run.__enter__`` — at that point ``run._run._alidade_buffer``
     is the drainer-owning ``_MetricBuffer`` instance the callback lib
     attached in ``_core.open_aim_run``.
     """
     if run._run is None:
         return  # not rank-zero, no buffer to patch
-    buffer = getattr(run._run, "_astrolabe_buffer", None)
+    buffer = getattr(run._run, "_alidade_buffer", None)
     if buffer is None:
         return
 
@@ -374,13 +374,13 @@ def _apply_fault_injection(config: DriverConfig, run) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Raw driver — direct AstrolabeRun
+# Raw driver — direct AlidadeRun
 # ---------------------------------------------------------------------------
 
 
 def _run_raw(config: DriverConfig) -> str | None:
-    """Direct AstrolabeRun exerciser. No torch, no framework."""
-    from alidade_callbacks.pytorch import AstrolabeRun
+    """Direct AlidadeRun exerciser. No torch, no framework."""
+    from alidade_callbacks.pytorch import AlidadeRun
     from alidade_callbacks._distributed import is_rank_zero
 
     # Initialize torch.distributed if the scenario asked us to. Must
@@ -420,7 +420,7 @@ def _run_raw(config: DriverConfig) -> str | None:
     if use_ctx:
         captured_hash: str | None = None
         try:
-            with AstrolabeRun(
+            with AlidadeRun(
                 aim_url=config.aim_url,
                 experiment_name=config.experiment_name,
                 tags=config.tags,
@@ -439,7 +439,7 @@ def _run_raw(config: DriverConfig) -> str | None:
             raise
 
     # Standard open/close path
-    run = AstrolabeRun(
+    run = AlidadeRun(
         aim_url=config.aim_url,
         experiment_name=config.experiment_name,
         tags=config.tags,
@@ -536,7 +536,7 @@ def _run_composer(config: DriverConfig) -> str | None:
 
     Emits explicit ``metric_0..metric_N`` per batch via a Callback that
     calls Composer's ``Logger.log_metrics`` — that's the entry point
-    LoggerDestinations (including AstrolabeComposerLogger) receive.
+    LoggerDestinations (including AlidadeComposerLogger) receive.
     Also emits ``val/*`` metrics at validation-step boundaries when the
     config asks for them.
     """
@@ -546,7 +546,7 @@ def _run_composer(config: DriverConfig) -> str | None:
     from composer import Trainer
     from composer.core import Callback
     from composer.models import ComposerModel
-    from alidade_callbacks.composer import AstrolabeComposerLogger
+    from alidade_callbacks.composer import AlidadeComposerLogger
 
     class TinyComposer(ComposerModel):
         def __init__(self):
@@ -585,7 +585,7 @@ def _run_composer(config: DriverConfig) -> str | None:
     y = torch.randn(config.steps, 1)
     loader = DataLoader(TensorDataset(x, y), batch_size=1)
 
-    logger = AstrolabeComposerLogger(
+    logger = AlidadeComposerLogger(
         aim_url=config.aim_url,
         experiment_name=config.experiment_name,
         tags=config.tags,
@@ -622,7 +622,7 @@ def _run_lightning(config: DriverConfig) -> str | None:
     """Real Lightning Trainer with a tiny LightningModule.
 
     Emits ``metric_0..metric_N`` per training batch via ``self.log(...)``
-    (which routes to Lightning callbacks including AstrolabeLightningLogger).
+    (which routes to Lightning callbacks including AlidadeLightningLogger).
     Wires a val_dataloader when config.validation_at is non-empty so
     ``validation_step`` fires and emits ``val/loss``.
     """
@@ -630,7 +630,7 @@ def _run_lightning(config: DriverConfig) -> str | None:
     import torch.nn as nn
     import lightning
     from torch.utils.data import DataLoader, TensorDataset
-    from alidade_callbacks.lightning import AstrolabeLightningLogger
+    from alidade_callbacks.lightning import AlidadeLightningLogger
 
     metrics_per_step = config.metrics_per_step
     new_metrics_at = set(config.new_metrics_at)
@@ -680,7 +680,7 @@ def _run_lightning(config: DriverConfig) -> str | None:
         vy = torch.randn(4, 1)
         val_loader = DataLoader(TensorDataset(vx, vy), batch_size=1)
 
-    logger = AstrolabeLightningLogger(
+    logger = AlidadeLightningLogger(
         aim_url=config.aim_url,
         experiment_name=config.experiment_name,
         tags=config.tags,
@@ -713,8 +713,8 @@ def _run_hf(config: DriverConfig) -> str | None:
 
     Emits ``metric_0..metric_N`` per training step by mutating HF's
     ``logs`` dict via a NamedMetricEmitter callback that fires BEFORE
-    ``AstrolabeHFTrainerCallback.on_log`` (order-in-callbacks-list wins).
-    Astrolabe's on_log passes through unrecognized keys, so our named
+    ``AlidadeHFTrainerCallback.on_log`` (order-in-callbacks-list wins).
+    Alidade's on_log passes through unrecognized keys, so our named
     metrics land in Aim.
 
     When ``config.validation_at`` is non-empty, wires an ``eval_dataset``
@@ -724,7 +724,7 @@ def _run_hf(config: DriverConfig) -> str | None:
     import torch.nn as nn
     from transformers import Trainer, TrainingArguments, TrainerCallback
     from torch.utils.data import Dataset
-    from alidade_callbacks.huggingface import AstrolabeHFTrainerCallback
+    from alidade_callbacks.huggingface import AlidadeHFTrainerCallback
 
     metrics_per_step = config.metrics_per_step
     new_metrics_at = set(config.new_metrics_at)
@@ -754,9 +754,9 @@ def _run_hf(config: DriverConfig) -> str | None:
     class NamedMetricEmitter(TrainerCallback):
         """Mutates HF's logs dict to add ``metric_0..N`` per step.
 
-        Fires before AstrolabeHFTrainerCallback in the callbacks list;
+        Fires before AlidadeHFTrainerCallback in the callbacks list;
         the logs dict is shared across on_log calls so our additions
-        reach Astrolabe's on_log.
+        reach Alidade's on_log.
         """
 
         def on_log(self, args, state, control, logs=None, **kwargs):
@@ -773,7 +773,7 @@ def _run_hf(config: DriverConfig) -> str | None:
                 logs[f"metric_new_step{step}"] = float(step)
 
     emitter = NamedMetricEmitter()
-    cb = AstrolabeHFTrainerCallback(
+    cb = AlidadeHFTrainerCallback(
         aim_url=config.aim_url,
         experiment_name=config.experiment_name,
         tags=config.tags,
@@ -795,7 +795,7 @@ def _run_hf(config: DriverConfig) -> str | None:
     if eval_ds is not None:
         # Eval once at end of training so on_evaluate fires + emits
         # val/loss (via HF's built-in ``eval_loss`` key that
-        # AstrolabeHFTrainerCallback renames to val/loss).
+        # AlidadeHFTrainerCallback renames to val/loss).
         args_kwargs["eval_strategy"] = "epoch"
         args_kwargs["per_device_eval_batch_size"] = 1
 
@@ -805,7 +805,7 @@ def _run_hf(config: DriverConfig) -> str | None:
         args=args,
         train_dataset=train_ds,
         eval_dataset=eval_ds,
-        # Order matters: emitter mutates logs BEFORE Astrolabe sees it.
+        # Order matters: emitter mutates logs BEFORE Alidade sees it.
         callbacks=[emitter, cb],
     )
     trainer.train()

@@ -2,9 +2,9 @@
 
 Public API::
 
-    from alidade_callbacks import AstrolabeComposerLogger    # MosaicML Composer
-    from alidade_callbacks import AstrolabeLightningLogger   # PyTorch Lightning
-    from alidade_callbacks import AstrolabeHFTrainerCallback # HuggingFace Trainer
+    from alidade_callbacks import AlidadeComposerLogger    # MosaicML Composer
+    from alidade_callbacks import AlidadeLightningLogger   # PyTorch Lightning
+    from alidade_callbacks import AlidadeHFTrainerCallback # HuggingFace Trainer
     from alidade_callbacks import Run                        # raw PyTorch / JAX / custom loops
     from alidade_callbacks import log_eval_table             # post-training benchmark results
 
@@ -12,7 +12,7 @@ The per-framework training callbacks (and the raw-loop ``Run`` context
 manager) stream ``train/`` and ``val/`` metrics as your model trains.
 ``log_eval_table`` / ``start_eval_run`` log post-training benchmark
 suites (GLUE, MMLU, …) under the ``eval/<task_set>/<metric>`` namespace
-on a separate Aim run — that's what populates astrolabe's dashboard
+on a separate Aim run — that's what populates alidade's dashboard
 Eval tab.
 
 Each per-framework class is imported lazily — `import alidade_callbacks`
@@ -61,10 +61,10 @@ from alidade_callbacks.eval_results import (
 __version__ = "2.0.0"
 
 __all__ = [
-    "AstrolabeComposerLogger",
-    "AstrolabeComposerCheckpointer",
-    "AstrolabeLightningCheckpointer",
-    "AstrolabeHFCheckpointer",
+    "AlidadeComposerLogger",
+    "AlidadeComposerCheckpointer",
+    "AlidadeLightningCheckpointer",
+    "AlidadeHFCheckpointer",
     "CheckpointMeta",
     "build_checkpoint_meta",
     "read_checkpoint_meta",
@@ -72,9 +72,9 @@ __all__ = [
     "stamp_checkpoint",
     "export_checkpoint",
     "save_checkpoint",
-    "AstrolabeLightningLogger",
-    "AstrolabeHFTrainerCallback",
-    "AstrolabeRun",
+    "AlidadeLightningLogger",
+    "AlidadeHFTrainerCallback",
+    "AlidadeRun",
     "Run",
     "log_eval_table",
     "log_samples",
@@ -93,18 +93,18 @@ __all__ = [
 # pull in Composer/Lightning/Transformers eagerly and the base install
 # (aim only) would fail.
 def __getattr__(name: str):
-    if name == "AstrolabeComposerLogger":
-        from alidade_callbacks.composer import AstrolabeComposerLogger
-        return AstrolabeComposerLogger
-    if name == "AstrolabeComposerCheckpointer":
-        from alidade_callbacks.composer import AstrolabeComposerCheckpointer
-        return AstrolabeComposerCheckpointer
-    if name == "AstrolabeLightningCheckpointer":
-        from alidade_callbacks.lightning import AstrolabeLightningCheckpointer
-        return AstrolabeLightningCheckpointer
-    if name == "AstrolabeHFCheckpointer":
-        from alidade_callbacks.huggingface import AstrolabeHFCheckpointer
-        return AstrolabeHFCheckpointer
+    if name == "AlidadeComposerLogger":
+        from alidade_callbacks.composer import AlidadeComposerLogger
+        return AlidadeComposerLogger
+    if name == "AlidadeComposerCheckpointer":
+        from alidade_callbacks.composer import AlidadeComposerCheckpointer
+        return AlidadeComposerCheckpointer
+    if name == "AlidadeLightningCheckpointer":
+        from alidade_callbacks.lightning import AlidadeLightningCheckpointer
+        return AlidadeLightningCheckpointer
+    if name == "AlidadeHFCheckpointer":
+        from alidade_callbacks.huggingface import AlidadeHFCheckpointer
+        return AlidadeHFCheckpointer
     if name in ("CheckpointMeta", "build_checkpoint_meta",
                 "read_checkpoint_meta", "export_checkpoint",
                 "save_derived_checkpoint", "stamp_checkpoint"):
@@ -114,13 +114,13 @@ def __getattr__(name: str):
     if name == "save_checkpoint":
         from alidade_callbacks.pytorch import save_checkpoint
         return save_checkpoint
-    if name == "AstrolabeLightningLogger":
-        from alidade_callbacks.lightning import AstrolabeLightningLogger
-        return AstrolabeLightningLogger
-    if name == "AstrolabeHFTrainerCallback":
-        from alidade_callbacks.huggingface import AstrolabeHFTrainerCallback
-        return AstrolabeHFTrainerCallback
-    if name in ("AstrolabeRun", "Run"):
-        from alidade_callbacks.pytorch import AstrolabeRun
-        return AstrolabeRun
+    if name == "AlidadeLightningLogger":
+        from alidade_callbacks.lightning import AlidadeLightningLogger
+        return AlidadeLightningLogger
+    if name == "AlidadeHFTrainerCallback":
+        from alidade_callbacks.huggingface import AlidadeHFTrainerCallback
+        return AlidadeHFTrainerCallback
+    if name in ("AlidadeRun", "Run"):
+        from alidade_callbacks.pytorch import AlidadeRun
+        return AlidadeRun
     raise AttributeError(f"module 'alidade_callbacks' has no attribute {name!r}")

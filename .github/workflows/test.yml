@@ -42,5 +42,5 @@ jobs:
         with:
           python-version: '3.12'
 
-      - name: Callbacks doesn't import astrolabe.* (boundary)
+      - name: Callbacks doesn't import alidade.* (boundary)
         run: python tools/check-no-engine-import.py

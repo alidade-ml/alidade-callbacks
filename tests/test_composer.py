@@ -1,4 +1,4 @@
-"""Tests for ``AstrolabeComposerLogger``.
+"""Tests for ``AlidadeComposerLogger``.
 
 Composer-specific contract: this is a ``LoggerDestination``, so it
 receives every metric the user logs via Composer's ``Logger`` (via
@@ -11,7 +11,7 @@ from __future__ import annotations
 import pytest
 
 from alidade_callbacks.composer import (
-    AstrolabeComposerLogger,
+    AlidadeComposerLogger,
     parse_aim_run_tags,
     _normalize_composer_metric_name,
     _to_scalar,
@@ -42,30 +42,30 @@ class TestParseAimRunTagsReExport:
 
 
 class TestConstructorPrecedence:
-    """Astrolabe env vars beat constructor args (full contract tested
+    """Alidade env vars beat constructor args (full contract tested
     in test_core.py; this verifies the wiring through to the callback)."""
 
     def test_env_experiment_name_wins(self, monkeypatch):
         monkeypatch.setenv("ALIDADE_EXPERIMENT_NAME", "from-env")
-        cb = AstrolabeComposerLogger(experiment_name="hardcoded-in-yaml")
+        cb = AlidadeComposerLogger(experiment_name="hardcoded-in-yaml")
         assert cb._cfg.experiment_name == "from-env"
 
     def test_explicit_arg_used_when_env_unset(self, monkeypatch):
-        cb = AstrolabeComposerLogger(experiment_name="standalone-name")
+        cb = AlidadeComposerLogger(experiment_name="standalone-name")
         assert cb._cfg.experiment_name == "standalone-name"
 
     def test_env_aim_url_wins(self, monkeypatch):
         monkeypatch.setenv("ALIDADE_AIM_URL", "aim://from-env:9999")
-        cb = AstrolabeComposerLogger(aim_url="aim://from-arg:1111")
+        cb = AlidadeComposerLogger(aim_url="aim://from-arg:1111")
         assert cb._cfg.aim_url == "aim://from-env:9999"
 
     def test_aim_url_default_when_neither_set(self):
-        cb = AstrolabeComposerLogger()
+        cb = AlidadeComposerLogger()
         assert cb._cfg.aim_url == "aim://localhost:43800"
 
     def test_env_tags_win(self, monkeypatch):
         monkeypatch.setenv("AIM_RUN_TAGS", "from=env")
-        cb = AstrolabeComposerLogger(tags={"from": "arg"})
+        cb = AlidadeComposerLogger(tags={"from": "arg"})
         assert cb._cfg.tags == {"from": "env"}
 
 
@@ -198,19 +198,19 @@ class TestToScalarEdgeCases:
 
 class TestInit:
     def test_writes_tags_to_run(self, fake_aim_run):
-        cb = AstrolabeComposerLogger(
+        cb = AlidadeComposerLogger(
             aim_url="aim://test:1",
             experiment_name="exp",
-            tags={"astrolabe.version": "v3", "astrolabe.submit_id": "abc"},
+            tags={"alidade.version": "v3", "alidade.submit_id": "abc"},
         )
         cb.init(state=None, logger_obj=None)
-        assert fake_aim_run[-1].tags["astrolabe.version"] == "v3"
-        assert fake_aim_run[-1].tags["astrolabe.submit_id"] == "abc"
+        assert fake_aim_run[-1].tags["alidade.version"] == "v3"
+        assert fake_aim_run[-1].tags["alidade.submit_id"] == "abc"
 
     def test_handles_missing_aim_module(self, monkeypatch):
         import sys
         monkeypatch.setitem(sys.modules, "aim", None)
-        cb = AstrolabeComposerLogger()
+        cb = AlidadeComposerLogger()
         # Must not raise.
         cb.init(state=None, logger_obj=None)
         assert cb._run is None
@@ -219,12 +219,12 @@ class TestInit:
         import sys
         monkeypatch.setitem(sys.modules, "aim", None)
         monkeypatch.setenv("ALIDADE_CALLBACK_STRICT", "1")
-        cb = AstrolabeComposerLogger()
+        cb = AlidadeComposerLogger()
         with pytest.raises(RuntimeError, match="aim not installed"):
             cb.init(state=None, logger_obj=None)
 
     def test_double_init_does_not_re_open(self, fake_aim_run):
-        cb = AstrolabeComposerLogger()
+        cb = AlidadeComposerLogger()
         cb.init(state=None, logger_obj=None)
         first_run = cb._run
         cb.init(state=None, logger_obj=None)
@@ -237,7 +237,7 @@ class TestInit:
         class FakeState:
             run_name = "bert-tiny"
 
-        cb = AstrolabeComposerLogger()
+        cb = AlidadeComposerLogger()
         cb.init(state=FakeState(), logger_obj=None)
         assert fake_aim_run[-1].name == "bert-tiny"
 
@@ -248,12 +248,12 @@ class TestInit:
         class FakeState:
             run_name = "composer-default-name"
 
-        cb = AstrolabeComposerLogger(run_name="LatentBERT")
+        cb = AlidadeComposerLogger(run_name="LatentBERT")
         cb.init(state=FakeState(), logger_obj=None)
         assert fake_aim_run[-1].name == "LatentBERT"
 
     def test_explicit_run_name_used_when_composer_has_none(self, fake_aim_run):
-        cb = AstrolabeComposerLogger(run_name="LatentBERT")
+        cb = AlidadeComposerLogger(run_name="LatentBERT")
         cb.init(state=None, logger_obj=None)
         assert fake_aim_run[-1].name == "LatentBERT"
 
@@ -268,24 +268,24 @@ class TestLogMetricsEdgeCases:
     flows through. Edge cases first."""
 
     def test_empty_dict_is_noop(self, fake_aim_run):
-        cb = AstrolabeComposerLogger()
+        cb = AlidadeComposerLogger()
         cb.init(state=None, logger_obj=None)
         cb.log_metrics({})
         assert fake_aim_run[-1].tracked == []
 
     def test_none_is_noop(self, fake_aim_run):
-        cb = AstrolabeComposerLogger()
+        cb = AlidadeComposerLogger()
         cb.init(state=None, logger_obj=None)
         cb.log_metrics(None)  # type: ignore[arg-type]
         assert fake_aim_run[-1].tracked == []
 
     def test_no_run_is_noop(self):
-        cb = AstrolabeComposerLogger()
+        cb = AlidadeComposerLogger()
         # init never called → _run stays None
         cb.log_metrics({"x": 1.0})  # must not raise
 
     def test_non_numeric_value_skipped(self, fake_aim_run):
-        cb = AstrolabeComposerLogger()
+        cb = AlidadeComposerLogger()
         cb.init(state=None, logger_obj=None)
         cb.log_metrics({"good": 1.0, "bad_str": "nope", "bad_dict": {}})
         names = [t["name"] for t in fake_aim_run[-1].tracked]
@@ -295,7 +295,7 @@ class TestLogMetricsEdgeCases:
 
     def test_rank_nonzero_is_noop(self, monkeypatch, fake_aim_run):
         monkeypatch.setenv("RANK", "2")
-        cb = AstrolabeComposerLogger()
+        cb = AlidadeComposerLogger()
         cb.init(state=None, logger_obj=None)  # no-op on non-rank-zero
         cb.log_metrics({"x": 1.0})
         assert fake_aim_run == []  # no run ever opened
@@ -306,7 +306,7 @@ class TestLogMetricsHappyPath:
         # Critical for user trust: a custom metric called
         # "MaskedLanguagePerplexity" lands in Aim under exactly that
         # name, not buried under our prefix.
-        cb = AstrolabeComposerLogger()
+        cb = AlidadeComposerLogger()
         cb.init(state=None, logger_obj=None)
         cb.log_metrics({"MaskedLanguagePerplexity": 4.2}, step=10)
         tracked = fake_aim_run[-1].tracked
@@ -316,7 +316,7 @@ class TestLogMetricsHappyPath:
         )
 
     def test_composer_train_loss_renamed(self, fake_aim_run):
-        cb = AstrolabeComposerLogger()
+        cb = AlidadeComposerLogger()
         cb.init(state=None, logger_obj=None)
         cb.log_metrics({"loss/train/total": 0.5}, step=1)
         names = [t["name"] for t in fake_aim_run[-1].tracked]
@@ -324,17 +324,17 @@ class TestLogMetricsHappyPath:
         assert "loss/train/total" not in names
 
     def test_composer_eval_metric_renamed(self, fake_aim_run):
-        cb = AstrolabeComposerLogger()
+        cb = AlidadeComposerLogger()
         cb.init(state=None, logger_obj=None)
         cb.log_metrics({"metrics/eval/MaskedLanguagePerplexity": 4.2}, step=100)
         names = [t["name"] for t in fake_aim_run[-1].tracked]
         # v1.0.0: Composer's ``metrics/eval/*`` re-namespaced as ``val/*``
-        # to align with astrolabe's eval-runs schema.
+        # to align with alidade's eval-runs schema.
         assert "val/MaskedLanguagePerplexity" in names
 
     def test_tensors_unwrapped(self, fake_aim_run):
         import torch
-        cb = AstrolabeComposerLogger()
+        cb = AlidadeComposerLogger()
         cb.init(state=None, logger_obj=None)
         cb.log_metrics({"loss": torch.tensor(0.7)}, step=5)
         tracked = fake_aim_run[-1].tracked
@@ -348,19 +348,19 @@ class TestLogMetricsHappyPath:
 
 class TestLogHyperparameters:
     def test_writes_to_run(self, fake_aim_run):
-        cb = AstrolabeComposerLogger()
+        cb = AlidadeComposerLogger()
         cb.init(state=None, logger_obj=None)
         cb.log_hyperparameters({"lr": 1e-4, "batch_size": 32})
         assert fake_aim_run[-1].tags["hparams"] == {"lr": 1e-4, "batch_size": 32}
 
     def test_empty_is_noop(self, fake_aim_run):
-        cb = AstrolabeComposerLogger()
+        cb = AlidadeComposerLogger()
         cb.init(state=None, logger_obj=None)
         cb.log_hyperparameters({})
         assert "hparams" not in fake_aim_run[-1].tags
 
     def test_no_run_is_noop(self):
-        cb = AstrolabeComposerLogger()
+        cb = AlidadeComposerLogger()
         cb.log_hyperparameters({"lr": 1e-4})  # must not raise
 
 
@@ -381,13 +381,13 @@ class TestLifecycle:
             timestamp = FakeTimestamp()
             loss = 999  # would have been logged in old design; now ignored
 
-        cb = AstrolabeComposerLogger()
+        cb = AlidadeComposerLogger()
         cb.init(state=None, logger_obj=None)
         cb.batch_end(state=FakeState(), logger_obj=None)
         assert fake_aim_run[-1].tracked == []
 
     def test_eval_start_pauses_wall_time(self, fake_aim_run):
-        cb = AstrolabeComposerLogger()
+        cb = AlidadeComposerLogger()
         cb.init(state=None, logger_obj=None)
         # First need to anchor wall-time via a batch_end
         class FakeState:
@@ -401,7 +401,7 @@ class TestLifecycle:
         assert cb._wall_time._eval_start > 0
 
     def test_eval_end_resumes_wall_time(self, fake_aim_run):
-        cb = AstrolabeComposerLogger()
+        cb = AlidadeComposerLogger()
         cb.init(state=None, logger_obj=None)
         cb.eval_start(state=None, logger_obj=None)
         cb.eval_end(state=None, logger_obj=None)
@@ -416,7 +416,7 @@ class TestLifecycle:
         # every subsequent log_metrics to silently no-op. Real close
         # moves to post_close. See _core.py / composer.py headers and
         # the 2026-06-03 investigation.
-        cb = AstrolabeComposerLogger()
+        cb = AlidadeComposerLogger()
         cb.init(state=None, logger_obj=None)
         run = cb._run
         cb.fit_end(state=None, logger_obj=None)
@@ -427,12 +427,12 @@ class TestLifecycle:
 
     def test_post_close_after_fit_end_marks_completed(self, fake_aim_run):
         # Clean path: fit_end then post_close → status="completed".
-        cb = AstrolabeComposerLogger()
+        cb = AlidadeComposerLogger()
         cb.init(state=None, logger_obj=None)
         run = cb._run
         cb.fit_end(state=None, logger_obj=None)
         cb.post_close()
-        assert run.tags["astrolabe.status"] == "completed"
+        assert run.tags["alidade.status"] == "completed"
         assert run.closed is True
         assert cb._run is None
 
@@ -440,16 +440,16 @@ class TestLifecycle:
         # If training crashes before fit_end fires, post_close still
         # gets called by Composer's Trainer cleanup. fit_end never
         # set the seen-flag, so status falls through to "failed".
-        cb = AstrolabeComposerLogger()
+        cb = AlidadeComposerLogger()
         cb.init(state=None, logger_obj=None)
         run = cb._run
         cb.post_close()
-        assert run.tags["astrolabe.status"] == "failed"
+        assert run.tags["alidade.status"] == "failed"
         assert run.closed is True
 
     def test_post_close_after_post_close_is_noop(self, fake_aim_run):
         # Double-close guard: _run is None on second invocation.
-        cb = AstrolabeComposerLogger()
+        cb = AlidadeComposerLogger()
         cb.init(state=None, logger_obj=None)
         cb.fit_end(state=None, logger_obj=None)
         cb.post_close()
@@ -488,7 +488,7 @@ class TestWallTimeStepAlignment:
     ):
         # Composer's Logger stamps a batch's metrics with the counter as
         # it stood *during* the batch, then advances it before BATCH_END.
-        cb = AstrolabeComposerLogger()
+        cb = AlidadeComposerLogger()
         cb.init(state=None, logger_obj=None)
         cb.log_metrics({"loss/train/total": 3.4}, step=0)
         cb.batch_end(state=_FakeState(1), logger_obj=None)
@@ -498,7 +498,7 @@ class TestWallTimeStepAlignment:
     def test_one_wall_time_point_per_step(self, fake_aim_run):
         # Composer logs several times per batch (time/*, then the loss,
         # then computed train metrics) all under one step.
-        cb = AstrolabeComposerLogger()
+        cb = AlidadeComposerLogger()
         cb.init(state=None, logger_obj=None)
         cb.log_metrics({"time/batch": 0.0}, step=0)
         cb.log_metrics({"loss/train/total": 3.4}, step=0)
@@ -508,7 +508,7 @@ class TestWallTimeStepAlignment:
     def test_val_metrics_get_a_wall_time_at_their_own_step(self, fake_aim_run):
         # Evaluators run after BATCH_END, so their metrics carry the
         # advanced counter and need a point of their own.
-        cb = AstrolabeComposerLogger()
+        cb = AlidadeComposerLogger()
         cb.init(state=None, logger_obj=None)
         cb.log_metrics({"loss/train/total": 3.4}, step=0)
         cb.batch_end(state=_FakeState(1), logger_obj=None)
@@ -521,7 +521,7 @@ class TestWallTimeStepAlignment:
     def test_unstepped_metrics_always_get_a_wall_time(self, fake_aim_run):
         # step=None means "let Aim auto-increment", so no two calls share
         # a step and none of them can be deduplicated away.
-        cb = AstrolabeComposerLogger()
+        cb = AlidadeComposerLogger()
         cb.init(state=None, logger_obj=None)
         cb.log_metrics({"loss/train/total": 3.4})
         cb.log_metrics({"loss/train/total": 3.3})
@@ -560,7 +560,7 @@ class TestWallTimeStepAlignment:
             TensorDataset(torch.randn(steps, 4), torch.randn(steps, 1)),
             batch_size=1,
         )
-        cb = AstrolabeComposerLogger()
+        cb = AlidadeComposerLogger()
         Trainer(
             model=TinyComposer(),
             train_dataloader=loader,
@@ -610,7 +610,7 @@ class TestDiagnosticLogs:
         stats_file = tmp_path / "stats.jsonl"
         monkeypatch.setenv("ALIDADE_CALLBACK_STATS_PATH", str(stats_file))
 
-        cb = AstrolabeComposerLogger()
+        cb = AlidadeComposerLogger()
         cb.init(state=None, logger_obj=None)
         cb.fit_start(state=None, logger_obj=None)
         cb.fit_end(state=None, logger_obj=None)
@@ -628,12 +628,12 @@ class TestDiagnosticLogs:
         # Downstream (e.g. ProjectOrion's cola_probe) extracts run_hash
         # from this jsonl to link eval runs back to the training run.
         # A truncated hash (previously [:12]) caused silent dashboard
-        # mis-linkage: eval run's astrolabe.model_run_hash didn't
+        # mis-linkage: eval run's alidade.model_run_hash didn't
         # equal-match the full 24-char training hash.
         stats_file = tmp_path / "stats.jsonl"
         monkeypatch.setenv("ALIDADE_CALLBACK_STATS_PATH", str(stats_file))
 
-        cb = AstrolabeComposerLogger()
+        cb = AlidadeComposerLogger()
         cb.init(state=None, logger_obj=None)
         # FakeAimRun has no default `hash`; stamp one that mimics Aim's
         # real 24-char hex format so the assertion is realistic.
@@ -660,7 +660,7 @@ class TestDiagnosticLogs:
         stats_file = tmp_path / "stats.jsonl"
         monkeypatch.setenv("ALIDADE_CALLBACK_STATS_PATH", str(stats_file))
 
-        cb = AstrolabeComposerLogger()
+        cb = AlidadeComposerLogger()
         cb.init(state=None, logger_obj=None)
         # 105 calls → first + 100th = 2 records
         for i in range(105):
@@ -685,7 +685,7 @@ class TestDiagnosticLogs:
         stats_file = tmp_path / "stats.jsonl"
         monkeypatch.setenv("ALIDADE_CALLBACK_STATS_PATH", str(stats_file))
 
-        cb = AstrolabeComposerLogger()
+        cb = AlidadeComposerLogger()
         cb.init(state=None, logger_obj=None)
         # Manually null _run to simulate the pre-v1.1.2 bug scenario.
         cb._run = None
@@ -706,7 +706,7 @@ class TestDiagnosticLogs:
         stats_file = tmp_path / "stats.jsonl"
         monkeypatch.setenv("ALIDADE_CALLBACK_STATS_PATH", str(stats_file))
 
-        cb = AstrolabeComposerLogger()
+        cb = AlidadeComposerLogger()
         cb.init(state=None, logger_obj=None)
         # Mix: dict (non-scalar), string (non-scalar) — both rejected.
         # Real numeric metric mixed in to ensure the rejection is
@@ -747,7 +747,7 @@ class TestWallTimeOnlyWhereAMetricLanded:
         return [entry["name"] for entry in run.tracked]
 
     def test_no_wall_time_when_every_metric_was_skipped(self, fake_aim_run):
-        cb = AstrolabeComposerLogger()
+        cb = AlidadeComposerLogger()
         cb.init(state=None, logger_obj=None)
 
         # A dict of values _to_scalar rejects — a real case, which is why
@@ -757,7 +757,7 @@ class TestWallTimeOnlyWhereAMetricLanded:
         assert "wall_time" not in self._names(fake_aim_run[-1])
 
     def test_no_wall_time_for_an_empty_call(self, fake_aim_run):
-        cb = AstrolabeComposerLogger()
+        cb = AlidadeComposerLogger()
         cb.init(state=None, logger_obj=None)
         cb.log_metrics({}, step=7)
         assert "wall_time" not in self._names(fake_aim_run[-1])
@@ -765,7 +765,7 @@ class TestWallTimeOnlyWhereAMetricLanded:
     def test_wall_time_still_accompanies_a_real_metric(self, fake_aim_run):
         """The ordinary case has to keep working, or this trades an extra
         sample for a missing axis."""
-        cb = AstrolabeComposerLogger()
+        cb = AlidadeComposerLogger()
         cb.init(state=None, logger_obj=None)
         cb.log_metrics({"loss/train/total": 0.5}, step=7)
 
@@ -775,7 +775,7 @@ class TestWallTimeOnlyWhereAMetricLanded:
 
     def test_wall_time_shares_the_step_of_the_metric_it_indexes(self, fake_aim_run):
         """Same step, or it is not an index for that point."""
-        cb = AstrolabeComposerLogger()
+        cb = AlidadeComposerLogger()
         cb.init(state=None, logger_obj=None)
         cb.log_metrics({"loss/train/total": 0.5}, step=11)
 

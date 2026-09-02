@@ -100,11 +100,11 @@ _DEFAULT_HEARTBEAT_INTERVAL_S = 300.0
 
 # Single point of truth for the during-training validation namespace.
 #
-# Flipped to "val" in v1.0.0 alongside astrolabe v1.7's eval-runs schema,
+# Flipped to "val" in v1.0.0 alongside alidade v1.7's eval-runs schema,
 # which disambiguates ``val/`` (during-training validation metrics, on
 # the training run, on the Training tab) from ``eval/`` (post-training
 # benchmark suites, on a separate eval Aim run tagged
-# ``astrolabe.kind="eval"``, on the Eval tab).
+# ``alidade.kind="eval"``, on the Eval tab).
 #
 # Before v1.0.0 this was ``"eval"`` for back-compat with ProjectOrion's
 # pre-rename runs. Legacy production runs keep their ``eval/*`` metric
@@ -112,7 +112,7 @@ _DEFAULT_HEARTBEAT_INTERVAL_S = 300.0
 # the boundary; the legacy runs aren't paper-cited.
 EVAL_METRIC_PREFIX = "val"
 
-# Default Aim tracking URL. Astrolabe sets up an SSH reverse tunnel
+# Default Aim tracking URL. Alidade sets up an SSH reverse tunnel
 # from the GPU instance back to the NUC's Aim server on port 43800.
 # Standalone users override via ``ALIDADE_AIM_URL`` env or constructor.
 # Re-exported from the contract rather than restated. The value is a
@@ -139,7 +139,7 @@ class _MetricBuffer:
     * ``close()`` blocks until the queue drains or a timeout elapses,
       so a clean training exit doesn't truncate in-flight writes.
 
-    Attached to each opened Aim Run as ``run._astrolabe_buffer`` by
+    Attached to each opened Aim Run as ``run._alidade_buffer`` by
     ``open_aim_run``. Strict mode (``ALIDADE_CALLBACK_STRICT=1``)
     bypasses the buffer entirely — strict semantics ("I want to know
     immediately if anything fails") map cleanly to synchronous +
@@ -147,7 +147,7 @@ class _MetricBuffer:
 
     Why we own this layer rather than trusting Aim's client queue:
     Aim's gRPC client is designed for local/LAN deployment and uses
-    aggressive drop-on-overflow with a small queue. Under astrolabe's
+    aggressive drop-on-overflow with a small queue. Under alidade's
     SSH-tunneled writer-to-NUC path, sustained per-batch logging can
     silently lose 20%+ of writes (observed on real ProjectOrion runs).
     This layer makes the drop-on-overflow case observable and the
@@ -202,7 +202,7 @@ class _MetricBuffer:
         self._warned: set[str] = set()
         self._drainer = threading.Thread(
             target=self._drain_loop,
-            name="astrolabe-aim-buffer",
+            name="alidade-aim-buffer",
             daemon=True,
         )
         self._drainer.start()
@@ -216,7 +216,7 @@ class _MetricBuffer:
         long silence with no end-of-run summary either is a tell).
 
         Also persists each snapshot to ``$ALIDADE_CALLBACK_STATS_PATH``
-        when that env var is set. astrolabe's engine sets it on Lambda
+        when that env var is set. alidade's engine sets it on Lambda
         so the file rsyncs back at step end and survives instance
         termination — without that file, mid-run diagnostics are lost
         when the VM is reaped, which is exactly the moment we'd want
@@ -494,7 +494,7 @@ def _append_stats_line(**fields) -> None:
     """Append one JSONL record to ``$ALIDADE_CALLBACK_STATS_PATH``.
 
     No-op when the env var is unset (the standard out-of-band-of-
-    astrolabe case). All failures are silenced — this is a
+    alidade case). All failures are silenced — this is a
     diagnostic side-channel; if writing it breaks, the training run
     must NOT fail.
 
@@ -524,10 +524,10 @@ _FIRST_METRIC_MARKER_WRITTEN = False
 def _write_first_metric_marker_once() -> None:
     """Touch ``$ALIDADE_FIRST_METRIC_MARKER`` on first invocation.
 
-    The astrolabe engine sets this env var when a step's healing
+    The alidade engine sets this env var when a step's healing
     policy uses ``until: first_metric``.  At step-failure time the
     engine SSH-probes the path; existence closes the healing window.
-    Silent no-op when the env var isn't set (non-astrolabe usage or
+    Silent no-op when the env var isn't set (non-alidade usage or
     older engine).
     """
     global _FIRST_METRIC_MARKER_WRITTEN
@@ -583,7 +583,7 @@ class RunConfig:
         constructor argument; defaults to ``DEFAULT_AIM_URL``.
     tags : dict[str, str]
         Tags applied to the run on init. ``AIM_RUN_TAGS`` env wins over
-        constructor argument when set (astrolabe is the orchestrator;
+        constructor argument when set (alidade is the orchestrator;
         its tags are authoritative).
     """
 
@@ -600,11 +600,11 @@ def resolve_run_config(
 ) -> RunConfig:
     """Read env vars + apply precedence rules into a ``RunConfig``.
 
-    Precedence: astrolabe env vars win over constructor arguments.
-    Astrolabe is the orchestrator; its identity is authoritative when
+    Precedence: alidade env vars win over constructor arguments.
+    Alidade is the orchestrator; its identity is authoritative when
     it's the one driving the run. Constructor arguments are the
     standalone fallback for users running the callback without
-    astrolabe.
+    alidade.
 
     Parameters
     ----------
@@ -651,7 +651,7 @@ def resolve_run_config(
 
 
 def open_aim_run(cfg: RunConfig, *, run_name: str | None = None) -> Any:
-    """Open an Aim run and apply astrolabe-flavored tags.
+    """Open an Aim run and apply alidade-flavored tags.
 
     Returns the live ``aim.Run`` on success. On failure (Aim not
     installed, server unreachable), logs a ``WARNING`` once and
@@ -711,7 +711,7 @@ def open_aim_run(cfg: RunConfig, *, run_name: str | None = None) -> Any:
         except Exception as exc:
             logger.debug("Failed to set Aim run name {}: {}", run_name, exc)
 
-    # Apply astrolabe.* tags. Each tag write is independent — one
+    # Apply alidade.* tags. Each tag write is independent — one
     # failing key shouldn't drop the others. Aim's Run is dict-like;
     # ``run[key] = value`` writes a tag/param visible in the dashboard.
     for key, value in cfg.tags.items():
@@ -733,7 +733,7 @@ def open_aim_run(cfg: RunConfig, *, run_name: str | None = None) -> Any:
     # doesn't accept attribute writes (rare, older Aim versions),
     # track_safely falls back to synchronous + rate-limited WARN.
     try:
-        run._astrolabe_buffer = _MetricBuffer(run)
+        run._alidade_buffer = _MetricBuffer(run)
     except Exception as exc:
         logger.debug(
             "Could not attach metric buffer (writes will be synchronous): {}", exc
@@ -747,7 +747,7 @@ def open_aim_run(cfg: RunConfig, *, run_name: str | None = None) -> Any:
 def close_run(run: Any, *, status: str = "completed") -> None:
     """Finalize an Aim run, idempotent.
 
-    Writes ``astrolabe.status`` (``completed`` / ``failed`` /
+    Writes ``alidade.status`` (``completed`` / ``failed`` /
     ``interrupted``) before closing so the dashboard can show the run's
     final disposition. Idempotent so callers can invoke from both
     ``train_end`` and ``exception`` hooks without worrying about
@@ -772,7 +772,7 @@ def close_run(run: Any, *, status: str = "completed") -> None:
     # Drain the write-buffer before closing the Run. Without this, any
     # in-flight queued metrics would be lost when run.close()
     # tears down the gRPC connection.
-    buffer = getattr(run, "_astrolabe_buffer", None)
+    buffer = getattr(run, "_alidade_buffer", None)
     if buffer is not None:
         try:
             unflushed = buffer.close(timeout_s=_DEFAULT_DRAIN_TIMEOUT_S)
@@ -820,9 +820,9 @@ def close_run(run: Any, *, status: str = "completed") -> None:
             logger.debug("Buffer drain failed: {}", exc)
 
     try:
-        run["astrolabe.status"] = status
+        run["alidade.status"] = status
     except Exception as exc:
-        logger.debug("Failed to set astrolabe.status={}: {}", status, exc)
+        logger.debug("Failed to set alidade.status={}: {}", status, exc)
     try:
         run.close()
         logger.info("Aim run finalized (status={})", status)
@@ -877,7 +877,7 @@ def track_safely(
     # ``open_aim_run`` attached. Microsecond enqueue; the drainer
     # thread retries on transient failures and surfaces stats at
     # close. See ``_MetricBuffer`` docstring for the full contract.
-    buffer = getattr(run, "_astrolabe_buffer", None)
+    buffer = getattr(run, "_alidade_buffer", None)
     if buffer is not None:
         buffer.submit(name, value, step, context)
         return
@@ -889,11 +889,11 @@ def track_safely(
     try:
         run.track(value, name=name, step=step, context=context or {})
     except Exception as exc:
-        seen = getattr(run, "_astrolabe_track_failures", None)
+        seen = getattr(run, "_alidade_track_failures", None)
         if seen is None:
             seen = set()
             try:
-                run._astrolabe_track_failures = seen
+                run._alidade_track_failures = seen
             except Exception:
                 logger.warning("Aim track failed for {}: {!r}", name, exc)
                 return
@@ -1105,7 +1105,7 @@ def maybe_finalize_schema(run: Any, state: SchemaPhaseState, *, cfg: RunConfig) 
     # Drain the existing buffer so its in-flight writes commit to the
     # current Run before close. Without this, queued writes would be
     # lost when we close + reopen.
-    buffer = getattr(run, "_astrolabe_buffer", None)
+    buffer = getattr(run, "_alidade_buffer", None)
     if buffer is not None:
         try:
             unflushed = buffer.close(timeout_s=_DEFAULT_DRAIN_TIMEOUT_S)
@@ -1171,7 +1171,7 @@ def maybe_finalize_schema(run: Any, state: SchemaPhaseState, *, cfg: RunConfig) 
     # Reattach a fresh metric buffer to the new Run. The old buffer is
     # closed (drainer thread exits cleanly); GC will release it.
     try:
-        new_run._astrolabe_buffer = _MetricBuffer(new_run)
+        new_run._alidade_buffer = _MetricBuffer(new_run)
     except Exception as exc:
         logger.debug(
             "Schema-phase: couldn't attach metric buffer (writes will be synchronous): {}",
