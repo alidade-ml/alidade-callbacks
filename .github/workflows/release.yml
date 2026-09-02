@@ -4,7 +4,7 @@
 # smoke-installs into a fresh venv, then publishes a GitHub Release
 # with the wheel attached. Researcher repos pin against this artifact:
 #
-#   alidade-callbacks @ https://github.com/naston/astrolabe-composer-callback/
+#   alidade-callbacks @ https://github.com/naston/alidade-callbacks/
 #                           releases/download/v2.0.0/
 #                           alidade_callbacks-2.0.0-py3-none-any.whl
 #
