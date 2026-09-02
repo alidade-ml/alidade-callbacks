@@ -30,7 +30,9 @@ services:
     ports:
       # Published for host-side aim SDK connections. Bridge port
       # (43800) is used by the client container via service name.
-      - "127.0.0.1:43810:43800"
+      # Env-overridable so this stack can coexist with another testbed
+      # already holding the default. The engine's compose does the same.
+      - "127.0.0.1:${TESTBED_HOST_PORT_AIM:-43810}:43800"
     networks:
       - testbed
     restart: "no"

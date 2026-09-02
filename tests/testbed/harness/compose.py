@@ -40,7 +40,10 @@ __all__ = [
 
 AIM_CONTAINER = "alidade-callbacks-testbed-aim"
 CLIENT_CONTAINER = "alidade-callbacks-testbed-client"
-AIM_HOST_PORT = 43810  # host-published port (matches docker-compose.yml)
+# Host-published port, matching docker-compose.yml. Read from the env so a
+# stack can be moved off the default when another testbed holds it; both
+# sides must agree or host-side assertions dial a port nothing is on.
+AIM_HOST_PORT = int(os.environ.get("TESTBED_HOST_PORT_AIM", "43810"))
 AIM_CLIENT_URL = "aim://aim-server:43800"  # bridge-network URL
 
 
