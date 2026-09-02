@@ -28,7 +28,7 @@ differs:
 
 - **Composer** — collects our dict via ``Callback.state_dict()``
 - **Lightning** — hands us the dict to mutate via ``on_save_checkpoint``
-- **raw PyTorch** — no framework slot; explicit ``_astrolabe_meta`` key
+- **raw PyTorch** — no framework slot; explicit ``_alidade_meta`` key
 - **HuggingFace** — no hook at all; a registered uint8 buffer rides
   into ``state_dict()`` and therefore into every save
 
@@ -308,11 +308,11 @@ class TestFrameworkSerializesOurBlock:
 
         checkpoint = result.primary()
         assert checkpoint["composer_callback_keys"] is not None
-        assert "AstrolabeComposerCheckpointer" in checkpoint["composer_callback_keys"]
+        assert "AlidadeComposerCheckpointer" in checkpoint["composer_callback_keys"]
         assert checkpoint["composer_block"] is not None
         assert checkpoint["composer_block"]["submit_id"] == SUBMIT_ID
         # Reading the top level instead would have found nothing.
-        assert "_astrolabe_meta" not in checkpoint["top_level_keys"]
+        assert "_alidade_meta" not in checkpoint["top_level_keys"]
 
     def test_lightning_mutation_survives_its_own_hooks(
         self,
@@ -332,7 +332,7 @@ class TestFrameworkSerializesOurBlock:
         # covers both "they ran first" and "they ran after".
         checkpoint = result.primary()
         assert "co_attached_callback_state" in checkpoint["top_level_keys"]
-        assert "_astrolabe_meta" in checkpoint["top_level_keys"]
+        assert "_alidade_meta" in checkpoint["top_level_keys"]
         assert result.meta_of(checkpoint)["submit_id"] == SUBMIT_ID
 
 
@@ -403,15 +403,15 @@ class TestExports:
         with safe_open(exported, framework="pt") as handle:
             metadata = handle.metadata()
             tensor_names = list(handle.keys())
-        assert metadata is not None and "_astrolabe_meta" in metadata, (
-            f"the real library sees no astrolabe metadata in {exported} "
+        assert metadata is not None and "_alidade_meta" in metadata, (
+            f"the real library sees no alidade metadata in {exported} "
             f"(header metadata: {metadata})"
         )
-        block = json.loads(metadata["_astrolabe_meta"])
+        block = json.loads(metadata["_alidade_meta"])
         assert block["submit_id"] == SUBMIT_ID
         assert block["aim_run_hash"] == result.probe["run_hash"]
         # The block belongs in the header, not smuggled in as a tensor.
-        assert "_astrolabe_meta" not in tensor_names
+        assert "_alidade_meta" not in tensor_names
         assert tensor_names, "export dropped every weight"
 
     def test_exported_copy_carries_same_identity_as_primary(
@@ -530,7 +530,7 @@ class TestHuggingFaceBufferMechanism:
         )
         # Named, not renamed, and sitting among the weights the Trainer
         # wrote rather than beside them.
-        assert "_astrolabe_meta" in checkpoint["tensor_names"]
+        assert "_alidade_meta" in checkpoint["tensor_names"]
         assert len(checkpoint["tensor_names"]) > 1, "no weights were saved"
         assert checkpoint["buffer_meta"] is not None
         assert checkpoint["buffer_meta"]["submit_id"] == SUBMIT_ID
@@ -563,7 +563,7 @@ class TestHuggingFaceBufferMechanism:
         assert shard["index_exists"], "no index means no way to find the buffer"
         # A tensor lives in exactly one shard; what matters is that the
         # index still points at it so a full load reassembles it.
-        assert "_astrolabe_meta" in shard["weight_map_keys"]
+        assert "_alidade_meta" in shard["weight_map_keys"]
         assert shard["buffer_shard"] in shard["shard_files"]
         assert shard["merged_meta"] is not None
         assert shard["merged_meta"]["submit_id"] == SUBMIT_ID
@@ -590,7 +590,7 @@ class TestHuggingFaceBufferMechanism:
         load = result.probe["hf_load"]
         assert load["from_pretrained_error"] is None
         assert load["from_pretrained_ok"] is True
-        assert load["from_pretrained_unexpected_keys"] == ["_astrolabe_meta"]
+        assert load["from_pretrained_unexpected_keys"] == ["_alidade_meta"]
         # Our key must not have displaced a real weight.
         assert load["from_pretrained_missing_keys"] == []
 
@@ -617,7 +617,7 @@ class TestHuggingFaceBufferMechanism:
         assert load["strict_load_error"] is not None, (
             "strict load stopped failing; the documented footgun is stale"
         )
-        assert "_astrolabe_meta" in load["strict_load_error"]
+        assert "_alidade_meta" in load["strict_load_error"]
         assert load["strict_load_after_strip_error"] is None
 
     def test_embed_in_weights_false_still_touches_marker(
@@ -641,7 +641,7 @@ class TestHuggingFaceBufferMechanism:
 
         assert result.probe["marker"]["exists_at_end"] is True
         checkpoint = result.primary()
-        assert "_astrolabe_meta" not in checkpoint["tensor_names"]
+        assert "_alidade_meta" not in checkpoint["tensor_names"]
         assert checkpoint["meta"] is None, "opting out still embedded provenance"
 
 

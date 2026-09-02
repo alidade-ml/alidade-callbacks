@@ -85,7 +85,7 @@ If `run_name=` isn't passed at construction, the callback falls back through:
 1. `trainer.logger.name` if a Lightning logger is configured
 2. `pl_module.__class__.__name__` (e.g. `MyModel`)
 
-Alidade's dashboard groups by `astrolabe.experiment` (the experiment name) and shows individual runs by run name, so a meaningful run name helps comparison views.
+Alidade's dashboard groups by `alidade.experiment` (the experiment name) and shows individual runs by run name, so a meaningful run name helps comparison views.
 
 ## Common patterns
 
@@ -141,7 +141,7 @@ Lightning users split: some prefix with underscore (`self.log("val_loss", ...)`)
 
 ### `on_exception` is Lightning ≥ 1.9
 
-The `on_exception` hook for marking runs as `failed` is available from Lightning 1.9 onward. On older versions, the run still closes but with `astrolabe.status="completed"` regardless of how training ended.
+The `on_exception` hook for marking runs as `failed` is available from Lightning 1.9 onward. On older versions, the run still closes but with `alidade.status="completed"` regardless of how training ended.
 
 ### Migrating from `alidade-composer-callback`
 

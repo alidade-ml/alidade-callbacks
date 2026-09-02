@@ -27,7 +27,7 @@ with Run() as run:
         run.log_train(loss=loss.item(), step=batch_idx)
 ```
 
-`Run` reads alidade env vars on `__enter__` and opens an Aim run. On exit (clean or exception), it closes the run with the appropriate `astrolabe.status`.
+`Run` reads alidade env vars on `__enter__` and opens an Aim run. On exit (clean or exception), it closes the run with the appropriate `alidade.status`.
 
 ## Full example
 

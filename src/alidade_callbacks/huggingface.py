@@ -6,7 +6,7 @@ all win over constructor arguments.
 
 Usage::
 
-    from alidade_callbacks import AstrolabeHFTrainerCallback
+    from alidade_callbacks import AlidadeHFTrainerCallback
     from transformers import Trainer
 
     trainer = Trainer(
@@ -15,7 +15,7 @@ Usage::
         train_dataset=train_ds,
         eval_dataset=val_ds,
     )
-    trainer.add_callback(AstrolabeHFTrainerCallback())
+    trainer.add_callback(AlidadeHFTrainerCallback())
     trainer.train()
 
 Works with any ``Trainer`` subclass — including TRL's ``SFTTrainer``,
@@ -31,7 +31,7 @@ at ``logging_steps`` intervals). We anchor wall-time at the first
 ``on_step_end`` and report it on every ``on_log``. The downside:
 when eval falls between two ``on_log`` events, that eval time is
 included in the next ``wall_time`` reading. For most users this is
-acceptable; for fine-grained timing, use ``AstrolabeRun`` with a
+acceptable; for fine-grained timing, use ``AlidadeRun`` with a
 hand-written loop.
 
 Failure handling
@@ -73,7 +73,7 @@ except ImportError:  # pragma: no cover — transformers is an optional extra
     TrainerCallback = object  # type: ignore[misc,assignment]
     ExportableState = object  # type: ignore[misc,assignment]
 
-__all__ = ["AstrolabeHFTrainerCallback", "AstrolabeHFCheckpointer"]
+__all__ = ["AlidadeHFTrainerCallback", "AlidadeHFCheckpointer"]
 
 
 # Keys in HF Trainer's `logs` dict that we treat as training-side metrics.
@@ -88,7 +88,7 @@ _TRAIN_LOG_KEYS_TO_PREFIX = {
 }
 
 
-class AstrolabeHFTrainerCallback(TrainerCallback):
+class AlidadeHFTrainerCallback(TrainerCallback):
     """HuggingFace Trainer callback that streams training metrics to Aim.
 
     Parameters
@@ -274,7 +274,7 @@ class AstrolabeHFTrainerCallback(TrainerCallback):
 
 
 def _normalize_log_key(key: str) -> str | None:
-    """Map an HF log key to an astrolabe-namespaced metric name.
+    """Map an HF log key to an alidade-namespaced metric name.
 
     Returns ``None`` for keys we deliberately skip (currently none —
     every key passes through).
@@ -303,7 +303,7 @@ def _normalize_log_key(key: str) -> str | None:
 # Key under which the provenance block rides in trainer_state.json.
 # Renaming it orphans the resume link on every checkpoint written by an
 # older version, so the reader pins it here rather than deriving it.
-_STATE_ATTRIBUTE = "astrolabe_provenance"
+_STATE_ATTRIBUTE = "alidade_provenance"
 
 
 def _parent_from_trainer_state(state: Any) -> CheckpointMeta | None:
@@ -314,20 +314,20 @@ def _parent_from_trainer_state(state: Any) -> CheckpointMeta | None:
     ``_lineage`` correctly reads as "no parent".
     """
     stored = (getattr(state, "stateful_callbacks", None) or {}).get(
-        "AstrolabeHFCheckpointer"
+        "AlidadeHFCheckpointer"
     )
     if not isinstance(stored, dict):
         return None
     return _meta_from_block((stored.get("attributes") or {}).get(_STATE_ATTRIBUTE))
 
 
-class AstrolabeHFCheckpointer(TrainerCallback, ExportableState):
-    """Stamps astrolabe provenance into HuggingFace checkpoints.
+class AlidadeHFCheckpointer(TrainerCallback, ExportableState):
+    """Stamps alidade provenance into HuggingFace checkpoints.
 
     Attach like any other callback::
 
-        trainer = Trainer(..., callbacks=[AstrolabeHFTrainerCallback(),
-                                          AstrolabeHFCheckpointer()])
+        trainer = Trainer(..., callbacks=[AlidadeHFTrainerCallback(),
+                                          AlidadeHFCheckpointer()])
 
     **HF is the one framework with no checkpoint-dict hook.**
     ``TrainerCallback.on_save`` fires *after* the write and receives no

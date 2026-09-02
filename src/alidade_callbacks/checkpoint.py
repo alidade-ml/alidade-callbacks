@@ -1,4 +1,4 @@
-"""Framework-agnostic checkpoint provenance: embed astrolabe identity
+"""Framework-agnostic checkpoint provenance: embed alidade identity
 into checkpoints so post-training eval can attribute results to the
 training that produced the model.
 
@@ -73,12 +73,12 @@ __all__ = [
 # Top-level key under which the meta block is embedded in formats that
 # have no native callback-state slot (.pt via raw torch.save, and the
 # safetensors header).
-META_KEY = "_astrolabe_meta"
+META_KEY = "_alidade_meta"
 
 # Composer stores callback state under the callback's class qualname.
-# Renaming AstrolabeComposerCheckpointer orphans every checkpoint
+# Renaming AlidadeComposerCheckpointer orphans every checkpoint
 # written by an older version, so the reader pins the old name here.
-_COMPOSER_STATE_KEY = "AstrolabeComposerCheckpointer"
+_COMPOSER_STATE_KEY = "AlidadeComposerCheckpointer"
 
 # Keyed by path rather than a single boolean: touch() bumps mtime, so
 # "once" has to mean once per marker file. One submit only ever sets one
@@ -90,12 +90,12 @@ ExportFormat = Literal["pt", "safetensors"]
 
 @dataclass(frozen=True)
 class CheckpointMeta:
-    """Astrolabe provenance embedded in a checkpoint.
+    """Alidade provenance embedded in a checkpoint.
 
     Attributes
     ----------
     submit_id : str | None
-        Engine-minted submit identifier. ``None`` outside astrolabe
+        Engine-minted submit identifier. ``None`` outside alidade
         orchestration (ad-hoc local training) — a stamped-but-unlinked
         checkpoint is a supported state, not an error.
     experiment : str | None
@@ -104,7 +104,7 @@ class CheckpointMeta:
         Submit version label (``v1``, ``v2``, ...).
     aim_run_hash : str | None
         Hash of the Aim run that produced this checkpoint. Enrichment
-        only — populated when a live astrolabe logger is registered in
+        only — populated when a live alidade logger is registered in
         this process, ``None`` otherwise. Readers that need to
         disambiguate multiple runs under one submit require this.
     created_at : str
@@ -170,7 +170,7 @@ def build_checkpoint_meta(
     Returns
     -------
     CheckpointMeta
-        Never raises. Outside astrolabe orchestration every propagated
+        Never raises. Outside alidade orchestration every propagated
         field is ``None`` and the result is an unlinked stamp.
     """
     submit_id = experiment = version = live_run_hash = None
@@ -211,7 +211,7 @@ def read_checkpoint_meta(
     Returns
     -------
     CheckpointMeta | None
-        ``None`` when the file carries no astrolabe block (pre-upgrade
+        ``None`` when the file carries no alidade block (pre-upgrade
         checkpoints, externally-sourced models). Callers decide whether
         that is a warning or an error; this function never raises on an
         unstamped-but-valid checkpoint.
@@ -282,7 +282,7 @@ def save_derived_checkpoint(
     parent : str | Path | CheckpointMeta
         The checkpoint this was derived from — a path to read
         provenance from, or an already-read block. A parent carrying no
-        astrolabe provenance is not an error; the result is simply
+        alidade provenance is not an error; the result is simply
         unlinked, same as any unstamped checkpoint.
     fmt : {"pt", "safetensors"}, optional
         Output format. Inferred from ``dest``'s extension when omitted.
@@ -320,11 +320,11 @@ def stamp_checkpoint(
     experiment: str | None = None,
     version: str | None = None,
 ) -> Path:
-    """Retrofit astrolabe provenance onto an existing checkpoint, in place.
+    """Retrofit alidade provenance onto an existing checkpoint, in place.
 
     For files written before the checkpointer existed, or by code that
     never had it wired. Fields left as ``None`` fall back to the
-    propagated environment, so inside an astrolabe step this can be
+    propagated environment, so inside an alidade step this can be
     called bare and pick up the ambient identity.
 
     Cost differs sharply by format: ``safetensors`` rewrites the header
@@ -529,7 +529,7 @@ def _restamp_safetensors(path: Path, meta: CheckpointMeta) -> None:
     encoded = json.dumps(header, separators=(",", ":")).encode("utf-8")
     encoded += b" " * (-len(encoded) % 8)
 
-    tmp = path.with_name(path.name + ".astrolabe-tmp")
+    tmp = path.with_name(path.name + ".alidade-tmp")
     with tmp.open("wb") as out:
         out.write(len(encoded).to_bytes(8, "little"))
         out.write(encoded)
@@ -590,7 +590,7 @@ def _meta_from_block(block: Any) -> CheckpointMeta | None:
     try:
         return CheckpointMeta.from_dict(block)
     except Exception as exc:
-        logger.debug("Unusable astrolabe meta block, treating as absent: {}", exc)
+        logger.debug("Unusable alidade meta block, treating as absent: {}", exc)
         return None
 
 
@@ -676,7 +676,7 @@ def _sniff_format(path: Path) -> ExportFormat | None:
     return None
 
 
-BUFFER_NAME = "_astrolabe_meta"
+BUFFER_NAME = "_alidade_meta"
 
 
 def embed_meta_as_buffer(model: Any, meta: CheckpointMeta | None = None) -> None:
@@ -720,14 +720,14 @@ def read_meta_from_buffer(state_dict: dict[str, Any]) -> CheckpointMeta | None:
     try:
         raw = json.loads(bytes(buffer.tolist()).decode("utf-8"))
     except Exception as exc:
-        logger.debug("Undecodable astrolabe provenance buffer: {}", exc)
+        logger.debug("Undecodable alidade provenance buffer: {}", exc)
         return None
     if not isinstance(raw, dict):
         return None
     try:
         return CheckpointMeta.from_dict(raw)
     except Exception as exc:
-        logger.debug("Unusable astrolabe provenance buffer: {}", exc)
+        logger.debug("Unusable alidade provenance buffer: {}", exc)
         return None
 
 

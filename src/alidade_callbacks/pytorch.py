@@ -1,7 +1,7 @@
 """Raw-PyTorch (and any custom-loop) Aim logging via context manager.
 
 For frameworks that expose callback hooks (Composer, Lightning, HF
-Trainer), use the matching ``Astrolabe<Framework>Logger`` class. This
+Trainer), use the matching ``Alidade<Framework>Logger`` class. This
 module is for everyone else: hand-written PyTorch loops, JAX/Flax,
 HF Accelerate's manual-loop pattern, custom training frameworks. There
 are no callback hooks to plug into, so we ship a context manager
@@ -38,7 +38,7 @@ warnings into raised exceptions for fail-fast CI behavior. See
 Distributed training
 --------------------
 
-``AstrolabeRun`` gates all writes on rank-zero (detected via
+``AlidadeRun`` gates all writes on rank-zero (detected via
 ``torch.distributed`` if initialized, ``RANK``/``LOCAL_RANK`` env vars
 otherwise). Non-rank-zero processes still need to enter and exit the
 context manager — they just no-op every method. Single-process training
@@ -60,10 +60,10 @@ from alidade_callbacks.checkpoint import (
     write_first_checkpoint_marker_once,
 )
 
-__all__ = ["AstrolabeRun", "Run", "save_checkpoint"]
+__all__ = ["AlidadeRun", "Run", "save_checkpoint"]
 
 
-class AstrolabeRun:
+class AlidadeRun:
     """Context manager that opens an Aim run + provides logging methods.
 
     Parameters
@@ -71,7 +71,7 @@ class AstrolabeRun:
     aim_url : str | None
         Aim tracking URL (e.g. ``aim://localhost:43800``). Overridden
         by ``ALIDADE_AIM_URL`` env; defaults to the standard
-        astrolabe SSH-tunneled URL.
+        alidade SSH-tunneled URL.
     experiment_name : str | None
         Aim experiment name. Overridden by
         ``ALIDADE_EXPERIMENT_NAME`` env.
@@ -123,7 +123,7 @@ class AstrolabeRun:
     # Context manager
     # ------------------------------------------------------------------
 
-    def __enter__(self) -> "AstrolabeRun":
+    def __enter__(self) -> "AlidadeRun":
         if not self._rank_zero:
             return self
         self._run = _core.open_aim_run(self._cfg, run_name=self._run_name)
@@ -188,7 +188,7 @@ class AstrolabeRun:
 
         Each kwarg becomes a metric named ``<EVAL_PREFIX>/<kwarg>``,
         where ``EVAL_PREFIX`` is ``"val"`` as of v1.0.0 (aligning with
-        astrolabe v1.7's eval-runs schema — the ``eval/`` prefix is
+        alidade v1.7's eval-runs schema — the ``eval/`` prefix is
         reserved for post-training benchmark suites on dedicated eval
         Aim runs). Single point of truth — the same constant feeds
         every framework callback so the rename happens once.
@@ -318,7 +318,7 @@ class AstrolabeRun:
 # Convenience alias for the common case — `from alidade_callbacks
 # import Run` is shorter and reads as "open a run", which matches the
 # context manager idiom users already know from `wandb.init()` etc.
-Run = AstrolabeRun
+Run = AlidadeRun
 
 
 def save_checkpoint(
@@ -327,11 +327,11 @@ def save_checkpoint(
     *,
     export_formats: list[str] | None = None,
 ) -> str:
-    """Save a checkpoint with astrolabe provenance embedded.
+    """Save a checkpoint with alidade provenance embedded.
 
     Drop-in for ``torch.save(state_dict, path)`` in hand-rolled
     training loops. Raw PyTorch has no framework checkpoint slot, so
-    provenance goes in as a top-level ``_astrolabe_meta`` key.
+    provenance goes in as a top-level ``_alidade_meta`` key.
 
     Parameters
     ----------
@@ -349,12 +349,12 @@ def save_checkpoint(
 
     Notes
     -----
-    Also touches the first-checkpoint healing marker. Outside astrolabe
+    Also touches the first-checkpoint healing marker. Outside alidade
     orchestration that is a no-op and the embedded block is unlinked —
     both supported.
 
     A ``state_dict`` that still carries a provenance block — the shape a
-    ``torch.load`` of an earlier astrolabe checkpoint produces — is
+    ``torch.load`` of an earlier alidade checkpoint produces — is
     treated as a resume: the new checkpoint records the old one as its
     parent instead of silently dropping the link. Reloading into the
     same Aim run is continuation, not derivation, and stays unlinked.

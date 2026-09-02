@@ -1,8 +1,8 @@
 """Integration tests for ``src/alidade_callbacks/composer.py``.
 
-Composer's ``AstrolabeComposerLogger`` translates the Composer trainer's
+Composer's ``AlidadeComposerLogger`` translates the Composer trainer's
 lifecycle events (batch_end, epoch_end, close, etc.) into
-AstrolabeLogger calls. This file verifies the adapter drives the
+AlidadeLogger calls. This file verifies the adapter drives the
 underlying Logger correctly against a real Aim server. Cross-framework
 parity — that all frameworks produce the same series — lives in
 test_core.py because that's a Logger property, not an adapter one.

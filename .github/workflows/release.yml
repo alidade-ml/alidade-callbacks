@@ -1,4 +1,4 @@
-# Release-prep workflow — Gate C per astrolabe/plans/testing-and-deploy.md
+# Release-prep workflow — Gate C per alidade/plans/testing-and-deploy.md
 #
 # Triggered by `vX.Y.Z` (or `vX.Y.Z-rcN`) tag push. Builds the wheel,
 # smoke-installs into a fresh venv, then publishes a GitHub Release

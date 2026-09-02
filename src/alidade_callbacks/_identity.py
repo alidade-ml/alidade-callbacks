@@ -57,7 +57,7 @@ def resolve_aim_url(aim_url: str | None) -> str:
 def ambient_identity() -> dict[str, str]:
     """The submit identity the engine exported into this process.
 
-    A script launched as an astrolabe step inherits the same ``AIM_RUN_TAGS``
+    A script launched as an alidade step inherits the same ``AIM_RUN_TAGS``
     the training callback reads — submit, version, submitter, and the GPU rate
     the cost views bill against. Reading it here writes nothing new; the
     identity was already in the process and was being discarded, leaving

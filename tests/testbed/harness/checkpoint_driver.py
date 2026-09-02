@@ -8,12 +8,12 @@ actually landed on disk.
 Four framework paths, one per embedding mechanism:
 
 - ``composer`` — Composer's ``CheckpointSaver`` writes the file;
-  ``AstrolabeComposerCheckpointer.state_dict()`` fills Composer's
+  ``AlidadeComposerCheckpointer.state_dict()`` fills Composer's
   callback-state slot.
 - ``lightning`` — Lightning's ``ModelCheckpoint`` writes the file;
   ``on_save_checkpoint`` mutates the dict in place.
 - ``pytorch`` — no framework; ``save_checkpoint`` writes an explicit
-  top-level ``_astrolabe_meta`` key.
+  top-level ``_alidade_meta`` key.
 - ``hf`` — a real ``BertForSequenceClassification`` (a genuine
   ``PreTrainedModel``, not an ``nn.Module`` stand-in, so
   ``save_pretrained`` / ``from_pretrained`` / sharding are the real
@@ -174,7 +174,7 @@ class CheckpointDriverResult:
         meta = checkpoint.get("meta")
         if meta is None:
             raise AssertionError(
-                f"checkpoint {checkpoint['path']!r} carries no astrolabe block "
+                f"checkpoint {checkpoint['path']!r} carries no alidade block "
                 f"(keys seen: {checkpoint.get('top_level_keys')})"
             )
         return meta
@@ -205,7 +205,7 @@ def config_to_env(config: CheckpointDriverConfig) -> dict[str, str]:
         "ALIDADE_CALLBACK_STATS_PATH": config.stats_jsonl_container_path,
     }
     if config.version:
-        env["AIM_RUN_TAGS"] = f"astrolabe.version={config.version}"
+        env["AIM_RUN_TAGS"] = f"alidade.version={config.version}"
     if config.marker_path:
         env["ALIDADE_FIRST_CHECKPOINT_MARKER"] = config.marker_path
     if config.resume_from:
@@ -274,7 +274,7 @@ def _inspect(path: Path, role: str) -> dict[str, Any]:
     callbacks = state.get("callbacks") if isinstance(state, dict) else None
     if isinstance(callbacks, dict):
         facts["composer_callback_keys"] = sorted(callbacks.keys())
-        block = callbacks.get("AstrolabeComposerCheckpointer")
+        block = callbacks.get("AlidadeComposerCheckpointer")
         facts["composer_block"] = block if isinstance(block, dict) else None
     return facts
 
@@ -330,8 +330,8 @@ def _corrupt_meta_block(path: Path) -> None:
         raise ValueError(f"cannot corrupt non-dict checkpoint {path}")
     state = obj.get("state")
     callbacks = state.get("callbacks") if isinstance(state, dict) else None
-    if isinstance(callbacks, dict) and "AstrolabeComposerCheckpointer" in callbacks:
-        callbacks["AstrolabeComposerCheckpointer"] = GARBAGE_BLOCK
+    if isinstance(callbacks, dict) and "AlidadeComposerCheckpointer" in callbacks:
+        callbacks["AlidadeComposerCheckpointer"] = GARBAGE_BLOCK
     else:
         obj[META_KEY] = GARBAGE_BLOCK
     torch.save(obj, path)
@@ -352,9 +352,9 @@ def _corrupt_hf_checkpoint(directory: Path) -> None:
     state_path = directory / "trainer_state.json"
     if state_path.exists():
         state = json.loads(state_path.read_text())
-        stored = (state.get("stateful_callbacks") or {}).get("AstrolabeHFCheckpointer")
+        stored = (state.get("stateful_callbacks") or {}).get("AlidadeHFCheckpointer")
         if isinstance(stored, dict):
-            stored["attributes"] = {"astrolabe_provenance": GARBAGE_BLOCK}
+            stored["attributes"] = {"alidade_provenance": GARBAGE_BLOCK}
             state_path.write_text(json.dumps(state))
 
     weights_path = directory / "model.safetensors"
@@ -386,7 +386,7 @@ def phase(label: str) -> None:
     unflushed marker is exactly the one you needed. stderr because
     stdout carries the probe payload the scenarios parse.
 
-    See astrolabe plans/tickets/TESTBED-1.md.
+    See alidade plans/tickets/TESTBED-1.md.
     """
     print(f"[driver] {label}", file=sys.stderr, flush=True)
 
@@ -624,7 +624,7 @@ def _run_pytorch(
     import torch
     import torch.nn as nn
 
-    from alidade_callbacks.pytorch import AstrolabeRun, save_checkpoint
+    from alidade_callbacks.pytorch import AlidadeRun, save_checkpoint
 
     model = nn.Linear(4, 1)
     if config.resume_from:
@@ -659,7 +659,7 @@ def _run_pytorch(
         )
 
     run = (
-        AstrolabeRun(
+        AlidadeRun(
             aim_url=config.aim_url,
             experiment_name=config.experiment_name,
             run_name=config.run_name,
@@ -693,8 +693,8 @@ def _run_composer(
     from torch.utils.data import DataLoader
 
     from alidade_callbacks.composer import (
-        AstrolabeComposerCheckpointer,
-        AstrolabeComposerLogger,
+        AlidadeComposerCheckpointer,
+        AlidadeComposerLogger,
     )
 
     class TinyComposer(ComposerModel):
@@ -728,13 +728,13 @@ def _run_composer(
             self._step += 1
 
     save_dir = workdir / "composer"
-    checkpointer = AstrolabeComposerCheckpointer(
+    checkpointer = AlidadeComposerCheckpointer(
         export_formats=config.export_formats,
         export_dir=str(save_dir),
     )
     loggers = (
         [
-            AstrolabeComposerLogger(
+            AlidadeComposerLogger(
                 aim_url=config.aim_url, experiment_name=config.experiment_name
             )
         ]
@@ -775,8 +775,8 @@ def _run_lightning(
     from torch.utils.data import DataLoader
 
     from alidade_callbacks.lightning import (
-        AstrolabeLightningCheckpointer,
-        AstrolabeLightningLogger,
+        AlidadeLightningCheckpointer,
+        AlidadeLightningLogger,
     )
 
     new_metrics_at = set(config.new_metrics_at)
@@ -819,7 +819,7 @@ def _run_lightning(
     callbacks: list[Any] = [CoAttachedMutator("before")]
     if config.with_logger:
         callbacks.append(
-            AstrolabeLightningLogger(
+            AlidadeLightningLogger(
                 aim_url=config.aim_url,
                 experiment_name=config.experiment_name,
                 run_name=config.run_name,
@@ -827,7 +827,7 @@ def _run_lightning(
         )
     callbacks.extend(
         [
-            AstrolabeLightningCheckpointer(
+            AlidadeLightningCheckpointer(
                 export_formats=config.export_formats, export_dir=str(save_dir)
             ),
             CoAttachedMutator("after"),
@@ -874,8 +874,8 @@ def _run_hf(config: CheckpointDriverConfig, workdir: Path) -> list[tuple[Path, s
     from transformers import Trainer, TrainerCallback, TrainingArguments
 
     from alidade_callbacks.huggingface import (
-        AstrolabeHFCheckpointer,
-        AstrolabeHFTrainerCallback,
+        AlidadeHFCheckpointer,
+        AlidadeHFTrainerCallback,
     )
 
     seq_len = 8
@@ -897,7 +897,7 @@ def _run_hf(config: CheckpointDriverConfig, workdir: Path) -> list[tuple[Path, s
             }
 
     class MetricEmitter(TrainerCallback):
-        """Mutates HF's logs dict before Astrolabe's on_log sees it —
+        """Mutates HF's logs dict before Alidade's on_log sees it —
         callback order in the list is what makes that work."""
 
         def on_log(self, args, state, control, logs=None, **kwargs):
@@ -911,14 +911,14 @@ def _run_hf(config: CheckpointDriverConfig, workdir: Path) -> list[tuple[Path, s
     callbacks: list[Any] = [MetricEmitter()]
     if config.with_logger:
         callbacks.append(
-            AstrolabeHFTrainerCallback(
+            AlidadeHFTrainerCallback(
                 aim_url=config.aim_url,
                 experiment_name=config.experiment_name,
                 run_name=config.run_name,
             )
         )
     callbacks.append(
-        AstrolabeHFCheckpointer(
+        AlidadeHFCheckpointer(
             embed_in_weights=config.embed_in_weights,
             export_formats=config.export_formats,
         )

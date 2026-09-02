@@ -1,7 +1,7 @@
 """Integration tests for ``src/alidade_callbacks/pytorch.py``.
 
-Raw PyTorch helper — no framework Trainer, users drive AstrolabeLogger
-directly via ``AstrolabeRun`` (aliased ``Run``). This file verifies
+Raw PyTorch helper — no framework Trainer, users drive AlidadeLogger
+directly via ``AlidadeRun`` (aliased ``Run``). This file verifies
 the direct-usage surface works against a real Aim server.
 
 Class names (`TestTraining` / `TestTeardown`) are consistent with the
@@ -61,7 +61,7 @@ RunFixture = Callable[[DriverConfig], DriverResult]
 
 
 class TestTraining:
-    """Direct AstrolabeRun.track() calls emit metrics."""
+    """Direct AlidadeRun.track() calls emit metrics."""
 
     def test_direct_track_emits_metric(
         self,
@@ -115,7 +115,7 @@ class TestTeardown:
 
 
 class TestContextManager:
-    """Framework-specific: ``with AstrolabeRun(...) as run`` semantics.
+    """Framework-specific: ``with AlidadeRun(...) as run`` semantics.
 
     Kept distinct from `TestTeardown` because the context-manager surface
     is a PyTorch-only entry point (other adapters drive the callback

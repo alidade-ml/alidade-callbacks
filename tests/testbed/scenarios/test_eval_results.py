@@ -135,7 +135,7 @@ class TestLogEvalTable:
         aim_repo: Path,
         run_eval_driver: RunEvalFixture,
     ) -> None:
-        """astrolabe.kind=eval, astrolabe.task_set, astrolabe.model_run_hash all set."""
+        """alidade.kind=eval, alidade.task_set, alidade.model_run_hash all set."""
         result = run_eval_driver(
             _table_config(
                 testbed,
@@ -146,10 +146,10 @@ class TestLogEvalTable:
         )
         assert result.exit_code == 0, result.stderr
         assert result.eval_run_hash is not None
-        assert_run_tag(aim_repo, result.eval_run_hash, "astrolabe.kind", "eval")
-        assert_run_tag(aim_repo, result.eval_run_hash, "astrolabe.task_set", "glue")
+        assert_run_tag(aim_repo, result.eval_run_hash, "alidade.kind", "eval")
+        assert_run_tag(aim_repo, result.eval_run_hash, "alidade.task_set", "glue")
         assert_run_tag(
-            aim_repo, result.eval_run_hash, "astrolabe.model_run_hash", FAKE_PARENT_HASH
+            aim_repo, result.eval_run_hash, "alidade.model_run_hash", FAKE_PARENT_HASH
         )
 
     def test_closes_run(
@@ -223,8 +223,8 @@ class TestStartEvalRun:
         assert result.exit_code == 0, result.stderr
         assert result.eval_run_hash is not None
         tags = get_run_tags(aim_repo, result.eval_run_hash)
-        assert tags["astrolabe.kind"] == "eval"
-        assert tags["astrolabe.task_set"] == "cola"
+        assert tags["alidade.kind"] == "eval"
+        assert tags["alidade.task_set"] == "cola"
 
     def test_caller_owns_close(
         self,
@@ -333,7 +333,7 @@ class TestStartEvalRunFromCheckpoint:
         aim_repo: Path,
         run_eval_driver: RunEvalFixture,
     ) -> None:
-        """Loads a .pt checkpoint with embedded astrolabe meta, sets model_run_hash."""
+        """Loads a .pt checkpoint with embedded alidade meta, sets model_run_hash."""
         # Driver creates a .pt with embedded meta at TESTBED_CKPT_HASH before eval starts.
         result = run_eval_driver(
             _checkpoint_config(
@@ -346,7 +346,7 @@ class TestStartEvalRunFromCheckpoint:
         assert result.linked is True
         assert result.eval_run_hash is not None
         assert_run_tag(
-            aim_repo, result.eval_run_hash, "astrolabe.model_run_hash", FAKE_PARENT_HASH
+            aim_repo, result.eval_run_hash, "alidade.model_run_hash", FAKE_PARENT_HASH
         )
 
     def test_reads_embedded_meta_from_safetensors(
@@ -369,7 +369,7 @@ class TestStartEvalRunFromCheckpoint:
         assert result.linked is True
         assert result.eval_run_hash is not None
         assert_run_tag(
-            aim_repo, result.eval_run_hash, "astrolabe.model_run_hash", FAKE_PARENT_HASH
+            aim_repo, result.eval_run_hash, "alidade.model_run_hash", FAKE_PARENT_HASH
         )
 
     def test_explicit_model_run_hash_wins(
@@ -394,7 +394,7 @@ class TestStartEvalRunFromCheckpoint:
         assert result.exit_code == 0, result.stderr
         assert result.eval_run_hash is not None
         assert_run_tag(
-            aim_repo, result.eval_run_hash, "astrolabe.model_run_hash", override
+            aim_repo, result.eval_run_hash, "alidade.model_run_hash", override
         )
 
     def test_on_missing_parent_warn_returns_unlinked_run(
@@ -417,7 +417,7 @@ class TestStartEvalRunFromCheckpoint:
         # Run created but no model_run_hash tag
         assert result.eval_run_hash is not None
         tags = get_run_tags(aim_repo, result.eval_run_hash)
-        assert "astrolabe.model_run_hash" not in tags
+        assert "alidade.model_run_hash" not in tags
 
     def test_on_missing_parent_raise_raises(
         self,
@@ -442,7 +442,7 @@ class TestStartEvalRunFromCheckpoint:
         testbed: "TestbedHandle",
         run_eval_driver: RunEvalFixture,
     ) -> None:
-        """Returned run has ``.astrolabe_linked: bool`` reflecting linkage state."""
+        """Returned run has ``.alidade_linked: bool`` reflecting linkage state."""
         # Linked case
         result_linked = run_eval_driver(
             _checkpoint_config(
@@ -468,7 +468,7 @@ class TestStartEvalRunFromCheckpoint:
 
 
 class TestSubmitIdentity:
-    """Eval runs produced inside an astrolabe submit inherit its identity.
+    """Eval runs produced inside an alidade submit inherit its identity.
 
     The engine exports ``AIM_RUN_TAGS`` and ``ALIDADE_EXPERIMENT_NAME``
     into every step env; the training callback reads them and the eval
@@ -481,8 +481,8 @@ class TestSubmitIdentity:
     SUBMIT_ENV = {
         "ALIDADE_EXPERIMENT_NAME": "latent-bert",
         "AIM_RUN_TAGS": (
-            "astrolabe.submit_id=s-testbed-1,astrolabe.version=v3,"
-            "astrolabe.user=nathan,astrolabe.experiment=latent-bert"
+            "alidade.submit_id=s-testbed-1,alidade.version=v3,"
+            "alidade.user=nathan,alidade.experiment=latent-bert"
         ),
     }
 
@@ -530,12 +530,12 @@ class TestSubmitIdentity:
         assert result.exit_code == 0, result.stderr
         assert result.eval_run_hash is not None
         tags = get_run_tags(aim_repo, result.eval_run_hash)
-        assert tags["astrolabe.submit_id"] == "s-testbed-1"
-        assert tags["astrolabe.version"] == "v3"
-        assert tags["astrolabe.user"] == "nathan"
+        assert tags["alidade.submit_id"] == "s-testbed-1"
+        assert tags["alidade.version"] == "v3"
+        assert tags["alidade.user"] == "nathan"
         # The discovery tags must survive being written alongside them.
-        assert tags["astrolabe.kind"] == "eval"
-        assert tags["astrolabe.model_run_hash"] == FAKE_PARENT_HASH
+        assert tags["alidade.kind"] == "eval"
+        assert tags["alidade.model_run_hash"] == FAKE_PARENT_HASH
 
     def test_falls_back_to_the_benchmark_outside_a_submit(
         self,
@@ -543,7 +543,7 @@ class TestSubmitIdentity:
         aim_repo: Path,
         run_eval_driver: RunEvalFixture,
     ) -> None:
-        """Ad-hoc use away from astrolabe still has to work — there is no
+        """Ad-hoc use away from alidade still has to work — there is no
         experiment to inherit, so the benchmark label is all there is."""
         result = run_eval_driver(
             _table_config(
@@ -581,5 +581,5 @@ class TestSubmitIdentity:
         assert result.eval_run_hash is not None
         assert_run_experiment(aim_repo, result.eval_run_hash, "latent-bert")
         assert_run_tag(
-            aim_repo, result.eval_run_hash, "astrolabe.submit_id", "s-testbed-1"
+            aim_repo, result.eval_run_hash, "alidade.submit_id", "s-testbed-1"
         )

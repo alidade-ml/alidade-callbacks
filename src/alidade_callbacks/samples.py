@@ -1,6 +1,6 @@
 """Qualitative model outputs — a few completions, a few generated images.
 
-Every number astrolabe surfaces is a scalar: loss curves, eval tables, cost.
+Every number alidade surfaces is a scalar: loss curves, eval tables, cost.
 None of them answers the question a researcher asks first when a run finishes,
 and the only one a person outside the project understands — **what does it
 actually produce?**
@@ -190,7 +190,7 @@ def log_samples(
     ----------
     sample_set : str
         Human label for this batch (``"sentence-completion"``, ``"faces"``).
-        Becomes ``astrolabe.sample_set`` and a segment of the metric name, so
+        Becomes ``alidade.sample_set`` and a segment of the metric name, so
         it must not contain ``/``.
     samples : list[Sample]
         The outputs, in the order you want them shown. A list rather than a
@@ -203,7 +203,7 @@ def log_samples(
     model_run_hash : str, optional
         Explicit parent, when you have it and the artifact does not.
     external_name : str, optional
-        Name for a model astrolabe never trained. Registers an entry and
+        Name for a model alidade never trained. Registers an entry and
         attributes the samples to it. A checkpoint carrying provenance wins.
     aim_url : str, optional
         Aim tracking URL. ``ALIDADE_AIM_URL`` wins over this argument.

@@ -1,11 +1,11 @@
-"""Tests for ``AstrolabeRun`` (raw-PyTorch context manager)."""
+"""Tests for ``AlidadeRun`` (raw-PyTorch context manager)."""
 
 from __future__ import annotations
 
 import pytest
 
 from alidade_callbacks import Run
-from alidade_callbacks.pytorch import AstrolabeRun
+from alidade_callbacks.pytorch import AlidadeRun
 
 
 # ----------------------------------------------------------------------
@@ -14,11 +14,11 @@ from alidade_callbacks.pytorch import AstrolabeRun
 
 
 class TestRunAlias:
-    def test_run_is_alias_of_astrolabe_run(self):
+    def test_run_is_alias_of_alidade_run(self):
         # `from alidade_callbacks import Run` is the documented short
-        # form; if we ever rename or wrap AstrolabeRun, this guards
+        # form; if we ever rename or wrap AlidadeRun, this guards
         # against silently breaking the alias.
-        assert Run is AstrolabeRun
+        assert Run is AlidadeRun
 
 
 # ----------------------------------------------------------------------
@@ -29,16 +29,16 @@ class TestRunAlias:
 class TestConstructor:
     def test_env_experiment_name_wins(self, monkeypatch):
         monkeypatch.setenv("ALIDADE_EXPERIMENT_NAME", "from-env")
-        r = AstrolabeRun(experiment_name="from-arg")
+        r = AlidadeRun(experiment_name="from-arg")
         assert r._cfg.experiment_name == "from-env"
 
     def test_env_aim_url_wins(self, monkeypatch):
         monkeypatch.setenv("ALIDADE_AIM_URL", "aim://from-env:9999")
-        r = AstrolabeRun(aim_url="aim://from-arg:1111")
+        r = AlidadeRun(aim_url="aim://from-arg:1111")
         assert r._cfg.aim_url == "aim://from-env:9999"
 
     def test_default_aim_url(self):
-        r = AstrolabeRun()
+        r = AlidadeRun()
         assert r._cfg.aim_url == "aim://localhost:43800"
 
 
@@ -53,7 +53,7 @@ class TestContextManagerEdgeCases:
         # all no-op gracefully.
         import sys
         monkeypatch.setitem(sys.modules, "aim", None)
-        with AstrolabeRun() as run:
+        with AlidadeRun() as run:
             assert run.is_active is False
             run.log_train(loss=0.5, step=1)  # must not raise
             run.log_eval(loss=0.4, step=1)
@@ -65,27 +65,27 @@ class TestContextManagerEdgeCases:
         monkeypatch.setitem(sys.modules, "aim", None)
         monkeypatch.setenv("ALIDADE_CALLBACK_STRICT", "1")
         with pytest.raises(RuntimeError, match="aim not installed"):
-            with AstrolabeRun():
+            with AlidadeRun():
                 pass
 
     def test_exception_inside_block_marks_failed(self, fake_aim_run):
         try:
-            with AstrolabeRun() as run:
+            with AlidadeRun() as run:
                 run.log_train(loss=0.5, step=1)
                 raise ValueError("training crashed")
         except ValueError:
             pass
 
-        assert fake_aim_run[-1].tags["astrolabe.status"] == "failed"
+        assert fake_aim_run[-1].tags["alidade.status"] == "failed"
         assert fake_aim_run[-1].closed is True
 
     def test_clean_exit_marks_completed(self, fake_aim_run):
-        with AstrolabeRun() as run:
+        with AlidadeRun() as run:
             run.log_train(loss=0.5, step=1)
-        assert fake_aim_run[-1].tags["astrolabe.status"] == "completed"
+        assert fake_aim_run[-1].tags["alidade.status"] == "completed"
 
     def test_methods_after_exit_are_noops(self, fake_aim_run):
-        with AstrolabeRun() as run:
+        with AlidadeRun() as run:
             run.log_train(loss=0.5, step=1)
 
         tracked_count_before = len(fake_aim_run[-1].tracked)
@@ -98,7 +98,7 @@ class TestContextManagerEdgeCases:
 
     def test_non_rank_zero_no_run_opened(self, monkeypatch, fake_aim_run):
         monkeypatch.setenv("RANK", "1")
-        with AstrolabeRun() as run:
+        with AlidadeRun() as run:
             assert run.is_active is False
             run.log_train(loss=0.5, step=1)
         # No FakeAimRun was constructed at all.
@@ -107,16 +107,16 @@ class TestContextManagerEdgeCases:
 
 class TestContextManagerHappyPath:
     def test_basic_flow(self, fake_aim_run):
-        with AstrolabeRun(experiment_name="exp", tags={"k": "v"}) as run:
+        with AlidadeRun(experiment_name="exp", tags={"k": "v"}) as run:
             assert run.is_active is True
         # Tags applied
         assert fake_aim_run[-1].tags["k"] == "v"
         # Status written and run closed
-        assert fake_aim_run[-1].tags["astrolabe.status"] == "completed"
+        assert fake_aim_run[-1].tags["alidade.status"] == "completed"
         assert fake_aim_run[-1].closed is True
 
     def test_run_name_propagates(self, fake_aim_run):
-        with AstrolabeRun(run_name="bert-tiny"):
+        with AlidadeRun(run_name="bert-tiny"):
             pass
         assert fake_aim_run[-1].name == "bert-tiny"
 
@@ -128,20 +128,20 @@ class TestContextManagerHappyPath:
 
 class TestLogTrain:
     def test_namespaces_under_train_prefix(self, fake_aim_run):
-        with AstrolabeRun() as run:
+        with AlidadeRun() as run:
             run.log_train(loss=0.5, accuracy=0.9, step=1)
         names = [t["name"] for t in fake_aim_run[-1].tracked]
         assert "train/loss" in names
         assert "train/accuracy" in names
 
     def test_logs_wall_time_alongside_metrics(self, fake_aim_run):
-        with AstrolabeRun() as run:
+        with AlidadeRun() as run:
             run.log_train(loss=0.5, step=1)
         names = [t["name"] for t in fake_aim_run[-1].tracked]
         assert "wall_time" in names
 
     def test_step_passed_through(self, fake_aim_run):
-        with AstrolabeRun() as run:
+        with AlidadeRun() as run:
             run.log_train(loss=0.5, step=42)
         loss_entry = next(
             t for t in fake_aim_run[-1].tracked if t["name"] == "train/loss"
@@ -149,7 +149,7 @@ class TestLogTrain:
         assert loss_entry["step"] == 42
 
     def test_step_optional(self, fake_aim_run):
-        with AstrolabeRun() as run:
+        with AlidadeRun() as run:
             run.log_train(loss=0.5)
         loss_entry = next(
             t for t in fake_aim_run[-1].tracked if t["name"] == "train/loss"
@@ -158,7 +158,7 @@ class TestLogTrain:
 
     def test_no_metrics_still_logs_wall_time(self, fake_aim_run):
         # Edge: user calls log_train with no kwargs (just for wall_time).
-        with AstrolabeRun() as run:
+        with AlidadeRun() as run:
             run.log_train(step=1)
         names = [t["name"] for t in fake_aim_run[-1].tracked]
         # Only wall_time gets logged.
@@ -173,7 +173,7 @@ class TestLogTrain:
 class TestLogEval:
     def test_namespaces_under_eval_prefix(self, fake_aim_run):
         from alidade_callbacks._core import EVAL_METRIC_PREFIX
-        with AstrolabeRun() as run:
+        with AlidadeRun() as run:
             run.log_eval(loss=0.4, accuracy=0.95, step=10)
         names = [t["name"] for t in fake_aim_run[-1].tracked]
         assert f"{EVAL_METRIC_PREFIX}/loss" in names
@@ -183,7 +183,7 @@ class TestLogEval:
         # Eval uses the wall_time anchored at training; no fresh
         # wall_time write on each log_eval (otherwise wall_time would
         # double-log on alternating train/eval).
-        with AstrolabeRun() as run:
+        with AlidadeRun() as run:
             run.log_eval(loss=0.4, step=10)
         names = [t["name"] for t in fake_aim_run[-1].tracked]
         assert "wall_time" not in names
@@ -196,13 +196,13 @@ class TestLogEval:
 
 class TestLogEscapeHatch:
     def test_passes_name_through_unchanged(self, fake_aim_run):
-        with AstrolabeRun() as run:
+        with AlidadeRun() as run:
             run.log("custom/throughput", 42.0, step=1)
         names = [t["name"] for t in fake_aim_run[-1].tracked]
         assert "custom/throughput" in names
 
     def test_context_passed_through(self, fake_aim_run):
-        with AstrolabeRun() as run:
+        with AlidadeRun() as run:
             run.log("metric", 1.0, step=1, context={"subset": "val"})
         entry = next(
             t for t in fake_aim_run[-1].tracked if t["name"] == "metric"
@@ -217,12 +217,12 @@ class TestLogEscapeHatch:
 
 class TestSetTag:
     def test_writes_to_run(self, fake_aim_run):
-        with AstrolabeRun() as run:
+        with AlidadeRun() as run:
             run.set_tag("late.tag", "computed_value")
         assert fake_aim_run[-1].tags["late.tag"] == "computed_value"
 
     def test_no_run_is_noop(self):
-        r = AstrolabeRun()
+        r = AlidadeRun()
         r.set_tag("x", "y")  # not entered yet — must not raise
 
     def test_strict_mode_raises_on_failure(self, monkeypatch):
@@ -235,7 +235,7 @@ class TestSetTag:
         monkeypatch.setattr("aim.Run", FailingRun)
         monkeypatch.setenv("ALIDADE_CALLBACK_STRICT", "1")
         with pytest.raises(RuntimeError, match="aim broke"):
-            with AstrolabeRun() as run:
+            with AlidadeRun() as run:
                 run.set_tag("k", "v")
 
 
@@ -247,14 +247,14 @@ class TestSetTag:
 class TestPauseResume:
     def test_pause_and_resume_safe_when_not_active(self):
         # Before entering the context, pause/resume must be safe.
-        r = AstrolabeRun()
+        r = AlidadeRun()
         r.pause_eval()
         r.resume()  # no raise
 
     def test_pause_excludes_eval_time_from_wall_time(self, fake_aim_run):
         import time
 
-        with AstrolabeRun() as run:
+        with AlidadeRun() as run:
             run.log_train(loss=0.5, step=1)  # anchor wall_time
             wall_time_1 = next(
                 t["value"]
@@ -285,14 +285,14 @@ class TestPauseResume:
 
 class TestIsActive:
     def test_false_before_entering(self):
-        r = AstrolabeRun()
+        r = AlidadeRun()
         assert r.is_active is False
 
     def test_true_inside_context(self, fake_aim_run):
-        with AstrolabeRun() as run:
+        with AlidadeRun() as run:
             assert run.is_active is True
 
     def test_false_after_exit(self, fake_aim_run):
-        with AstrolabeRun() as run:
+        with AlidadeRun() as run:
             pass
         assert run.is_active is False

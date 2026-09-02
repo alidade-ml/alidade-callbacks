@@ -96,13 +96,13 @@ class TestParseAimRunTagsHappyPath:
     def test_multiple_tags(self):
         assert parse_aim_run_tags("a=1,b=2,c=3") == {"a": "1", "b": "2", "c": "3"}
 
-    def test_realistic_astrolabe_tags(self):
-        # The actual shape astrolabe writes into AIM_RUN_TAGS at submit.
-        raw = "astrolabe.experiment=foo,astrolabe.version=v3,astrolabe.submit_id=abc-123"
+    def test_realistic_alidade_tags(self):
+        # The actual shape alidade writes into AIM_RUN_TAGS at submit.
+        raw = "alidade.experiment=foo,alidade.version=v3,alidade.submit_id=abc-123"
         out = parse_aim_run_tags(raw)
-        assert out["astrolabe.experiment"] == "foo"
-        assert out["astrolabe.version"] == "v3"
-        assert out["astrolabe.submit_id"] == "abc-123"
+        assert out["alidade.experiment"] == "foo"
+        assert out["alidade.version"] == "v3"
+        assert out["alidade.submit_id"] == "abc-123"
 
 
 # ----------------------------------------------------------------------
@@ -111,7 +111,7 @@ class TestParseAimRunTagsHappyPath:
 
 
 class TestResolveRunConfigPrecedence:
-    """Astrolabe env vars beat constructor args. Astrolabe is the
+    """Alidade env vars beat constructor args. Alidade is the
     orchestrator; its identity is authoritative when it's the one
     driving the run. Constructor args are the standalone fallback."""
 
@@ -210,7 +210,7 @@ class TestNoSubprocessIsEverSpawned:
         popen.assert_not_called()
 
     def test_close_run_on_a_run_that_never_had_a_server(self):
-        # close_run used to reach for run._astrolabe_local_server. A plain
+        # close_run used to reach for run._alidade_local_server. A plain
         # MagicMock would have answered that getattr with another mock, so
         # this is asserted against an object that raises on unknown
         # attributes instead.
@@ -382,11 +382,11 @@ class TestOpenAimRunHappyPath:
 
     def test_applies_all_tags(self, fake_aim_run):
         cfg = make_run_config(
-            tags={"astrolabe.version": "v3", "astrolabe.submit_id": "abc"}
+            tags={"alidade.version": "v3", "alidade.submit_id": "abc"}
         )
         run = open_aim_run(cfg)
         assert run is not None
-        assert run.tags == {"astrolabe.version": "v3", "astrolabe.submit_id": "abc"}
+        assert run.tags == {"alidade.version": "v3", "alidade.submit_id": "abc"}
 
 
 # ----------------------------------------------------------------------
@@ -403,19 +403,19 @@ class TestCloseRun:
     def test_writes_completed_status_by_default(self, fake_aim_run):
         run = open_aim_run(make_run_config())
         close_run(run)
-        assert run.tags["astrolabe.status"] == "completed"
+        assert run.tags["alidade.status"] == "completed"
         assert run.closed is True
 
     def test_writes_failed_status_when_specified(self, fake_aim_run):
         run = open_aim_run(make_run_config())
         close_run(run, status="failed")
-        assert run.tags["astrolabe.status"] == "failed"
+        assert run.tags["alidade.status"] == "failed"
         assert run.closed is True
 
     def test_custom_status_passes_through(self, fake_aim_run):
         run = open_aim_run(make_run_config())
         close_run(run, status="interrupted")
-        assert run.tags["astrolabe.status"] == "interrupted"
+        assert run.tags["alidade.status"] == "interrupted"
 
     def test_close_failure_is_silent(self, monkeypatch):
         """A failing run.close() must not raise — by the time we're
@@ -432,7 +432,7 @@ class TestCloseRun:
     def test_status_write_failure_does_not_block_close(self, monkeypatch):
         class StatusWriteFails(FakeAimRun):
             def __setitem__(self, key, value):
-                if key == "astrolabe.status":
+                if key == "alidade.status":
                     raise RuntimeError("write rejected")
                 super().__setitem__(key, value)
 
@@ -476,8 +476,8 @@ class TestTrackSafelyFailureModes:
     def test_failures_rate_limited_per_metric_name(self, monkeypatch, caplog):
         """Same metric failing every batch shouldn't spam logs.
 
-        Rate-limit state moved from a flat ``run._astrolabe_track_failures``
-        attribute to ``run._astrolabe_buffer._warned`` when the buffer
+        Rate-limit state moved from a flat ``run._alidade_track_failures``
+        attribute to ``run._alidade_buffer._warned`` when the buffer
         layer landed (v0.2.x). Functionally the same — first failure
         per metric name logs WARNING, subsequent failures silenced.
         """
@@ -492,7 +492,7 @@ class TestTrackSafelyFailureModes:
         for i in range(100):
             track_safely(run, name="train/loss", value=0.5, step=i)
 
-        assert "train/loss" in run._astrolabe_buffer._warned
+        assert "train/loss" in run._alidade_buffer._warned
 
     def test_different_names_each_log_once(self, monkeypatch):
         class TrackAlwaysFails(FakeAimRun):
@@ -506,7 +506,7 @@ class TestTrackSafelyFailureModes:
         track_safely(run, name="b", value=1.0)
         track_safely(run, name="c", value=1.0)
 
-        assert run._astrolabe_buffer._warned == {"a", "b", "c"}
+        assert run._alidade_buffer._warned == {"a", "b", "c"}
 
 
 class TestTrackSafelyHappyPath:
@@ -621,9 +621,9 @@ class TestWallTimeTrackerHappyPath:
 
 class TestEvalMetricPrefix:
     def test_default_value_is_val(self):
-        # v1.0.0 flipped this from "eval" to "val" alongside astrolabe
+        # v1.0.0 flipped this from "eval" to "val" alongside alidade
         # v1.7's eval-runs schema. ``val/`` is during-training
-        # validation (Training tab); ``eval/`` is the prefix astrolabe
+        # validation (Training tab); ``eval/`` is the prefix alidade
         # uses for post-training benchmark suites tracked on separate
         # eval Aim runs (Eval tab). Flipping back should be intentional
         # and break this test.

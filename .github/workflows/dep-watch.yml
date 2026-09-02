@@ -55,7 +55,7 @@ jobs:
         if: steps.check.outputs.has_new_version == 'true' && steps.test.outcome == 'success'
         run: |
           python scripts/update_tested_version.py aim ${{ steps.check.outputs.latest }}
-          git config user.name "astrolabe-bot"
+          git config user.name "alidade-bot"
           git config user.email "noreply@anthropic.com"
           git add tested-versions.json
           git commit -m "chore(deps): aim ${{ steps.check.outputs.latest }} passed drift tests"
@@ -144,7 +144,7 @@ jobs:
         if: steps.check.outputs.has_new_version == 'true' && steps.test.outcome == 'success'
         run: |
           python scripts/update_tested_version.py ${{ matrix.package }} ${{ steps.check.outputs.latest }}
-          git config user.name "astrolabe-bot"
+          git config user.name "alidade-bot"
           git config user.email "noreply@anthropic.com"
           # Pull first to avoid conflicts when matrix jobs commit in parallel
           # (each updates a different field but on the same file).

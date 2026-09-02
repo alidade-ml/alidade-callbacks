@@ -74,7 +74,7 @@ def test_contract_module_exposes_the_sample_tags():
     (The list above omits ``TAG_TASK_SET`` / ``KIND_EVAL`` even though
     ``eval_results.py`` depends on both. Pre-existing gap, not widened here.)
     """
-    assert contract.TAG_SAMPLE_SET == "astrolabe.sample_set"
+    assert contract.TAG_SAMPLE_SET == "alidade.sample_set"
     assert contract.KIND_SAMPLE == "sample"
 
 

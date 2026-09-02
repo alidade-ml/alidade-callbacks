@@ -1,7 +1,7 @@
 """Assertion helpers for testbed scenarios.
 
 Every helper opens the Aim repo, indexes the target run so its writes
-are visible (this is the read-visibility step astrolabe's sync sidecar
+are visible (this is the read-visibility step alidade's sync sidecar
 performs), then queries for the expected condition. Raises
 AssertionError with a diagnostic on mismatch. Helpers do NOT clean up
 the repo — teardown is the fixture's job.
@@ -12,7 +12,7 @@ The aim server accepts writes via its tracking API and stores them
 under ``seqs/chunks/<run_hash>/`` on disk. Those writes are NOT
 visible to a fresh ``Repo.get_run(hash).metrics()`` call by default —
 the meta index (``meta/index/``, ``run_metadata.sqlite``) must be
-populated first. Astrolabe's ``sync.py`` does this via:
+populated first. Alidade's ``sync.py`` does this via:
 
     repo.request_props(run_hash, read_only=False, created_at=...)
     RepoIndexManager.get_index_manager(repo).index(run_hash)
@@ -58,7 +58,7 @@ def _open_repo(repo_path: Path) -> Any:
 def _index_run(repo: Any, run_hash: str) -> None:
     """Populate the meta index for ``run_hash`` so its writes are visible.
 
-    Mirrors astrolabe's sync sidecar sequence. Idempotent — after the
+    Mirrors alidade's sync sidecar sequence. Idempotent — after the
     first call for a hash, subsequent calls are near no-op.
     """
     from aim.sdk.index_manager import RepoIndexManager

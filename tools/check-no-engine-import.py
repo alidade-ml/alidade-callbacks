@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Refuse callback code that imports astrolabe.* (other than the vendored contract).
+"""Refuse callback code that imports alidade.* (other than the vendored contract).
 
 The callback library lives in researcher training environments.
 Importing the engine would force every research repo to install the
@@ -8,13 +8,13 @@ split exists to prevent.
 
 Allowed exception: nothing. Even the contract is named
 ``alidade_callbacks.contract`` locally (the vendor script writes
-to that path), not ``astrolabe.contract``. There is no legitimate
-reason for callback code to ``import astrolabe.*``.
+to that path), not ``alidade.contract``. There is no legitimate
+reason for callback code to ``import alidade.*``.
 
 Run from CI as ``python tools/check-no-engine-import.py``. Exits 1 on
 any violation; exits 0 if clean.
 
-See ``astrolabe/plans/package-audit.md`` (Check 2: Boundary check).
+See ``alidade/plans/package-audit.md`` (Check 2: Boundary check).
 """
 
 from __future__ import annotations
@@ -29,9 +29,9 @@ CALLBACK_ROOT = Path("src/alidade_callbacks")
 
 
 def _find_engine_imports(path: Path) -> list[tuple[int, str]]:
-    """Return [(lineno, statement), ...] for any astrolabe.* import in
+    """Return [(lineno, statement), ...] for any alidade.* import in
     ``path``. Distinguished from alidade_callbacks.* — only bare
-    ``astrolabe`` and its submodules are flagged."""
+    ``alidade`` and its submodules are flagged."""
     try:
         tree = ast.parse(path.read_text())
     except (SyntaxError, OSError):
@@ -40,15 +40,15 @@ def _find_engine_imports(path: Path) -> list[tuple[int, str]]:
     for node in ast.walk(tree):
         if isinstance(node, ast.Import):
             for alias in node.names:
-                if alias.name == "astrolabe" or (
-                    alias.name.startswith("astrolabe.")
-                    and not alias.name.startswith("astrolabe_")
+                if alias.name == "alidade" or (
+                    alias.name.startswith("alidade.")
+                    and not alias.name.startswith("alidade_")
                 ):
                     violations.append((node.lineno, f"import {alias.name}"))
         elif isinstance(node, ast.ImportFrom):
             mod = node.module or ""
-            if mod == "astrolabe" or (
-                mod.startswith("astrolabe.") and not mod.startswith("astrolabe_")
+            if mod == "alidade" or (
+                mod.startswith("alidade.") and not mod.startswith("alidade_")
             ):
                 names = ", ".join(a.name for a in node.names)
                 violations.append((node.lineno, f"from {mod} import {names}"))
@@ -69,7 +69,7 @@ def main() -> int:
 
     if all_violations:
         print(
-            "✗ Callback code imports astrolabe.* (boundary violation):",
+            "✗ Callback code imports alidade.* (boundary violation):",
             file=sys.stderr,
         )
         for v in all_violations:
@@ -83,7 +83,7 @@ def main() -> int:
         )
         return 1
 
-    print(f"✓ src/alidade_callbacks/ contains no astrolabe.* imports")
+    print(f"✓ src/alidade_callbacks/ contains no alidade.* imports")
     return 0
 
 

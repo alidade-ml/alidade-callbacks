@@ -3,21 +3,21 @@
 Researchers call :func:`log_eval_table` (primary, one-shot) or
 :func:`start_eval_run` (lower-level escape hatch for streams / custom
 metric names) from a post-training eval script. Both emit an Aim run
-tagged with the three-tag contract that astrolabe's dashboard
+tagged with the three-tag contract that alidade's dashboard
 discovers from the model-run page:
 
-* ``astrolabe.kind = "eval"`` — discriminator alongside ``"metadata"``
+* ``alidade.kind = "eval"`` — discriminator alongside ``"metadata"``
   (engine-written cost runs) and the implicit training runs.
-* ``astrolabe.task_set = "glue"`` — human label that groups sections
+* ``alidade.task_set = "glue"`` — human label that groups sections
   on the dashboard's Eval tab.
-* ``astrolabe.model_run_hash = "<training_run_hash>"`` — the join key.
+* ``alidade.model_run_hash = "<training_run_hash>"`` — the join key.
   One eval run scores exactly one training run.
 
 Metric path convention: ``eval/<task>/<metric>`` — the dashboard's table
 gives each model a row and each task a column, so a task carries exactly
 one metric and a second one is refused at the call site.
 
-This lives in ``alidade-callbacks`` rather than the main ``astrolabe``
+This lives in ``alidade-callbacks`` rather than the main ``alidade``
 package so training/eval repos depend on **one** lightweight library
 for all Aim instrumentation — they never pull in the orchestration
 framework. It uses the same ``aim_url`` / ``ALIDADE_AIM_URL``
@@ -227,17 +227,17 @@ def start_eval_run(
     ----------
     model_run_hash : str
         Hash of the training Aim run this eval scores. Must be
-        non-empty. Becomes ``astrolabe.model_run_hash`` on the tag set;
+        non-empty. Becomes ``alidade.model_run_hash`` on the tag set;
         the dashboard uses this to discover eval runs from the model's
         experiment page.
     task_set : str
         Human label for the benchmark suite (``"glue"``, ``"mmlu"``,
         ``"agent-rollouts-2026q2"``, etc.). Becomes
-        ``astrolabe.task_set``. Groups sections in the dashboard.
+        ``alidade.task_set``. Groups sections in the dashboard.
     aim_url : str | None
         Aim tracking URL. ``ALIDADE_AIM_URL`` env wins over this
         argument; defaults to ``aim://localhost:43800`` (the SSH
-        reverse tunnel astrolabe opens on GPU instances). Accepts a
+        reverse tunnel alidade opens on GPU instances). Accepts a
         filesystem path too — ``aim.Run`` resolves either.
 
     Returns
@@ -291,7 +291,7 @@ def start_eval_run_from_checkpoint(
 
     The eval author names the file they are about to evaluate; the
     training run comes out of the file's own provenance. No hash, no
-    tag key, and no knowledge of astrolabe internals at the call site.
+    tag key, and no knowledge of alidade internals at the call site.
 
     Resolution order: an explicit ``model_run_hash`` wins, then the
     checkpoint's embedded ``aim_run_hash``, then ``external_name`` (which
@@ -322,7 +322,7 @@ def start_eval_run_from_checkpoint(
         checkpoints written before provenance existed, or when you know
         the parent and the artifact does not.
     external_name : str, optional
-        Name for a model astrolabe never trained — ``"roberta-base"``.
+        Name for a model alidade never trained — ``"roberta-base"``.
         Registers it and attributes
         the eval to that entry. Needed only when the checkpoint carries
         no provenance, so it never appears in code evaluating your own
@@ -340,7 +340,7 @@ def start_eval_run_from_checkpoint(
     Returns
     -------
     aim.Run
-        Open, and carrying ``astrolabe_linked`` so a caller can branch
+        Open, and carrying ``alidade_linked`` so a caller can branch
         on whether attribution actually happened rather than inferring
         it from log output.
 
@@ -389,7 +389,7 @@ def start_eval_run_from_checkpoint(
         run = start_eval_run(
             model_run_hash=resolved, task_set=task_set, aim_url=aim_url
         )
-        run.astrolabe_linked = True
+        run.alidade_linked = True
         return run
 
     logger.warning(
@@ -402,7 +402,7 @@ def start_eval_run_from_checkpoint(
     # by design — a half-tagged run written through the normal path would
     # be worse than an openly unlinked one.
     run = _open_eval_run(task_set=task_set, aim_url=aim_url)
-    run.astrolabe_linked = False
+    run.alidade_linked = False
     return run
 
 

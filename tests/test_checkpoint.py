@@ -61,7 +61,7 @@ def make_meta(
 
 
 @pytest.fixture
-def astrolabe_env(monkeypatch):
+def alidade_env(monkeypatch):
     """Env as the engine sets it during an orchestrated submit."""
     monkeypatch.setenv(contract.ENV_SUBMIT_ID, "8a562a3a-c392-4661-ab86-a31649a12d97")
     monkeypatch.setenv(contract.ENV_EXPERIMENT_NAME, "06b-rtd-calibration")
@@ -79,7 +79,7 @@ def astrolabe_env(monkeypatch):
 
 @pytest.fixture
 def bare_env(monkeypatch):
-    """No astrolabe orchestration — researcher running locally."""
+    """No alidade orchestration — researcher running locally."""
     for name in (
         contract.ENV_SUBMIT_ID,
         contract.ENV_EXPERIMENT_NAME,
@@ -88,7 +88,7 @@ def bare_env(monkeypatch):
         monkeypatch.delenv(name, raising=False)
 
 
-class TestBuildMetaDegradesWithoutAstrolabe:
+class TestBuildMetaDegradesWithoutAlidade:
     def test_returns_unlinked_meta_when_env_absent(self, bare_env):
         meta = build_checkpoint_meta()
         assert meta.submit_id is None
@@ -100,7 +100,7 @@ class TestBuildMetaDegradesWithoutAstrolabe:
         build_checkpoint_meta()
 
     def test_hash_absent_does_not_prevent_propagated_identity(
-        self, astrolabe_env, monkeypatch
+        self, alidade_env, monkeypatch
     ):
         monkeypatch.setattr(_core, "current_run_hash", lambda: None)
         meta = build_checkpoint_meta()
@@ -109,7 +109,7 @@ class TestBuildMetaDegradesWithoutAstrolabe:
         assert meta.version == "v1"
         assert meta.linked is True
 
-    def test_created_at_is_utc_iso8601(self, astrolabe_env):
+    def test_created_at_is_utc_iso8601(self, alidade_env):
         assert build_checkpoint_meta().created_at.endswith("Z")
 
 
@@ -257,14 +257,14 @@ class TestFormatSniffing:
 
 # Auto-clears the moment tools/vendor-contract.py pulls engine
 # CONTRACT_VERSION 1.4.0 in. Not a mute: the reason names the blocker,
-# and nothing has to be remembered when astrolabe#68 merges.
+# and nothing has to be remembered when alidade#68 merges.
 _MARKER_CONST_MISSING = not hasattr(contract, "ENV_FIRST_CHECKPOINT_MARKER")
 
 
 @pytest.mark.skipif(
     _MARKER_CONST_MISSING,
     reason=(
-        "blocked on astrolabe#68 + re-vendor: "
+        "blocked on alidade#68 + re-vendor: "
         "contract.ENV_FIRST_CHECKPOINT_MARKER does not exist in the "
         "vendored contract yet (engine is at 1.3.0, needs 1.4.0)"
     ),
@@ -603,7 +603,7 @@ class TestStampCheckpoint:
         assert read_checkpoint_meta(path).aim_run_hash == LIVE_HASH
 
     def test_omitted_fields_fall_back_to_the_environment(
-        self, tmp_path, astrolabe_env, monkeypatch
+        self, tmp_path, alidade_env, monkeypatch
     ):
         _no_live_run(monkeypatch)
         plain = export_checkpoint({}, tmp_path / "plain.pt", fmt="pt")
@@ -628,7 +628,7 @@ class TestDerivedCheckpointRoundTrip:
         assert read_checkpoint_meta(out) is not None
 
     def test_propagated_identity_survives_the_hop(
-        self, tmp_path, astrolabe_env, monkeypatch
+        self, tmp_path, alidade_env, monkeypatch
     ):
         _no_live_run(monkeypatch)
         parent = _parent_file(tmp_path, aim_run_hash=ORIGIN_HASH)
