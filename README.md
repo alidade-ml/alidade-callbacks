@@ -174,22 +174,6 @@ Renames are cosmetic, applied to framework-emitted names you didn't choose. **Us
 
 All four callbacks gate Aim writes on rank-zero (detected via `torch.distributed` if initialized, `RANK`/`LOCAL_RANK` env otherwise). N processes produce one Aim run, not N. No configuration required for `torchrun`, Composer's launcher, or Lightning's `strategy="ddp"`.
 
-## Versioning + back-compat
-
-This package replaces `alidade-composer-callback`. If you were using it:
-
-```diff
-- from alidade_composer_callback import AlidadeLogger
-+ from alidade_callbacks import AlidadeComposerLogger
-```
-
-```diff
-- callbacks=[AlidadeLogger()]
-+ loggers=[AlidadeComposerLogger()]
-```
-
-The `loggers=` placement is the bigger change — Composer rejects `LoggerDestination` instances passed to `callbacks=` since 0.20+. See [CHANGELOG.md](CHANGELOG.md).
-
 ## License
 
 MIT.

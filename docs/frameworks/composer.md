@@ -144,13 +144,3 @@ If you want them in the run's metadata, log via `logger.log_hyperparameters`, no
 ### Composer's automatic metrics are aggregated
 
 The `train/loss` metric you'll see in Aim is Composer's per-batch loss with whatever smoothing/aggregation Composer applies (typically EMA over `console_log_interval`). If you want a raw per-step loss, log it explicitly: `logger.log_metrics({"train/raw_loss": state.loss.item()})` in your callback.
-
-### Migrating from `alidade-composer-callback==0.1.x`
-
-Three changes:
-
-1. Package name: `pip uninstall alidade-composer-callback && pip install alidade-callbacks[composer]`
-2. Import: `from alidade_callbacks import AlidadeComposerLogger` (was `from alidade_composer_callback import AlidadeLogger`)
-3. Placement: `Trainer(loggers=[...])` (was `Trainer(callbacks=[...])`)
-
-The behavior also changed — v0.1.x only logged `train/loss` and a few framework metrics. v0.2.0 passes through *every* `logger.log_metrics` call. If you were writing custom metrics via a separate callback to a separate Aim run, you can delete that and let `AlidadeComposerLogger` capture them.
