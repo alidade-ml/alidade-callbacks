@@ -201,7 +201,3 @@ finally:
 run.log_train(loss=loss.item(), step=step)        # writes train/loss + wall_time
 run.log("custom/special_name", x, step=step)      # writes only custom/special_name
 ```
-
-### Migrating from `alidade-composer-callback`
-
-If you were using a Composer callback, this is a different path entirely. The Composer-specific code lives in `AlidadeComposerLogger`; `Run` is for code without a callback system.
