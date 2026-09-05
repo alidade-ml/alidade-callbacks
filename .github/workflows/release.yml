@@ -146,3 +146,40 @@ jobs:
             release-artifacts/*
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # Tell the consumers of this library to prove they still work.
+  #
+  # A release that renames a package or moves an env var breaks whoever
+  # installed it, and the first report is usually a user. This turns it into a
+  # check that runs while the release is still fresh in someone's head.
+  #
+  # Cross-repo dispatch needs write access to the target, and GITHUB_TOKEN is
+  # scoped to this repo, so it needs a PAT in TEMPLATES_DISPATCH_TOKEN. The job
+  # is skipped rather than failed when the secret is absent: a release must not
+  # go red because a notification could not be sent.
+  notify-consumers:
+    name: Ask alidade-templates to re-verify
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check the dispatch token exists
+        id: token
+        env:
+          TOKEN: ${{ secrets.TEMPLATES_DISPATCH_TOKEN }}
+        run: |
+          if [ -z "${TOKEN}" ]; then
+            echo "present=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::TEMPLATES_DISPATCH_TOKEN is not set — alidade-templates was not asked to re-verify against this release."
+          else
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Dispatch
+        if: steps.token.outputs.present == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.TEMPLATES_DISPATCH_TOKEN }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          gh api repos/alidade-ml/alidade-templates/dispatches \
+            -f event_type=callbacks-released \
+            -F "client_payload[tag]=${TAG}"
