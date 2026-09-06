@@ -25,6 +25,12 @@ on:
         description: "Version tag to release (e.g. v2.1.0 or v2.1.0-rc1)"
         required: true
 
+# Never cancels: this publishes artifacts, and a half-finished
+# release is worse than a duplicated one.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
 permissions:
   contents: write
 

@@ -3,7 +3,26 @@ name: Testbed
 on:
   pull_request:
     branches: [main, dev]
+    # Scoped generously on purpose. The testbed is by far the most expensive
+    # thing this org runs, and it was firing on pull requests that changed one
+    # text file. Anything that could plausibly alter runtime behaviour is
+    # listed; docs, licences and READMEs are not.
+    #
+    # The risk this accepts is the one alidade's own testbed already learned
+    # from trigger filtering: a change nobody anticipated slips through
+    # unchecked. Widen this list rather than work around it.
+    paths:
+      - "src/**"
+      - "tests/**"
+      - "pyproject.toml"
+      - ".github/workflows/testbed.yml"
   workflow_dispatch:
+
+# A second push supersedes the first, and the first was still
+# billing. Cancelling it costs nothing and saves the whole run.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   # Shared image build. Both testbed images are built once per run with
