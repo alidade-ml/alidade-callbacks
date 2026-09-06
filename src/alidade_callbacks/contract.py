@@ -42,7 +42,7 @@ from __future__ import annotations
 # vendored from; the engine refuses submits whose pinned callback was
 # vendored against a contract older than what this engine version
 # requires.
-CONTRACT_VERSION = "3.0.0"
+CONTRACT_VERSION = "3.1.0"
 
 # --- Env vars: ENGINE sets in the training process -------------------------
 #
@@ -74,6 +74,13 @@ ENV_AIM_RUN_TAGS = "AIM_RUN_TAGS"
 # tunneled Aim server at ``aim://localhost:43800``.
 # Engine constructs the value via :func:`format_local_aim_repo_path`.
 ENV_AIM_REPO_PATH = "ALIDADE_AIM_REPO_PATH"
+
+# Aim tracking-server URL, set by the engine only under tunnel transport.
+# The tunnel is opened on ``aim_tracking_port``, which an admin may change,
+# and without this the callback would fall back to a hardcoded default port
+# and connect to nothing. Callbacks also accept it from a standalone user
+# running without the engine.
+ENV_AIM_URL = "ALIDADE_AIM_URL"
 
 # Path to a jsonl file the callback appends structured events to: buffer
 # heartbeats, sample submissions, run close, drain failures, schema
@@ -204,6 +211,9 @@ SAMPLE_ROLE_OUTPUT = "output"
 # nothing listens here — callbacks use ALIDADE_AIM_REPO_PATH instead.
 DEFAULT_AIM_URL = "aim://localhost:43800"
 
+# The port ``DEFAULT_AIM_URL`` names. Kept beside it so the two cannot drift.
+DEFAULT_AIM_PORT = 43800
+
 # --- Canonical formatters / parsers ---------------------------------------
 #
 # Both engine and callback go through these. The wire format lives in
@@ -216,6 +226,16 @@ DEFAULT_AIM_URL = "aim://localhost:43800"
 # encodes a dict into a single string, and ``ALIDADE_AIM_REPO_PATH``
 # templates a submit_id into a path — both are encodings, both need
 # canonical helpers.
+
+
+def format_aim_url(port: int) -> str:
+    """The tunnel-transport Aim URL for a port.
+
+    Exists so the engine cannot hand-build a value the callback parses. The
+    tunnel forwards ``aim_tracking_port`` on both ends, so the client has to
+    name the same port or it connects to nothing and degrades quietly.
+    """
+    return f"aim://localhost:{port}"
 
 
 def format_aim_run_tags(tags: dict[str, str]) -> str:

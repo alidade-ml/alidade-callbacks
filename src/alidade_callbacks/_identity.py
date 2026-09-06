@@ -48,7 +48,7 @@ def resolve_aim_url(aim_url: str | None) -> str:
     if repo_path:
         return repo_path
     return (
-        os.environ.get("ALIDADE_AIM_URL")
+        os.environ.get(contract.ENV_AIM_URL)
         or aim_url
         or contract.DEFAULT_AIM_URL
     )
