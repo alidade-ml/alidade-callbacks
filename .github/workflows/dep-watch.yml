@@ -18,6 +18,12 @@ on:
         required: false
         default: ''
 
+# Never cancels: this publishes artifacts, and a half-finished
+# release is worse than a duplicated one.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
 permissions:
   contents: write   # bot commits to tested-versions.json
   issues: write     # bot opens dep-drift issues on test failure

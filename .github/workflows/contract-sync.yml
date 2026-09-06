@@ -20,6 +20,12 @@ on:
     branches: [main, dev]
   workflow_dispatch:
 
+# A second push supersedes the first, and the first was still
+# billing. Cancelling it costs nothing and saves the whole run.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
 
