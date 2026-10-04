@@ -593,6 +593,52 @@ class TestWallTimeTrackerEdgeCases:
         assert t._total_eval_time > eval_time_after_first
 
 
+class TestWallTimeIsTrainingTimeAtTheStep:
+    """``wall_time`` is the training time it took to reach a number, so an
+    eval's own execution time never shows in it."""
+
+    def test_a_value_read_mid_eval_is_the_value_at_the_pause(self, clock):
+        t = WallTimeTracker()
+        t.mark_first_batch()
+        clock(10)
+        t.pause_for_eval()
+        clock(7)
+        assert t.elapsed() == 10
+
+    def test_training_after_the_eval_continues_from_the_pause(self, clock):
+        t = WallTimeTracker()
+        t.mark_first_batch()
+        clock(10)
+        t.pause_for_eval()
+        clock(100)
+        t.resume()
+        clock(2)
+        assert t.elapsed() == 12
+
+    def test_a_pause_before_the_first_batch_subtracts_nothing(self, clock):
+        # Lightning's sanity check validates before any training batch.
+        t = WallTimeTracker()
+        t.pause_for_eval()
+        assert t.elapsed() == 0.0
+        clock(5)
+        t.resume()
+        t.mark_first_batch()
+        clock(1)
+        assert t.elapsed() == 1
+
+    def test_a_second_pause_does_not_move_the_first(self, clock):
+        t = WallTimeTracker()
+        t.mark_first_batch()
+        clock(10)
+        t.pause_for_eval()
+        clock(3)
+        t.pause_for_eval()
+        clock(3)
+        t.resume()
+        clock(1)
+        assert t.elapsed() == 11
+
+
 class TestWallTimeTrackerHappyPath:
     def test_elapsed_grows_after_mark(self):
         t = WallTimeTracker()

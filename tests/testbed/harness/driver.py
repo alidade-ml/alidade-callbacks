@@ -31,6 +31,11 @@ drive. The tests are exercising ``AlidadeRun.track()`` directly.
 Adding a tiny linear layer would be theater — it wouldn't test
 anything the direct call doesn't already.
 
+``TESTBED_EVAL_SLEEP_S`` makes each eval batch of a framework driver
+sleep that long, so an eval pass is long enough to see in ``wall_time``.
+``TESTBED_EVAL_EVERY`` (composer, hf) evaluates every N batches;
+``TESTBED_SANITY_STEPS`` (lightning) sets ``num_sanity_val_steps``.
+
 Fault-injection driver_flags (``TESTBED_KILL_DRAINER_AT``,
 ``TESTBED_INJECT_TRANSIENT_ERROR_AT``, ``TESTBED_BUFFER_CAPACITY``,
 etc.) apply on top of whichever driver mode — real training + injected
@@ -548,6 +553,9 @@ def _run_composer(config: DriverConfig) -> str | None:
     from composer.models import ComposerModel
     from alidade_callbacks.composer import AlidadeComposerLogger
 
+    eval_sleep_s = _float_flag(config, "TESTBED_EVAL_SLEEP_S") or 0.0
+    eval_every = _int_flag(config, "TESTBED_EVAL_EVERY")
+
     class TinyComposer(ComposerModel):
         def __init__(self):
             super().__init__()
@@ -560,6 +568,17 @@ def _run_composer(config: DriverConfig) -> str | None:
         def loss(self, outputs, batch):
             _, y = batch
             return ((outputs - y) ** 2).mean()
+
+        def eval_forward(self, batch, outputs=None):
+            time.sleep(eval_sleep_s)
+            return self.forward(batch)
+
+        def get_metrics(self, is_train=False):
+            from torchmetrics import MeanSquaredError
+            return {} if is_train else {"MSE": MeanSquaredError()}
+
+        def update_metric(self, batch, outputs, metric):
+            metric.update(outputs, batch[1])
 
     class NamedMetricEmitter(Callback):
         """Emit ``metric_0..metric_N`` per batch via Composer's Logger."""
@@ -596,6 +615,13 @@ def _run_composer(config: DriverConfig) -> str | None:
         new_metrics_at=config.new_metrics_at,
     )
 
+    eval_kwargs = {}
+    if eval_every:
+        eval_kwargs = dict(
+            eval_dataloader=DataLoader(TensorDataset(torch.randn(2, 4), torch.randn(2, 1)), batch_size=1),
+            eval_interval=f"{eval_every}ba",
+        )
+
     trainer = Trainer(
         model=TinyComposer(),
         train_dataloader=loader,
@@ -604,6 +630,7 @@ def _run_composer(config: DriverConfig) -> str | None:
         callbacks=[emitter],
         device="cpu",
         progress_bar=False,
+        **eval_kwargs,
     )
     try:
         trainer.fit()
@@ -634,6 +661,8 @@ def _run_lightning(config: DriverConfig) -> str | None:
 
     metrics_per_step = config.metrics_per_step
     new_metrics_at = set(config.new_metrics_at)
+    eval_sleep_s = _float_flag(config, "TESTBED_EVAL_SLEEP_S") or 0.0
+    sanity_steps = _int_flag(config, "TESTBED_SANITY_STEPS") or 0
 
     class TinyLightning(lightning.LightningModule):
         def __init__(self):
@@ -654,6 +683,7 @@ def _run_lightning(config: DriverConfig) -> str | None:
             return loss
 
         def validation_step(self, batch, batch_idx):
+            time.sleep(eval_sleep_s)
             x, y = batch
             loss = ((self.lin(x) - y) ** 2).mean()
             # Lightning's on_validation_end fires after the whole val loop;
@@ -694,7 +724,7 @@ def _run_lightning(config: DriverConfig) -> str | None:
         enable_progress_bar=False,
         accelerator="cpu",
         logger=False,
-        num_sanity_val_steps=0,  # skip Lightning's default pre-training val sanity check
+        num_sanity_val_steps=sanity_steps,
     )
     if val_loader is not None:
         trainer.fit(TinyLightning(), train_dataloaders=loader, val_dataloaders=val_loader)
@@ -728,6 +758,8 @@ def _run_hf(config: DriverConfig) -> str | None:
 
     metrics_per_step = config.metrics_per_step
     new_metrics_at = set(config.new_metrics_at)
+    eval_sleep_s = _float_flag(config, "TESTBED_EVAL_SLEEP_S") or 0.0
+    eval_every = _int_flag(config, "TESTBED_EVAL_EVERY")
 
     class ToyModel(nn.Module):
         def __init__(self):
@@ -735,6 +767,8 @@ def _run_hf(config: DriverConfig) -> str | None:
             self.lin = nn.Linear(4, 1)
 
         def forward(self, input_ids=None, labels=None, **kwargs):
+            if not self.training:
+                time.sleep(eval_sleep_s)
             out = self.lin(input_ids.float())
             loss = ((out - labels.float()) ** 2).mean() if labels is not None else None
             return {"loss": loss, "logits": out}
@@ -781,7 +815,7 @@ def _run_hf(config: DriverConfig) -> str | None:
     )
 
     train_ds = ToyDataset(config.steps)
-    eval_ds = ToyDataset(4) if config.validation_at else None
+    eval_ds = ToyDataset(4) if config.validation_at or eval_every else None
 
     args_kwargs = dict(
         output_dir="/tmp/hf-testbed",
@@ -798,6 +832,8 @@ def _run_hf(config: DriverConfig) -> str | None:
         # AlidadeHFTrainerCallback renames to val/loss).
         args_kwargs["eval_strategy"] = "epoch"
         args_kwargs["per_device_eval_batch_size"] = 1
+    if eval_every:
+        args_kwargs.update({"eval_strategy": "steps", "eval_steps": eval_every})
 
     args = TrainingArguments(**args_kwargs)
     trainer = Trainer(
@@ -820,6 +856,11 @@ def _run_hf(config: DriverConfig) -> str | None:
 def _int_flag(config: DriverConfig, key: str) -> int | None:
     v = config.driver_flags.get(key)
     return int(v) if v is not None else None
+
+
+def _float_flag(config: DriverConfig, key: str) -> float | None:
+    v = config.driver_flags.get(key)
+    return float(v) if v is not None else None
 
 
 def main() -> None:

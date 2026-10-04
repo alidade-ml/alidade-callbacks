@@ -28,11 +28,9 @@ Wall-time precision
 HuggingFace ``Trainer`` doesn't expose a clean per-batch hook with
 metadata, only ``on_step_end`` (no metric data) and ``on_log`` (fires
 at ``logging_steps`` intervals). We anchor wall-time at the first
-``on_step_end`` and report it on every ``on_log``. The downside:
-when eval falls between two ``on_log`` events, that eval time is
-included in the next ``wall_time`` reading. For most users this is
-acceptable; for fine-grained timing, use ``AlidadeRun`` with a
-hand-written loop.
+``on_step_end`` and report it on every ``on_log``. An eval pass pauses
+the clock from the ``on_step_end`` that schedules it to its
+``on_evaluate``, so eval metrics carry the ``wall_time`` of their step.
 
 Failure handling
 ----------------
@@ -86,6 +84,15 @@ _TRAIN_LOG_KEYS_TO_PREFIX = {
     "grad_norm": "train/grad_norm",
     "epoch": "train/epoch",
 }
+
+# ``Trainer.train`` ends with one log of whole-run totals. Its
+# ``train_loss`` is the mean over every step, not the last ``train/loss``,
+# and the rest duplicate what the dashboard derives, so none are logged.
+_TRAIN_SUMMARY_MARKER = "train_runtime"
+
+
+def _is_train_summary_key(key: str) -> bool:
+    return key.startswith("train_") or key == "total_flos"
 
 
 class AlidadeHFTrainerCallback(TrainerCallback):
@@ -152,18 +159,38 @@ class AlidadeHFTrainerCallback(TrainerCallback):
 
         self._run = _core.open_aim_run(self._cfg, run_name=run_name)
 
+    def on_step_begin(
+        self, args: Any, state: Any, control: Any, **kwargs: Any
+    ) -> None:
+        """Resume the clock in case an eval pass never reached ``on_evaluate``."""
+        self._wall_time.resume()
+
     def on_step_end(
         self, args: Any, state: Any, control: Any, **kwargs: Any
     ) -> None:
-        """Anchor wall-time at the first training step.
+        """Anchor wall-time at the first training step, and pause it for eval.
 
         ``on_step_end`` fires every step which is too noisy for actual
-        logging; we use it only to ensure ``mark_first_batch`` runs
-        before the first ``on_log`` event so ``wall_time`` is anchored.
+        logging; we use it to anchor ``wall_time`` before the first
+        ``on_log``. HF's flow callback runs first and has already set
+        ``should_evaluate`` for an eval due at this step.
         """
         if not self._rank_zero or self._run is None:
             return
         self._wall_time.mark_first_batch()
+        self._pause_if_evaluating(control)
+
+    def on_epoch_end(
+        self, args: Any, state: Any, control: Any, **kwargs: Any
+    ) -> None:
+        """Pause wall-time for an epoch-boundary eval."""
+        if not self._rank_zero or self._run is None:
+            return
+        self._pause_if_evaluating(control)
+
+    def _pause_if_evaluating(self, control: Any) -> None:
+        if getattr(control, "should_evaluate", False):
+            self._wall_time.pause_for_eval()
 
     def on_log(
         self,
@@ -186,8 +213,11 @@ class AlidadeHFTrainerCallback(TrainerCallback):
             return
 
         step = getattr(state, "global_step", None)
+        summary = _TRAIN_SUMMARY_MARKER in logs
 
         for key, value in logs.items():
+            if summary and _is_train_summary_key(key):
+                continue
             try:
                 value_float = float(value)
             except (TypeError, ValueError):
@@ -232,8 +262,9 @@ class AlidadeHFTrainerCallback(TrainerCallback):
         strip and re-namespace under the canonical eval prefix.
         Overlaps with ``on_log`` when ``logging_steps == eval_steps``;
         the duplicate writes are harmless (Aim deduplicates same-step
-        same-name writes).
+        same-name writes). Ends the eval pause ``on_step_end`` opened.
         """
+        self._wall_time.resume()
         if not self._rank_zero or self._run is None or not metrics:
             return
 

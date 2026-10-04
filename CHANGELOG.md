@@ -30,6 +30,22 @@
   The other three framework callbacks were never affected; they write `wall_time` in the
   same call as the metrics.
 
+- **`wall_time` was wrong at both ends of an eval pause.** A value read during an eval
+  counted the eval so far, and Composer logs its eval metrics before `EVAL_END`, so the
+  eval step's `wall_time` sat later than the next training step's: milliseconds on a toy
+  eval, minutes on a real benchmark pass. It now reads the training time at the pause,
+  so an eval logged at step 100 carries step 100's `wall_time`. A pause that opens
+  before the first batch is ignored: Lightning's sanity check used to be subtracted from
+  training that had not started, which made the first `wall_time` negative. Its step-0
+  `val/` point stays, as a baseline. HF never paused at all; an eval scheduled by the
+  Trainer now pauses from the `on_step_end` that schedules it to `on_evaluate`.
+
+- **An HF run gained five one-point charts nobody logged.** `Trainer.train()` ends with a
+  log of whole-run totals, which the callback passed through as custom metrics:
+  `train_runtime`, `train_samples_per_second`, `train_steps_per_second`, `total_flos`,
+  and `train_loss`, a mean over every step that sat beside `train/loss` with a different
+  value. That record is no longer logged; a `train_loss` you log yourself still is.
+
 - **`docs/frameworks/composer.md` sent Composer's validation metrics to the wrong tab.**
   The page said `metrics/eval/<x>` lands in Aim as `eval/<x>`, in both the "what gets
   logged" table and the multiple-eval-suites example. It lands as `val/<x>` — the code and

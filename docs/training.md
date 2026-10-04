@@ -93,6 +93,10 @@ did the same amount of training agree at the same step no matter how often they
 stopped to evaluate. Aim's own per-record wall-clock includes all of it, which is
 why we synthesize this instead of reading that.
 
+So `wall_time` is the training time it took to reach a number. A metric an eval
+logs at step 100 carries the `wall_time` of step 100, however long the eval ran, and
+an eval before the first training batch reads 0.
+
 **A few framework-owned names get normalized** so the dashboard can find them across
 frameworks — Composer's `loss/train/total` and HuggingFace's bare `loss` both become
 `train/loss`, and each framework's validation metrics become `val/<name>`. Those are

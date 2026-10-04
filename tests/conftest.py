@@ -137,6 +137,29 @@ def fake_aim_run(monkeypatch):
     return instances
 
 
+@pytest.fixture
+def clock(monkeypatch):
+    """Give ``_core`` a monotonic clock the test advances by hand.
+
+    Only ``_core``'s view of ``time`` is replaced, so buffer timeouts and
+    ``time.sleep`` keep running on the real clock.
+    """
+    import time as real_time
+    import types
+
+    now = [100.0]
+    fake = types.SimpleNamespace(
+        **{k: getattr(real_time, k) for k in dir(real_time) if not k.startswith("_")}
+    )
+    fake.monotonic = lambda: now[0]
+    monkeypatch.setattr("alidade_callbacks._core.time", fake)
+
+    def advance(seconds: float) -> None:
+        now[0] += seconds
+
+    return advance
+
+
 def drain_buffer(run: Any, timeout_s: float = 5.0) -> None:
     """Block until a Run's metric buffer has processed all queued items.
 

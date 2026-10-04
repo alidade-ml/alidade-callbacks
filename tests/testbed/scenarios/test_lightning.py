@@ -118,6 +118,26 @@ class TestValidation:
         assert result.run_hash is not None
         assert_metric_landed(aim_repo, result.run_hash, "val/loss")
 
+    def test_the_sanity_check_is_not_taken_from_training(
+        self,
+        testbed: "TestbedHandle",
+        aim_repo: Path,
+        stats_jsonl_path: Path,
+        run_driver: RunFixture,
+    ) -> None:
+        """It validates before the first batch, so it has no training to pause."""
+        pytest.importorskip("lightning")
+        result = run_driver(
+            _lightning_config(
+                testbed, stats_jsonl_path, steps=5, validation_at=[4],
+                driver_flags={"TESTBED_SANITY_STEPS": "2", "TESTBED_EVAL_SLEEP_S": "0.3"},
+            )
+        )
+        assert result.exit_code == 0, result.stderr
+        values = [v for _, v in get_metric_series(aim_repo, result.run_hash, "wall_time")]
+        assert values, "no wall_time landed"
+        assert min(values) >= 0, values
+
 
 class TestTeardown:
     """Lightning's teardown hook cleanly finalizes the Aim run."""
