@@ -811,7 +811,7 @@ class TestAnEvalCarriesTheWallTimeOfItsStep:
         from torch.utils.data import DataLoader, TensorDataset
         from torchmetrics import MeanSquaredError
 
-        eval_s = 0.3
+        eval_s = 1.5
 
         class Tiny(ComposerModel):
             def __init__(self):
@@ -848,4 +848,6 @@ class TestAnEvalCarriesTheWallTimeOfItsStep:
         assert any(t["name"].startswith("val/") for t in tracked), "no eval metric logged"
         values = [v for _, v in walls]
         assert values == sorted(values), walls
-        assert max(values) < eval_s, f"an eval pass leaked into {walls}"
+        # Per step, not in total: a slow runner's warm-up is training time.
+        jumps = [later - earlier for earlier, later in zip(values, values[1:])]
+        assert max(jumps) < eval_s / 2, f"an eval pass leaked into {walls}"

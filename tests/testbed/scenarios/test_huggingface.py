@@ -109,20 +109,25 @@ class TestValidation:
         stats_jsonl_path: Path,
         run_driver: RunFixture,
     ) -> None:
-        """Every eval batch sleeps; none of that may reach the x-axis."""
+        """Every eval batch sleeps; none of that may reach the x-axis.
+
+        Bounded per step rather than in total: a slow runner's warm-up is
+        training time, and a leaked eval is one jump at its step.
+        """
         pytest.importorskip("transformers")
-        eval_pass_s = 4 * 0.25
+        eval_pass_s = 4 * 0.5
         result = run_driver(
             _hf_config(
                 testbed, stats_jsonl_path, steps=6,
-                driver_flags={"TESTBED_EVAL_EVERY": "2", "TESTBED_EVAL_SLEEP_S": "0.25"},
+                driver_flags={"TESTBED_EVAL_EVERY": "2", "TESTBED_EVAL_SLEEP_S": "0.5"},
             )
         )
         assert result.exit_code == 0, result.stderr
         assert_metric_landed(aim_repo, result.run_hash, "val/loss")
         values = [v for _, v in get_metric_series(aim_repo, result.run_hash, "wall_time")]
         assert values == sorted(values), values
-        assert max(values) < eval_pass_s, f"an eval pass leaked into {values}"
+        jumps = [later - earlier for earlier, later in zip(values, values[1:])]
+        assert max(jumps) < eval_pass_s / 2, f"an eval pass leaked into {values}"
 
 
 class TestTheTrainingSummary:

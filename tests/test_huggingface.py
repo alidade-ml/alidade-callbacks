@@ -393,7 +393,7 @@ def test_a_real_trainer_masks_eval_and_logs_no_summary(fake_aim_run, tmp_path):
     import torch.nn as nn
     from transformers import Trainer, TrainingArguments
 
-    eval_s = 0.5
+    eval_s = 1.5
 
     class Toy(nn.Module):
         def __init__(self):
@@ -432,4 +432,6 @@ def test_a_real_trainer_masks_eval_and_logs_no_summary(fake_aim_run, tmp_path):
     assert f"{EVAL_METRIC_PREFIX}/loss" in names
     assert not names & {"train_loss", "train_runtime", "total_flos"}, names
     assert [v for _, v in walls] == sorted(v for _, v in walls), walls
-    assert max(v for _, v in walls) < eval_s, f"an eval pass leaked into {walls}"
+    # Per step, not in total: a slow runner's warm-up is training time.
+    jumps = [later - earlier for (_, earlier), (_, later) in zip(walls, walls[1:])]
+    assert max(jumps) < eval_s / 2, f"an eval pass leaked into {walls}"
