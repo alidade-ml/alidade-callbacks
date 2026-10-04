@@ -916,6 +916,10 @@ class WallTimeTracker:
     training cost but different eval cadences land at the same
     ``wall_time`` for the same step. Comparison stays apples-to-apples.
 
+    A value read during a pause is the training time at the pause, so a
+    metric an eval logs carries the ``wall_time`` of the step it scored.
+    A pause before the first batch (Lightning's sanity check) is ignored.
+
     Usage::
 
         tracker = WallTimeTracker()
@@ -947,7 +951,13 @@ class WallTimeTracker:
             self._start_time = time.monotonic()
 
     def pause_for_eval(self) -> None:
-        """Mark the start of an eval pause."""
+        """Mark the start of an eval pause.
+
+        A no-op before the first batch, and while already paused, so the
+        pause always starts where training stopped.
+        """
+        if self._start_time == 0.0 or self._eval_start > 0:
+            return
         self._eval_start = time.monotonic()
 
     def resume(self) -> None:
@@ -957,13 +967,15 @@ class WallTimeTracker:
             self._eval_start = 0.0
 
     def elapsed(self) -> float:
-        """Return seconds since first batch, minus accumulated eval time.
+        """Return seconds of training since the first batch.
 
-        Returns 0.0 if ``mark_first_batch`` has not fired yet.
+        Returns 0.0 if ``mark_first_batch`` has not fired yet, and the
+        value at the pause while one is open.
         """
         if self._start_time == 0.0:
             return 0.0
-        return (time.monotonic() - self._start_time) - self._total_eval_time
+        now = self._eval_start or time.monotonic()
+        return (now - self._start_time) - self._total_eval_time
 
 
 # Schema-phase machinery. Live-visibility on the dashboard requires the

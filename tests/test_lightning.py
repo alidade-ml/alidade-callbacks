@@ -272,8 +272,8 @@ class TestOnValidationEnd:
     def test_resumes_wall_time_on_validation_end(self, fake_aim_run):
         cb = AlidadeLightningLogger()
         cb.setup(_FakeTrainer(), _FakeModule(), stage="fit")
+        cb.on_train_batch_end(_FakeTrainer(), _FakeModule(), outputs=None, batch=None, batch_idx=0)
         cb.on_validation_start(_FakeTrainer(), _FakeModule())
-        # _eval_start is now > 0
         assert cb._wall_time._eval_start > 0
         cb.on_validation_end(_FakeTrainer(), _FakeModule())
         # After resume, _eval_start cleared.
@@ -307,3 +307,74 @@ class TestLifecycleClose:
         assert run.tags["alidade.status"] == "failed"
         assert run.closed is True
         assert cb._run is None
+
+
+# ----------------------------------------------------------------------
+# Lightning's sanity check, which validates before any training batch
+# ----------------------------------------------------------------------
+
+
+def _series(instances, name):
+    return [(t["step"], t["value"]) for run in instances for t in run.tracked if t["name"] == name]
+
+
+class TestTheSanityCheck:
+    def test_its_duration_is_not_taken_from_training(self, fake_aim_run, clock):
+        cb = AlidadeLightningLogger()
+        cb.setup(_FakeTrainer(), _FakeModule(), stage="fit")
+        cb.on_validation_start(_FakeTrainer(), _FakeModule())
+        clock(5)
+        cb.on_validation_end(_FakeTrainer({"val_loss": 3.4}), _FakeModule())
+        cb.on_train_batch_end(_FakeTrainer(), _FakeModule(), outputs=None, batch=None, batch_idx=0)
+        clock(1)
+        cb.on_train_batch_end(_FakeTrainer(), _FakeModule(), outputs=None, batch=None, batch_idx=1)
+        assert _series(fake_aim_run, "wall_time") == [(1, 0.0), (2, 1.0)]
+
+    def test_its_val_point_stays_at_step_zero(self, fake_aim_run, clock):
+        cb = AlidadeLightningLogger()
+        cb.setup(_FakeTrainer(), _FakeModule(), stage="fit")
+        cb.on_validation_start(_FakeTrainer(), _FakeModule())
+        cb.on_validation_end(_FakeTrainer({"val_loss": 3.4}), _FakeModule())
+        assert _series(fake_aim_run, f"{EVAL_METRIC_PREFIX}/loss") == [(0, 3.4)]
+
+    def test_a_real_trainer_never_writes_a_negative_wall_time(self, fake_aim_run):
+        pytest.importorskip("lightning")
+        import time
+
+        import lightning
+        import torch
+        import torch.nn as nn
+        from torch.utils.data import DataLoader, TensorDataset
+
+        class Tiny(lightning.LightningModule):
+            def __init__(self):
+                super().__init__()
+                self.lin = nn.Linear(4, 1)
+
+            def training_step(self, batch, batch_idx):
+                x, y = batch
+                loss = ((self.lin(x) - y) ** 2).mean()
+                self.log("train/loss", loss.item(), on_step=True, on_epoch=False)
+                return loss
+
+            def validation_step(self, batch, batch_idx):
+                time.sleep(0.2)
+                x, y = batch
+                self.log("val/loss", ((self.lin(x) - y) ** 2).mean().item())
+
+            def configure_optimizers(self):
+                return torch.optim.SGD(self.parameters(), lr=0.01)
+
+        def loader(n):
+            return DataLoader(TensorDataset(torch.randn(n, 4), torch.randn(n, 1)), batch_size=1)
+
+        lightning.Trainer(
+            callbacks=[AlidadeLightningLogger()], max_steps=4, val_check_interval=2,
+            limit_val_batches=2, num_sanity_val_steps=2, enable_progress_bar=False,
+            accelerator="cpu", logger=False, enable_checkpointing=False,
+        ).fit(Tiny(), loader(4), loader(2))
+
+        walls = [v for _, v in _series(fake_aim_run, "wall_time")]
+        val_steps = [s for s, _ in _series(fake_aim_run, f"{EVAL_METRIC_PREFIX}/loss")]
+        assert walls and min(walls) >= 0, walls
+        assert val_steps[0] == 0, val_steps

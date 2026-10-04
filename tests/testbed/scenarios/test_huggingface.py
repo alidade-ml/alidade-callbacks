@@ -102,6 +102,53 @@ class TestValidation:
         # than exact count.
         assert_metric_landed(aim_repo, result.run_hash, "val/loss")
 
+    def test_an_eval_pass_is_not_in_wall_time(
+        self,
+        testbed: "TestbedHandle",
+        aim_repo: Path,
+        stats_jsonl_path: Path,
+        run_driver: RunFixture,
+    ) -> None:
+        """Every eval batch sleeps; none of that may reach the x-axis.
+
+        Bounded per step rather than in total: a slow runner's warm-up is
+        training time, and a leaked eval is one jump at its step.
+        """
+        pytest.importorskip("transformers")
+        eval_pass_s = 4 * 0.5
+        result = run_driver(
+            _hf_config(
+                testbed, stats_jsonl_path, steps=6,
+                driver_flags={"TESTBED_EVAL_EVERY": "2", "TESTBED_EVAL_SLEEP_S": "0.5"},
+            )
+        )
+        assert result.exit_code == 0, result.stderr
+        assert_metric_landed(aim_repo, result.run_hash, "val/loss")
+        values = [v for _, v in get_metric_series(aim_repo, result.run_hash, "wall_time")]
+        assert values == sorted(values), values
+        jumps = [later - earlier for earlier, later in zip(values, values[1:])]
+        assert max(jumps) < eval_pass_s / 2, f"an eval pass leaked into {values}"
+
+
+class TestTheTrainingSummary:
+    def test_none_of_its_totals_land(
+        self,
+        testbed: "TestbedHandle",
+        aim_repo: Path,
+        stats_jsonl_path: Path,
+        run_driver: RunFixture,
+    ) -> None:
+        """``Trainer.train()``'s closing log is whole-run totals, not metrics."""
+        pytest.importorskip("transformers")
+        result = run_driver(_hf_config(testbed, stats_jsonl_path, steps=4))
+        assert result.exit_code == 0, result.stderr
+        assert_metric_landed(aim_repo, result.run_hash, "train/loss")
+        for name in (
+            "train_loss", "train_runtime", "train_samples_per_second",
+            "train_steps_per_second", "total_flos",
+        ):
+            assert get_metric_series(aim_repo, result.run_hash, name) == [], name
+
 
 class TestTeardown:
     """HF's on_train_end hook cleanly finalizes the Aim run."""

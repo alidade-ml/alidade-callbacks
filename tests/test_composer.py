@@ -781,3 +781,73 @@ class TestWallTimeOnlyWhereAMetricLanded:
 
         steps = {e["name"]: e["step"] for e in fake_aim_run[-1].tracked}
         assert steps["wall_time"] == steps["train/loss"] == 11
+
+
+class TestAnEvalCarriesTheWallTimeOfItsStep:
+    """Composer logs eval metrics before ``eval_end``, inside the pause."""
+
+    def test_a_value_logged_mid_eval_is_the_training_time(self, fake_aim_run, clock):
+        cb = AlidadeComposerLogger()
+        cb.init(state=None, logger_obj=None)
+        cb.batch_start(state=None, logger_obj=None)
+        clock(10)
+        cb.eval_start(state=None, logger_obj=None)
+        clock(60)
+        cb.log_metrics({"metrics/eval/accuracy": 0.9}, step=1)
+        cb.eval_end(state=None, logger_obj=None)
+        clock(1)
+        cb.log_metrics({"loss/train/total": 3.3}, step=2)
+        walls = [(t["step"], t["value"]) for t in _tracked(fake_aim_run) if t["name"] == "wall_time"]
+        assert walls == [(1, 10), (2, 11)]
+
+    def test_a_real_trainer_never_steps_wall_time_back(self, fake_aim_run):
+        pytest.importorskip("composer")
+        import time
+
+        import torch
+        import torch.nn as nn
+        from composer import Trainer
+        from composer.models import ComposerModel
+        from torch.utils.data import DataLoader, TensorDataset
+        from torchmetrics import MeanSquaredError
+
+        eval_s = 1.5
+
+        class Tiny(ComposerModel):
+            def __init__(self):
+                super().__init__()
+                self.lin = nn.Linear(4, 1)
+
+            def forward(self, batch):
+                return self.lin(batch[0])
+
+            def loss(self, outputs, batch):
+                return ((outputs - batch[1]) ** 2).mean()
+
+            def eval_forward(self, batch, outputs=None):
+                time.sleep(eval_s)
+                return self.forward(batch)
+
+            def get_metrics(self, is_train=False):
+                return {} if is_train else {"MSE": MeanSquaredError()}
+
+            def update_metric(self, batch, outputs, metric):
+                metric.update(outputs, batch[1])
+
+        def loader(n):
+            return DataLoader(TensorDataset(torch.randn(n, 4), torch.randn(n, 1)), batch_size=1)
+
+        Trainer(
+            model=Tiny(), train_dataloader=loader(4), eval_dataloader=loader(1),
+            eval_interval="2ba", max_duration="4ba", loggers=[AlidadeComposerLogger()],
+            device="cpu", progress_bar=False,
+        ).fit()
+
+        tracked = _tracked(fake_aim_run)
+        walls = sorted((t["step"], t["value"]) for t in tracked if t["name"] == "wall_time")
+        assert any(t["name"].startswith("val/") for t in tracked), "no eval metric logged"
+        values = [v for _, v in walls]
+        assert values == sorted(values), walls
+        # Per step, not in total: a slow runner's warm-up is training time.
+        jumps = [later - earlier for earlier, later in zip(values, values[1:])]
+        assert max(jumps) < eval_s / 2, f"an eval pass leaked into {walls}"

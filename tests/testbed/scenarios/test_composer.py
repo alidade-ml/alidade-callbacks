@@ -159,6 +159,35 @@ class TestValidation:
         # Two validation emits — landed under val/ prefix on the training run
         assert_metric_count(aim_repo, result.run_hash, "val/loss", 2)
 
+    def test_an_eval_pass_never_steps_wall_time_back(
+        self,
+        testbed: "TestbedHandle",
+        aim_repo: Path,
+        stats_jsonl_path: Path,
+        run_driver: RunFixture,
+    ) -> None:
+        """Composer logs eval metrics before ``eval_end``, inside the pause.
+
+        No driver metrics: they stamp the eval's step at batch end, before the
+        eval starts, so the eval's own stamp would never be written. Bounded
+        per step rather than in total, since a slow runner's warm-up is
+        training time.
+        """
+        pytest.importorskip("composer")
+        eval_pass_s = 2 * 1.0
+        result = run_driver(
+            _composer_config(
+                testbed, stats_jsonl_path, steps=6, metrics_per_step=0,
+                driver_flags={"TESTBED_EVAL_EVERY": "2", "TESTBED_EVAL_SLEEP_S": "1.0"},
+            )
+        )
+        assert result.exit_code == 0, result.stderr
+        assert_metric_landed(aim_repo, result.run_hash, "val/MSE")
+        values = [v for _, v in get_metric_series(aim_repo, result.run_hash, "wall_time")]
+        assert values == sorted(values), values
+        jumps = [later - earlier for earlier, later in zip(values, values[1:])]
+        assert max(jumps) < eval_pass_s / 2, f"an eval pass leaked into {values}"
+
 
 class TestTeardown:
     """Composer's close hook cleanly finalizes the Aim run."""

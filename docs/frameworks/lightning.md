@@ -139,6 +139,10 @@ Lightning users split: some prefix with underscore (`self.log("val_loss", ...)`)
 
 `wall_time` is paused via Lightning's `on_validation_start` and resumed in `on_validation_end`. If you have a non-standard eval loop (e.g. custom `validate_dataloader` triggered manually), the pause/resume may not fire and eval time will leak into `wall_time`. For most users this isn't a concern.
 
+### The sanity check writes a `val/` point at step 0
+
+Lightning validates on `num_sanity_val_steps` batches (2 by default) before training starts. Those metrics land at step 0, a baseline before any learning, with a `wall_time` of 0. Pass `num_sanity_val_steps=0` to the `Trainer` if you would rather your `val/` series start at the first interval.
+
 ### `on_exception` is Lightning ≥ 1.9
 
 The `on_exception` hook for marking runs as `failed` is available from Lightning 1.9 onward. On older versions, the run still closes but with `alidade.status="completed"` regardless of how training ended.

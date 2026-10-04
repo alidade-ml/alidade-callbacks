@@ -279,3 +279,159 @@ class TestOnTrainEnd:
         cb.on_train_end(
             _FakeTrainerArgs(), _FakeState(), _FakeControl()
         )  # must not raise
+
+
+# ----------------------------------------------------------------------
+# Trainer's end-of-training summary
+# ----------------------------------------------------------------------
+
+_SUMMARY = {
+    "train_runtime": 19.3,
+    "train_samples_per_second": 15.5,
+    "train_steps_per_second": 15.5,
+    "total_flos": 0.0,
+    "train_loss": 2.955,
+    "epoch": 1.0,
+}
+
+
+def _names_logged(fake_aim_run, logs):
+    cb = AlidadeHFTrainerCallback()
+    cb.on_train_begin(_FakeTrainerArgs(), _FakeState(), _FakeControl())
+    cb.on_log(_FakeTrainerArgs(), _FakeState(global_step=300), _FakeControl(), logs=logs)
+    return {t["name"] for t in fake_aim_run[-1].tracked}
+
+
+class TestTheTrainingSummaryIsNotLogged:
+    def test_none_of_its_totals_become_charts(self, fake_aim_run):
+        names = _names_logged(fake_aim_run, dict(_SUMMARY))
+        assert not names & set(_SUMMARY) - {"epoch"}, names
+
+    def test_a_train_loss_the_user_logs_still_lands(self, fake_aim_run):
+        # Only the summary record is recognised, by its runtime key.
+        names = _names_logged(fake_aim_run, {"train_loss": 2.9})
+        assert "train_loss" in names
+
+    def test_the_summary_epoch_still_lands(self, fake_aim_run):
+        names = _names_logged(fake_aim_run, dict(_SUMMARY))
+        assert "train/epoch" in names
+
+
+# ----------------------------------------------------------------------
+# wall_time across an eval pass
+# ----------------------------------------------------------------------
+
+
+class _Control:
+    def __init__(self, should_evaluate: bool = False):
+        self.should_evaluate = should_evaluate
+
+
+def _wall_times(run):
+    return [(t["step"], t["value"]) for t in run.tracked if t["name"] == "wall_time"]
+
+
+def _started(clock):
+    cb = AlidadeHFTrainerCallback()
+    cb.on_train_begin(_FakeTrainerArgs(), _FakeState(), _FakeControl())
+    cb.on_step_end(_FakeTrainerArgs(), _FakeState(global_step=1), _Control())
+    clock(10)
+    return cb
+
+
+class TestAnEvalCarriesTheWallTimeOfItsStep:
+    def test_eval_metrics_logged_mid_eval_read_the_step_s_time(
+        self, fake_aim_run, clock
+    ):
+        cb = _started(clock)
+        cb.on_step_end(_FakeTrainerArgs(), _FakeState(global_step=2), _Control(True))
+        clock(60)
+        cb.on_log(_FakeTrainerArgs(), _FakeState(global_step=2), _Control(), logs={"eval_loss": 0.4})
+        assert _wall_times(fake_aim_run[-1]) == [(2, 10)]
+
+    def test_the_next_step_does_not_count_the_eval(self, fake_aim_run, clock):
+        cb = _started(clock)
+        cb.on_step_end(_FakeTrainerArgs(), _FakeState(global_step=2), _Control(True))
+        clock(60)
+        cb.on_evaluate(_FakeTrainerArgs(), _FakeState(global_step=2), _Control(), metrics={"eval_loss": 0.4})
+        clock(1)
+        cb.on_log(_FakeTrainerArgs(), _FakeState(global_step=3), _Control(), logs={"loss": 0.3})
+        assert _wall_times(fake_aim_run[-1]) == [(3, 11)]
+
+    def test_an_epoch_end_eval_is_paused_too(self, fake_aim_run, clock):
+        cb = _started(clock)
+        cb.on_epoch_end(_FakeTrainerArgs(), _FakeState(global_step=2), _Control(True))
+        clock(60)
+        cb.on_log(_FakeTrainerArgs(), _FakeState(global_step=2), _Control(), logs={"eval_loss": 0.4})
+        assert _wall_times(fake_aim_run[-1]) == [(2, 10)]
+
+    def test_a_pass_that_never_reports_does_not_stop_the_clock(
+        self, fake_aim_run, clock
+    ):
+        cb = _started(clock)
+        cb.on_step_end(_FakeTrainerArgs(), _FakeState(global_step=2), _Control(True))
+        clock(60)
+        cb.on_step_begin(_FakeTrainerArgs(), _FakeState(global_step=2), _Control())
+        clock(1)
+        cb.on_log(_FakeTrainerArgs(), _FakeState(global_step=3), _Control(), logs={"loss": 0.3})
+        assert _wall_times(fake_aim_run[-1]) == [(3, 11)]
+
+    def test_a_step_with_no_eval_due_does_not_pause(self, fake_aim_run, clock):
+        cb = _started(clock)
+        cb.on_step_end(_FakeTrainerArgs(), _FakeState(global_step=2), _Control(False))
+        clock(5)
+        cb.on_log(_FakeTrainerArgs(), _FakeState(global_step=2), _Control(), logs={"loss": 0.3})
+        assert _wall_times(fake_aim_run[-1]) == [(2, 15)]
+
+
+def test_a_real_trainer_masks_eval_and_logs_no_summary(fake_aim_run, tmp_path):
+    """HF's own hook order, which the hand-driven tests above assume."""
+    pytest.importorskip("transformers")
+    import time
+
+    import torch
+    import torch.nn as nn
+    from transformers import Trainer, TrainingArguments
+
+    eval_s = 1.5
+
+    class Toy(nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.lin = nn.Linear(4, 1)
+
+        def forward(self, input_ids=None, labels=None, **kwargs):
+            if not self.training:
+                time.sleep(eval_s)
+            out = self.lin(input_ids.float())
+            return {"loss": ((out - labels.float()) ** 2).mean(), "logits": out}
+
+    class Rows(torch.utils.data.Dataset):
+        def __init__(self, n):
+            self.x, self.y = torch.randn(n, 4), torch.randn(n, 1)
+
+        def __len__(self):
+            return len(self.x)
+
+        def __getitem__(self, i):
+            return {"input_ids": self.x[i], "labels": self.y[i]}
+
+    args = TrainingArguments(
+        output_dir=str(tmp_path), max_steps=4, per_device_train_batch_size=1,
+        per_device_eval_batch_size=1, logging_steps=1, eval_strategy="steps",
+        eval_steps=2, disable_tqdm=True, report_to=[], use_cpu=True, save_strategy="no",
+    )
+    Trainer(
+        model=Toy(), args=args, train_dataset=Rows(4), eval_dataset=Rows(1),
+        callbacks=[AlidadeHFTrainerCallback()],
+    ).train()
+
+    tracked = [t for run in fake_aim_run for t in run.tracked]
+    walls = [(t["step"], t["value"]) for t in tracked if t["name"] == "wall_time"]
+    names = {t["name"] for t in tracked}
+    assert f"{EVAL_METRIC_PREFIX}/loss" in names
+    assert not names & {"train_loss", "train_runtime", "total_flos"}, names
+    assert [v for _, v in walls] == sorted(v for _, v in walls), walls
+    # Per step, not in total: a slow runner's warm-up is training time.
+    jumps = [later - earlier for (_, earlier), (_, later) in zip(walls, walls[1:])]
+    assert max(jumps) < eval_s / 2, f"an eval pass leaked into {walls}"

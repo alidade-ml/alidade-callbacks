@@ -64,7 +64,8 @@ trainer.train()
 | Eval loss | `val/loss` (renamed from `eval_loss`) |
 | Other eval metrics | `val/<x>` (renamed from `eval_<x>`) |
 | Custom metrics from `trainer.log({...})` or `compute_metrics` | passed through unchanged |
-| Synthesized | `wall_time` (training-only elapsed seconds) |
+| The whole-run totals `Trainer.train()` logs as it returns: `train_loss`, `train_runtime`, `train_samples_per_second`, `train_steps_per_second`, `total_flos` | **not logged**. `train_loss` there is the mean over every step, not the last `train/loss`, and the dashboard already shows the rest |
+| Synthesized | `wall_time` (training-only elapsed seconds, eval-paused) |
 
 ## Logging custom metrics
 
@@ -121,11 +122,11 @@ for fold in range(5):
 
 ## Gotchas
 
-### Wall-time precision is log-interval-grained
+### Wall-time is written at `logging_steps`
 
-HF Trainer doesn't expose a clean per-batch hook with metric data — only `on_step_end` (no metrics) and `on_log` (every `logging_steps` batches). The callback anchors `wall_time` at the first `on_step_end` and writes it on every `on_log`. If eval falls between two `on_log` events, the eval time gets included in the next `wall_time` reading.
+HF Trainer doesn't expose a clean per-batch hook with metric data — only `on_step_end` (no metrics) and `on_log` (every `logging_steps` batches). The callback anchors `wall_time` at the first `on_step_end` and writes it on every `on_log`.
 
-For most users this is fine. For fine-grained timing analysis, switch to `AlidadeRun` and write the loop yourself.
+An eval pass stops the clock from the `on_step_end` that schedules it until `on_evaluate`, so `val/` metrics carry the `wall_time` of the step they scored and the next training step does not count the eval. A `trainer.evaluate()` you call yourself mid-training is not scheduled that way, and its time does count.
 
 ### `logging_steps` controls metric cadence
 
