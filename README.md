@@ -13,14 +13,20 @@ of this page is the quick reference.
 
 ## Install
 
+Not on PyPI yet: install from a GitHub Release, naming the extra for your framework.
+
 ```bash
-pip install alidade-callbacks[composer]    # MosaicML Composer
-pip install alidade-callbacks[lightning]   # PyTorch Lightning
-pip install alidade-callbacks[hf]          # HuggingFace Trainer
-pip install alidade-callbacks[all]         # everything
+WHL=https://github.com/alidade-ml/alidade-callbacks/releases/download/v2.0.0/alidade_callbacks-2.0.0-py3-none-any.whl
+pip install "alidade-callbacks[composer] @ $WHL"    # MosaicML Composer
+pip install "alidade-callbacks[lightning] @ $WHL"   # PyTorch Lightning
+pip install "alidade-callbacks[hf] @ $WHL"          # HuggingFace Trainer
+pip install "alidade-callbacks[all] @ $WHL"         # everything
 ```
 
-Base install (no extras) pulls only `aim` and `loguru` — fine for the raw-PyTorch path.
+In a `requirements.txt` the same form pins it: `alidade-callbacks[composer] @ <that URL>`.
+alidade reads the version from that URL when you submit, and refuses one too old for
+the NUC. Base install (no extras) pulls only `aim` and `loguru` — fine for the
+raw-PyTorch path.
 
 ## Quickstart by framework
 

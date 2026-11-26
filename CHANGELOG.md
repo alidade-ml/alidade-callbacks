@@ -1,8 +1,19 @@
 # Changelog
 
-## v2.0.0-rc5 — unreleased
+## v2.0.0 — 2026-11-26
+
+The first stable 2.x, and the first release `releases/latest` resolves to since the
+rename: until now it pointed at v1.1.2, which ships the pre-rename package. It carries
+everything in the release candidates below, and this section's changes since rc4.
+
+Pairs with alidade v1.7.0: the vendored contract is `3.2.0`, byte-identical to the
+engine's. Not on PyPI; install from this release (see the README).
 
 ### Changed
+
+- **Contract re-vendored to `3.2.0`.** It adds the engine's `alidade.step` and
+  `alidade.attempt` run tags. The engine writes both through `AIM_RUN_TAGS`, so nothing
+  in this library changes behaviour; the names are now known on both sides.
 
 - **A second metric on one eval task now raises `EvalInputError`.** The Eval tab gives a
   task one column and picks the survivor by sorting the metric segment, so a second
@@ -107,7 +118,7 @@ never shipped in any tag — and the eval linkage built on top of it.
 - `register_external_model` was in `eval_results.__all__` but never re-exported from the
   package, so the documented import raised `ImportError`.
 
-## v2.0.0 — unreleased
+## v2.0.0-rc1 to rc3
 
 ### Added
 
