@@ -42,7 +42,7 @@ from __future__ import annotations
 # vendored from; the engine refuses submits whose pinned callback was
 # vendored against a contract older than what this engine version
 # requires.
-CONTRACT_VERSION = "3.1.0"
+CONTRACT_VERSION = "3.2.0"
 
 # --- Env vars: ENGINE sets in the training process -------------------------
 #
@@ -124,6 +124,11 @@ TAG_VERSION = "alidade.version"
 TAG_EXPERIMENT = "alidade.experiment"
 TAG_GPU_TYPE = "alidade.gpu_type"
 TAG_GPU_RATE_CENTS_PER_HOUR = "alidade.gpu_rate_cents_per_hour"
+
+# Which launch opened the run: the step's 1-based number, and 0 for its first
+# launch or n for the retry after the n-th heal, which deletes the launch it replaces.
+TAG_STEP = "alidade.step"
+TAG_ATTEMPT = "alidade.attempt"
 
 # Final outcome — set by the engine on terminal state ("success" /
 # "failure" / "cancelled"). Callbacks don't write this; it's listed

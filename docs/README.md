@@ -32,13 +32,19 @@ right model without you passing identifiers around.
 
 ## Install
 
+Install from a GitHub Release; the library is not on PyPI yet.
+
 ```bash
-pip install alidade-callbacks                 # raw PyTorch, and all eval helpers
-pip install 'alidade-callbacks[composer]'     # MosaicML Composer
-pip install 'alidade-callbacks[lightning]'    # PyTorch Lightning
-pip install 'alidade-callbacks[hf]'           # HuggingFace Trainer
-pip install 'alidade-callbacks[all]'          # everything
+WHL=https://github.com/alidade-ml/alidade-callbacks/releases/download/v2.0.0/alidade_callbacks-2.0.0-py3-none-any.whl
+pip install "$WHL"                                 # raw PyTorch, and all eval helpers
+pip install "alidade-callbacks[composer] @ $WHL"   # MosaicML Composer
+pip install "alidade-callbacks[lightning] @ $WHL"  # PyTorch Lightning
+pip install "alidade-callbacks[hf] @ $WHL"         # HuggingFace Trainer
+pip install "alidade-callbacks[all] @ $WHL"        # everything
 ```
+
+Elsewhere these docs write `pip install 'alidade-callbacks[<extra>]'` for short; with no
+index to resolve it, use the `@ $WHL` form above.
 
 Add `[safetensors]` if you export checkpoints in that format.
 
