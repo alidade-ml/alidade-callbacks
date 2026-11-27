@@ -6,7 +6,7 @@ The first stable 2.x, and the first release `releases/latest` resolves to since 
 rename: until now it pointed at v1.1.2, which ships the pre-rename package. It carries
 everything in the release candidates below, and this section's changes since rc4.
 
-Pairs with alidade v1.7.0: the vendored contract is `3.2.0`, byte-identical to the
+Pairs with alidade v1.8.0: the vendored contract is `3.2.0`, byte-identical to the
 engine's. Not on PyPI; install from this release (see the README).
 
 ### Changed
